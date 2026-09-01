@@ -2,10 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTransition } from 'react';
+import { logoutAdmin } from '@/app/actions/auth';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/admin';
+  const [isPending, startTransition] = useTransition();
+
+  const handleLogout = () => {
+    startTransition(async () => {
+      await logoutAdmin();
+    });
+  };
 
   // Render raw children on the login page without the admin sidebar shell
   if (isLoginPage) {
@@ -54,9 +63,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
         </nav>
 
-        <div className="pt-4 border-t border-[#141811] text-xs text-[#9CA893]">
-          <span className="block font-semibold text-white">Admin Session</span>
-          Super Admin
+        <div className="pt-4 border-t border-[#141811] text-xs text-[#9CA893] flex items-end justify-between">
+          <div>
+            <span className="block font-semibold text-white">Admin Session</span>
+            Super Admin
+          </div>
+          <button
+            onClick={handleLogout}
+            disabled={isPending}
+            className="hover:text-[#D9A79C] transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {isPending ? 'Logging out...' : 'Log out'}
+          </button>
         </div>
       </aside>
 

@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
 export interface AdminSession {
   id: string;
@@ -71,7 +72,7 @@ export async function loginAdmin(formData: { email: string; password: string }) 
 export async function logoutAdmin() {
   const cookieStore = await cookies();
   cookieStore.delete('kora_admin_session');
-  return { success: true };
+  redirect('/admin');
 }
 
 export async function getCurrentAdmin(): Promise<AdminSession | null> {
