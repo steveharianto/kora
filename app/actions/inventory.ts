@@ -4,12 +4,18 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentAdmin } from './auth';
 import { revalidatePath } from 'next/cache';
 
+function checkSuperAdmin(role?: string): boolean {
+  return role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+}
+
 export async function saveItem(itemData: any, isNew: boolean) {
+  if (!itemData?.sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin) return { error: 'Unauthorized' };
+  if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  const isSuperAdmin = admin.role === 'superadmin';
+  const isSuperAdmin = checkSuperAdmin(admin.role);
 
   const coreData = {
     sku: itemData.sku,
@@ -31,7 +37,12 @@ export async function saveItem(itemData: any, isNew: boolean) {
 
   if (isSuperAdmin) {
     // SUPERADMIN: Direct Execution
-    const dbPayload = { ...coreData, pending_changes: null, pending_action: null, pending_by: null };
+    const dbPayload = {
+      ...coreData,
+      pending_changes: null,
+      pending_action: null,
+      pending_by: null
+    };
 
     if (isNew) {
       const { error } = await supabase.from('items').insert(dbPayload);
@@ -43,7 +54,6 @@ export async function saveItem(itemData: any, isNew: boolean) {
   } else {
     // STAFF: Route to Pending
     if (isNew) {
-      // Must insert row with required NOT NULL fields so images can attach, but staged as Draft
       const dbPayload = {
         sku: itemData.sku,
         name: itemData.name || 'Draft Name',
@@ -81,23 +91,57 @@ export async function saveItem(itemData: any, isNew: boolean) {
 }
 
 export async function approvePendingChanges(sku: string) {
+  if (!sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin || admin.role !== 'superadmin') return { error: 'Unauthorized' };
+  if (!admin || !checkSuperAdmin(admin.role)) {
+    return { error: 'Unauthorized: Only superadmins can approve actions.' };
+  }
 
-  const { data: item } = await supabase.from('items').select('pending_changes, pending_action').eq('sku', sku).single();
-  if (!item?.pending_action) return { error: 'No changes to approve.' };
+  const { data: item, error: fetchError } = await supabase
+    .from('items')
+    .select('pending_changes, pending_action')
+    .eq('sku', sku)
+    .single();
+
+  if (fetchError || !item) return { error: fetchError?.message || `Item ${sku} not found.` };
+  if (!item.pending_action) return { error: 'No pending changes to approve.' };
+
+  let dbError = null;
 
   if (item.pending_action === 'DELETE') {
-    await supabase.from('items').delete().eq('sku', sku);
+    const { error } = await supabase.from('items').delete().eq('sku', sku);
+    dbError = error;
   } else if (item.pending_action === 'ARCHIVE') {
-    await supabase.from('items').update({ is_archived: true, pending_action: null, pending_changes: null, pending_by: null }).eq('sku', sku);
+    const { error } = await supabase.from('items').update({
+      is_archived: true,
+      pending_action: null,
+      pending_changes: null,
+      pending_by: null
+    }).eq('sku', sku);
+    dbError = error;
   } else if (item.pending_action === 'UNARCHIVE') {
-    await supabase.from('items').update({ is_archived: false, pending_action: null, pending_changes: null, pending_by: null }).eq('sku', sku);
+    const { error } = await supabase.from('items').update({
+      is_archived: false,
+      pending_action: null,
+      pending_changes: null,
+      pending_by: null
+    }).eq('sku', sku);
+    dbError = error;
   } else {
     // CREATE or EDIT
-    await supabase.from('items').update({ ...item.pending_changes, pending_changes: null, pending_action: null, pending_by: null }).eq('sku', sku);
+    const changes = item.pending_changes || {};
+    const { error } = await supabase.from('items').update({
+      ...changes,
+      pending_changes: null,
+      pending_action: null,
+      pending_by: null
+    }).eq('sku', sku);
+    dbError = error;
   }
+
+  if (dbError) return { error: dbError.message };
 
   await supabase.from('admin_audit_logs').insert({
     admin_id: admin.id,
@@ -114,24 +158,45 @@ export async function approvePendingChanges(sku: string) {
 }
 
 export async function rejectPendingAction(sku: string) {
+  if (!sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin || admin.role !== 'superadmin') return { error: 'Unauthorized' };
-
-  const { data: item } = await supabase.from('items').select('pending_action').eq('sku', sku).single();
-
-  if (item?.pending_action === 'CREATE') {
-    await supabase.from('items').delete().eq('sku', sku); // Delete the draft shell entirely
-  } else {
-    await supabase.from('items').update({ pending_changes: null, pending_action: null, pending_by: null }).eq('sku', sku);
+  if (!admin || !checkSuperAdmin(admin.role)) {
+    return { error: 'Unauthorized: Only superadmins can reject actions.' };
   }
+
+  const { data: item, error: fetchError } = await supabase
+    .from('items')
+    .select('pending_action')
+    .eq('sku', sku)
+    .single();
+
+  if (fetchError || !item) return { error: fetchError?.message || `Item ${sku} not found.` };
+  if (!item.pending_action) return { error: 'No pending action to reject.' };
+
+  let dbError = null;
+
+  if (item.pending_action === 'CREATE') {
+    const { error } = await supabase.from('items').delete().eq('sku', sku);
+    dbError = error;
+  } else {
+    const { error } = await supabase.from('items').update({
+      pending_changes: null,
+      pending_action: null,
+      pending_by: null
+    }).eq('sku', sku);
+    dbError = error;
+  }
+
+  if (dbError) return { error: dbError.message };
 
   await supabase.from('admin_audit_logs').insert({
     admin_id: admin.id,
     admin_name: admin.name,
     entity_type: 'item',
     entity_id: sku,
-    action_type: `REJECT_${item?.pending_action || 'REQUEST'}`,
+    action_type: `REJECT_${item.pending_action}`,
     field_name: 'all',
   });
 
@@ -141,18 +206,29 @@ export async function rejectPendingAction(sku: string) {
 }
 
 export async function toggleArchive(sku: string, currentStatus: boolean) {
+  if (!sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin) return { error: 'Unauthorized' };
+  if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  const isSuperAdmin = admin.role === 'superadmin';
+  const isSuperAdmin = checkSuperAdmin(admin.role);
   const actionType = currentStatus ? 'UNARCHIVE' : 'ARCHIVE';
 
+  let dbError = null;
+
   if (isSuperAdmin) {
-    await supabase.from('items').update({ is_archived: !currentStatus }).eq('sku', sku);
+    const { error } = await supabase.from('items').update({ is_archived: !currentStatus }).eq('sku', sku);
+    dbError = error;
   } else {
-    await supabase.from('items').update({ pending_action: actionType, pending_by: admin.id }).eq('sku', sku);
+    const { error } = await supabase.from('items').update({
+      pending_action: actionType,
+      pending_by: admin.id
+    }).eq('sku', sku);
+    dbError = error;
   }
+
+  if (dbError) return { error: dbError.message };
 
   await supabase.from('admin_audit_logs').insert({
     admin_id: admin.id,
@@ -169,17 +245,23 @@ export async function toggleArchive(sku: string, currentStatus: boolean) {
 }
 
 export async function deleteItem(sku: string) {
+  if (!sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin) return { error: 'Unauthorized' };
+  if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  const isSuperAdmin = admin.role === 'superadmin';
+  const isSuperAdmin = checkSuperAdmin(admin.role);
 
   if (isSuperAdmin) {
     const { error } = await supabase.from('items').delete().eq('sku', sku);
     if (error) return { error: 'Cannot delete item. It may have existing order history.' };
   } else {
-    await supabase.from('items').update({ pending_action: 'DELETE', pending_by: admin.id }).eq('sku', sku);
+    const { error } = await supabase.from('items').update({
+      pending_action: 'DELETE',
+      pending_by: admin.id
+    }).eq('sku', sku);
+    if (error) return { error: error.message };
   }
 
   await supabase.from('admin_audit_logs').insert({
@@ -196,16 +278,22 @@ export async function deleteItem(sku: string) {
 }
 
 export async function saveNotes(sku: string, notes: string) {
+  if (!sku) return { error: 'SKU is required.' };
+
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
-  if (!admin) return { error: 'Unauthorized' };
+  if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  await supabase.from('items').update({ notes }).eq('sku', sku);
+  const { error } = await supabase.from('items').update({ notes }).eq('sku', sku);
+  if (error) return { error: error.message };
+
   revalidatePath(`/admin/inventory/${sku}`);
   return { success: true };
 }
 
 export async function addImageRecord(sku: string, url: string, order: number) {
+  if (!sku || !url) return { error: 'SKU and URL are required.' };
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('item_images')
@@ -220,14 +308,22 @@ export async function addImageRecord(sku: string, url: string, order: number) {
 
 export async function deleteImageRecord(imageId: number, sku: string) {
   const supabase = await createClient();
-  await supabase.from('item_images').delete().eq('id', imageId);
+  const { error } = await supabase.from('item_images').delete().eq('id', imageId);
+  if (error) return { error: error.message };
+
   revalidatePath(`/admin/inventory/${sku}`);
+  return { success: true };
 }
 
 export async function reorderImages(images: { id: number; display_order: number }[], sku: string) {
   const supabase = await createClient();
   for (const img of images) {
-    await supabase.from('item_images').update({ display_order: img.display_order }).eq('id', img.id);
+    const { error } = await supabase
+      .from('item_images')
+      .update({ display_order: img.display_order })
+      .eq('id', img.id);
+    if (error) return { error: error.message };
   }
   revalidatePath(`/admin/inventory/${sku}`);
+  return { success: true };
 }

@@ -25,10 +25,24 @@ export default function ItemForm({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const isSuperAdmin = currentAdmin?.role === 'superadmin';
+  // Normalize role check (handles 'superadmin', 'Super Admin', 'Superadmin')
+  const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 
-  // Apply Pending Changes to View if they exist
-  const viewData = initialData?.pending_changes || initialData || {};
+  // FIX 1: Safely merge initialData with pending_changes so SKU & required fields aren't wiped out
+  const viewData = useMemo(() => {
+    if (!initialData) return {};
+    const pending = initialData.pending_changes || {};
+    return {
+      ...initialData,
+      ...pending,
+      sku: initialData.sku || pending.sku || '',
+      measurements: {
+        outer: { ...(initialData.measurements?.outer || {}), ...(pending.measurements?.outer || {}) },
+        inner: { ...(initialData.measurements?.inner || {}), ...(pending.measurements?.inner || {}) },
+        skirt: { ...(initialData.measurements?.skirt || {}), ...(pending.measurements?.skirt || {}) },
+      }
+    };
+  }, [initialData]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -58,29 +72,36 @@ export default function ItemForm({
   const [images, setImages] = useState(initialImages || []);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Sync state when router.refresh() fetches new initialData
+  // Sync state when router.refresh() updates initialData
   useEffect(() => {
-    const updatedViewData = initialData?.pending_changes || initialData || {};
+    if (!initialData) return;
+    const pending = initialData.pending_changes || {};
+    const merged = {
+      ...initialData,
+      ...pending,
+      sku: initialData.sku || pending.sku || '',
+    };
+
     setFormData({
-      sku: updatedViewData.sku || '',
-      brand_id: updatedViewData.brand_id || '',
-      category_id: updatedViewData.category_id || '',
-      type_id: updatedViewData.type_id || '',
-      name: updatedViewData.name || '',
-      size: updatedViewData.size || '',
-      color: updatedViewData.color || '',
-      rental_price: updatedViewData.rental_price || '',
-      buffer_override: updatedViewData.buffer_override || '',
-      status: updatedViewData.status || 'Available',
-      website_status: updatedViewData.website_status || 'Draft',
-      description: updatedViewData.description || '',
-      tags: updatedViewData.tags || [],
-      date_added: updatedViewData.date_added || new Date().toISOString().split('T')[0],
+      sku: merged.sku || '',
+      brand_id: merged.brand_id || '',
+      category_id: merged.category_id || '',
+      type_id: merged.type_id || '',
+      name: merged.name || '',
+      size: merged.size || '',
+      color: merged.color || '',
+      rental_price: merged.rental_price || '',
+      buffer_override: merged.buffer_override || '',
+      status: merged.status || 'Available',
+      website_status: merged.website_status || 'Draft',
+      description: merged.description || '',
+      tags: merged.tags || [],
+      date_added: merged.date_added || new Date().toISOString().split('T')[0],
     });
     setMeas({
-      outer: updatedViewData.measurements?.outer || {},
-      inner: updatedViewData.measurements?.inner || {},
-      skirt: updatedViewData.measurements?.skirt || {},
+      outer: { ...(initialData.measurements?.outer || {}), ...(pending.measurements?.outer || {}) },
+      inner: { ...(initialData.measurements?.inner || {}), ...(pending.measurements?.inner || {}) },
+      skirt: { ...(initialData.measurements?.skirt || {}), ...(pending.measurements?.skirt || {}) },
     });
     setNotes(initialData?.notes || '');
     setImages(initialImages || []);
@@ -214,14 +235,15 @@ export default function ItemForm({
     }
   };
 
-  // --- DECOUPLED Image Upload Logic ---
+  // --- Image Upload Logic ---
   const handleImageUpload = async (e: any) => {
+    const targetSku = initialData?.sku || formData.sku;
     const file = e.target.files[0];
-    if (!file || !formData.sku) return alert('Please set a SKU first.');
+    if (!file || !targetSku) return alert('Please set a SKU first.');
     setUploadingImage(true);
 
     const fileExt = file.name.split('.').pop();
-    const fileName = `${formData.sku}/${Date.now()}.${fileExt}`;
+    const fileName = `${targetSku}/${Date.now()}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage.from('item-images').upload(fileName, file);
 
@@ -229,7 +251,7 @@ export default function ItemForm({
       const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/item-images/${fileName}`;
 
       if (!isNew) {
-        const res = await addImageRecord(formData.sku, url, images.length + 1);
+        const res = await addImageRecord(targetSku, url, images.length + 1);
         if (res?.data) {
           setImages([...images, res.data]);
         }
@@ -243,6 +265,7 @@ export default function ItemForm({
   };
 
   const moveImage = async (index: number, direction: 'up' | 'down') => {
+    const targetSku = initialData?.sku || formData.sku;
     if ((direction === 'up' && index === 0) || (direction === 'down' && index === images.length - 1)) return;
     const newImages = [...images];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -255,26 +278,28 @@ export default function ItemForm({
     setImages(newImages);
 
     if (!isNew) {
-      await reorderImages(newImages, formData.sku);
+      await reorderImages(newImages, targetSku);
     }
   };
 
   const removeImage = async (id: number) => {
-    if(!confirm("Remove picture?")) return;
+    const targetSku = initialData?.sku || formData.sku;
+    if (!confirm("Remove picture?")) return;
 
     if (!isNew) {
-      await deleteImageRecord(id, formData.sku);
+      await deleteImageRecord(id, targetSku);
     }
     setImages(images.filter((img: any) => img.id !== id));
   };
 
-  // --- Action Button Submissions ---
+  // --- Submissions & Approval Actions ---
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
 
-    const res = await saveItem({ ...formData, measurements: meas }, isNew);
+    const targetSku = initialData?.sku || formData.sku;
+    const res = await saveItem({ ...formData, sku: targetSku, measurements: meas }, isNew);
 
     if (res.error) {
       setErrorMsg(res.error);
@@ -284,10 +309,10 @@ export default function ItemForm({
 
     if (isNew) {
       for (const img of images) {
-        await addImageRecord(formData.sku, img.image_url, img.display_order);
+        await addImageRecord(targetSku, img.image_url, img.display_order);
       }
       if (!isSuperAdmin) alert('Creation request submitted for approval.');
-      router.push(`/admin/inventory/${formData.sku}`);
+      router.push(`/admin/inventory/${targetSku}`);
     } else {
       if (!isSuperAdmin) alert('Edit request submitted for approval.');
       else alert('Changes saved!');
@@ -297,18 +322,26 @@ export default function ItemForm({
   };
 
   const handleArchiveToggle = async () => {
+    const targetSku = initialData?.sku || formData.sku;
     setLoading(true);
-    await toggleArchive(formData.sku, initialData.is_archived);
-    if (!isSuperAdmin) alert(`${initialData.is_archived ? 'Unarchive' : 'Archive'} request submitted for approval.`);
-    router.refresh();
+    setErrorMsg('');
+    const res = await toggleArchive(targetSku, initialData.is_archived);
+    if (res?.error) {
+      setErrorMsg(res.error);
+    } else {
+      if (!isSuperAdmin) alert(`${initialData.is_archived ? 'Unarchive' : 'Archive'} request submitted for approval.`);
+      router.refresh();
+    }
     setLoading(false);
   };
 
   const handleDelete = async () => {
+    const targetSku = initialData?.sku || formData.sku;
     if (!confirm('Proceed with deletion?')) return;
     setLoading(true);
-    const res = await deleteItem(formData.sku);
-    if (res.error) {
+    setErrorMsg('');
+    const res = await deleteItem(targetSku);
+    if (res?.error) {
       setErrorMsg(res.error);
       setLoading(false);
       return;
@@ -321,9 +354,18 @@ export default function ItemForm({
     router.refresh();
   };
 
+  // FIX 2: Check server action results and report errors if present
   const handleApprove = async () => {
+    const targetSku = initialData?.sku || formData.sku;
     setLoading(true);
-    await approvePendingChanges(formData.sku);
+    setErrorMsg('');
+    const res = await approvePendingChanges(targetSku);
+    if (res?.error) {
+      setErrorMsg(res.error);
+      setLoading(false);
+      return;
+    }
+
     if (initialData.pending_action === 'DELETE') {
       router.push('/admin/inventory');
     } else {
@@ -333,9 +375,17 @@ export default function ItemForm({
   };
 
   const handleReject = async () => {
+    const targetSku = initialData?.sku || formData.sku;
     if (!confirm('Reject this request?')) return;
     setLoading(true);
-    await rejectPendingAction(formData.sku);
+    setErrorMsg('');
+    const res = await rejectPendingAction(targetSku);
+    if (res?.error) {
+      setErrorMsg(res.error);
+      setLoading(false);
+      return;
+    }
+
     if (initialData.pending_action === 'CREATE') {
       router.push('/admin/inventory');
     } else {
@@ -371,17 +421,27 @@ export default function ItemForm({
             <p className="text-[13px] opacity-90">{pendingBanner.text} Please review the details below before approving.</p>
           </div>
           <div className="flex gap-2 flex-shrink-0">
-            <button type="button" onClick={handleReject} disabled={loading} className="px-4 py-2 bg-white border border-current/20 text-ink rounded-lg text-[13px] font-semibold hover:bg-[#FDFCFA] transition cursor-pointer shadow-sm disabled:opacity-50">
+            <button
+              type="button"
+              onClick={handleReject}
+              disabled={loading}
+              className="px-4 py-2 bg-white border border-current/20 text-ink rounded-lg text-[13px] font-semibold hover:bg-[#FDFCFA] transition cursor-pointer shadow-sm disabled:opacity-50"
+            >
               Reject Request
             </button>
-            <button type="button" onClick={handleApprove} disabled={loading} className={`px-4 py-2 text-white rounded-lg text-[13px] font-semibold transition cursor-pointer shadow-sm disabled:opacity-50 ${pendingBanner.approveBtn}`}>
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={loading}
+              className={`px-4 py-2 text-white rounded-lg text-[13px] font-semibold transition cursor-pointer shadow-sm disabled:opacity-50 ${pendingBanner.approveBtn}`}
+            >
               Approve {initialData.pending_action}
             </button>
           </div>
         </div>
       )}
 
-      {/* 2. Validation Banner (Only show if not overshadowed by a pending request or if it's incomplete) */}
+      {/* 2. Validation Banner */}
       {(!pendingBanner || !isComplete) && (
         <div className={`mb-6 p-4 rounded-xl flex items-start gap-3 border ${isComplete ? 'bg-[#F2F6EF] border-[#CAD3C5] text-wine-ink' : 'bg-warn-bg border-warn/30 text-warn-ink'}`}>
           <div className="text-[13px]">
@@ -400,11 +460,11 @@ export default function ItemForm({
           <div>
             <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">Catalog · Inventory</div>
             <h1 className="font-serif text-[29px] font-normal tracking-[0.01em]">
-              {isNew ? 'New Item' : `${formData.sku} — ${formData.name || 'Draft'}`}
+              {isNew ? 'New Item' : `${initialData?.sku || formData.sku} — ${formData.name || 'Draft'}`}
             </h1>
             {!isNew && (
               <p className="text-muted text-[13px] mt-1">
-                {brands.find((b:any)=>b.id == formData.brand_id)?.name || 'No Brand'} · added {new Date(formData.date_added).toLocaleDateString()}
+                {brands.find((b: any) => b.id == formData.brand_id)?.name || 'No Brand'} · added {new Date(formData.date_added).toLocaleDateString()}
               </p>
             )}
           </div>
@@ -417,15 +477,29 @@ export default function ItemForm({
                   {formData.status}
                 </span>
 
-                <button type="button" onClick={handleArchiveToggle} disabled={loading || !!initialData.pending_action} className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#C9C2B4] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                <button
+                  type="button"
+                  onClick={handleArchiveToggle}
+                  disabled={loading || !!initialData.pending_action}
+                  className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#C9C2B4] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   {isSuperAdmin ? (initialData.is_archived ? 'Unarchive' : 'Archive') : (initialData.is_archived ? 'Req Unarchive' : 'Req Archive')}
                 </button>
-                <button type="button" onClick={handleDelete} disabled={loading || !!initialData.pending_action} className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#C9C2B4] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={loading || !!initialData.pending_action}
+                  className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#C9C2B4] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   {isSuperAdmin ? 'Delete' : 'Req Delete'}
                 </button>
               </>
             )}
-            <button type="submit" disabled={loading || (isSuperAdmin && !!initialData.pending_action)} className="font-medium border border-wine bg-wine text-white rounded-lg px-3.5 py-2 text-sm hover:bg-[#181E15] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <button
+              type="submit"
+              disabled={loading || (isSuperAdmin && !!initialData.pending_action)}
+              className="font-medium border border-wine bg-wine text-white rounded-lg px-3.5 py-2 text-sm hover:bg-[#181E15] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               {loading ? 'Processing...' : (isSuperAdmin ? 'Save item' : (isNew ? 'Req Add' : 'Req Save'))}
             </button>
           </div>
@@ -444,49 +518,82 @@ export default function ItemForm({
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-3">Item information</h3>
 
-            {/* Standard Fields */}
             <div className="grid grid-cols-2 gap-3.5 mb-3.5">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Code / SKU <span className="text-bad">*</span></label>
-                <input required name="sku" value={formData.sku} onChange={handleChange} disabled={!isNew} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 uppercase focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none disabled:bg-[#F1EEE7] disabled:text-muted" />
+                <input
+                  required
+                  name="sku"
+                  value={formData.sku}
+                  onChange={handleChange}
+                  disabled={!isNew}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 uppercase focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none disabled:bg-[#F1EEE7] disabled:text-muted"
+                />
               </div>
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Brand <span className="text-bad">*</span></label>
-                <select required name="brand_id" value={formData.brand_id} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none">
+                <select
+                  required
+                  name="brand_id"
+                  value={formData.brand_id}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                >
                   <option value="">— Select Brand —</option>
-                  {brands.map((b:any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  {brands.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
             </div>
 
             <div className="mb-3.5">
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Item name <span className="text-bad">*</span></label>
-              <input required name="name" value={formData.name} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+              <input
+                required
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3.5 mb-3.5">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Category</label>
-                <select name="category_id" value={formData.category_id} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none">
+                <select
+                  name="category_id"
+                  value={formData.category_id}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                >
                   <option value="">— Select Category —</option>
-                  {categories.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Type</label>
-                <select name="type_id" value={formData.type_id} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none">
+                <select
+                  name="type_id"
+                  value={formData.type_id}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                >
                   <option value="">— Select Type —</option>
-                  {types.map((t:any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {types.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3.5 mb-3.5">
-               <div>
+              <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Size <span className="text-bad">*</span></label>
-                <input required name="size" value={formData.size} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+                <input
+                  required
+                  name="size"
+                  value={formData.size}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                />
               </div>
-              {/* Color Combobox Input */}
               <div className="relative">
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Color</label>
                 <input
@@ -505,7 +612,6 @@ export default function ItemForm({
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                 />
 
-                {/* Dropdown Menu */}
                 {isColorOpen && filteredColors.length > 0 && (
                   <ul className="absolute z-20 w-full mt-1 bg-white border border-line rounded-lg shadow-lg max-h-48 overflow-y-auto py-1">
                     {filteredColors.map((color: string, index: number) => (
@@ -529,7 +635,6 @@ export default function ItemForm({
               </div>
             </div>
 
-            {/* Event Tags */}
             <div className="mb-3.5">
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Event Tags</label>
               <div
@@ -563,10 +668,16 @@ export default function ItemForm({
 
             <div className="mb-3.5">
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Rental Price (Rp) <span className="text-bad">*</span></label>
-              <input required type="number" name="rental_price" value={formData.rental_price} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+              <input
+                required
+                type="number"
+                name="rental_price"
+                value={formData.rental_price}
+                onChange={handleChange}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+              />
             </div>
 
-            {/* Pricing & Deposit Calc */}
             <div className="grid grid-cols-2 gap-3.5 mb-3.5 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Deposit (From Tier)</label>
@@ -574,14 +685,26 @@ export default function ItemForm({
               </div>
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Buffer Override</label>
-                <input type="number" name="buffer_override" value={formData.buffer_override} onChange={handleChange} placeholder="Default (3)" className="w-full text-[13px] border border-line rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+                <input
+                  type="number"
+                  name="buffer_override"
+                  value={formData.buffer_override}
+                  onChange={handleChange}
+                  placeholder="Default (3)"
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3.5 mb-3.5">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Status</label>
-                <select name="status" value={formData.status} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none">
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                >
                   <option>Available</option>
                   <option>Under Repair</option>
                   <option>Coming Soon</option>
@@ -590,7 +713,12 @@ export default function ItemForm({
               </div>
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Website Status</label>
-                <select name="website_status" value={formData.website_status} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none">
+                <select
+                  name="website_status"
+                  value={formData.website_status}
+                  onChange={handleChange}
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                >
                   <option>Published</option>
                   <option>Draft</option>
                 </select>
@@ -599,24 +727,34 @@ export default function ItemForm({
 
             <div className="mb-3.5">
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Date Added</label>
-              <input type="date" name="date_added" value={formData.date_added} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+              <input
+                type="date"
+                name="date_added"
+                value={formData.date_added}
+                onChange={handleChange}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+              />
             </div>
 
             <div className="mb-4">
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Description</label>
-              <textarea name="description" rows={3} value={formData.description} onChange={handleChange} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none" />
+              <textarea
+                name="description"
+                rows={3}
+                value={formData.description}
+                onChange={handleChange}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+              />
             </div>
           </div>
 
           {/* RIGHT: Images & Measurements */}
           <div className="space-y-4">
-
-            {/* 2. Pictures Manager */}
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-3">Pictures <span className="text-bad">*</span> <span className="text-muted text-[12px] ml-2 font-sans">— order = display order</span></h3>
 
               <div className="flex gap-3 overflow-x-auto pb-2">
-                {images.map((img:any, i:number) => (
+                {images.map((img: any, i: number) => (
                   <div key={img.id} className="relative flex-shrink-0 w-28">
                     {i === 0 && <div className="absolute top-1 left-1 bg-white/90 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-wine-ink z-10 shadow-sm">COVER</div>}
                     <div className="h-36 bg-[#EBEFE6] rounded-lg overflow-hidden border border-line mb-1.5">
@@ -641,7 +779,6 @@ export default function ItemForm({
               </div>
             </div>
 
-            {/* 4. Complete Measurements Matrix */}
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-1">Measurements</h3>
 
@@ -650,7 +787,12 @@ export default function ItemForm({
                 {['bust', 'waist', 'hips', 'length_front', 'length_back', 'shoulder', 'neck_hole', 'arm_hole', 'arm_length'].map(f => (
                   <div key={`outer-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
-                    <input type="number" value={meas.outer[f] || ''} onChange={(e) => handleMeasChange('outer', f, e.target.value)} className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]" />
+                    <input
+                      type="number"
+                      value={meas.outer[f] || ''}
+                      onChange={(e) => handleMeasChange('outer', f, e.target.value)}
+                      className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]"
+                    />
                   </div>
                 ))}
               </div>
@@ -660,7 +802,12 @@ export default function ItemForm({
                 {['bust', 'waist', 'hips', 'length'].map(f => (
                   <div key={`inner-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
-                    <input type="number" value={meas.inner[f] || ''} onChange={(e) => handleMeasChange('inner', f, e.target.value)} className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]" />
+                    <input
+                      type="number"
+                      value={meas.inner[f] || ''}
+                      onChange={(e) => handleMeasChange('inner', f, e.target.value)}
+                      className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]"
+                    />
                   </div>
                 ))}
               </div>
@@ -670,7 +817,12 @@ export default function ItemForm({
                 {['waist', 'hips', 'length'].map(f => (
                   <div key={`skirt-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
-                    <input type="number" value={meas.skirt[f] || ''} onChange={(e) => handleMeasChange('skirt', f, e.target.value)} className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]" />
+                    <input
+                      type="number"
+                      value={meas.skirt[f] || ''}
+                      onChange={(e) => handleMeasChange('skirt', f, e.target.value)}
+                      className="w-full text-[13px] border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:border-wine bg-[#FDFCFA]"
+                    />
                   </div>
                 ))}
               </div>
@@ -705,7 +857,7 @@ export default function ItemForm({
               {(!orders || orders.length === 0) ? (
                 <tr><td colSpan={7} className="py-4 text-muted">No historical bookings.</td></tr>
               ) : (
-                orders.map((o:any) => {
+                orders.map((o: any) => {
                   const retDate = new Date(o.return_date);
                   const freeDate = new Date(retDate);
                   freeDate.setDate(freeDate.getDate() + (formData.buffer_override || 3));
@@ -719,7 +871,7 @@ export default function ItemForm({
                       <td className="py-2.5 text-muted">{freeDate.toISOString().split('T')[0]}</td>
                       <td className="py-2.5"><span className="bg-[#F6F4EF] text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold">{o.status}</span></td>
                     </tr>
-                  )
+                  );
                 })
               )}
             </tbody>
@@ -730,23 +882,33 @@ export default function ItemForm({
       {/* 6. Notes & Activity Log */}
       {!isNew && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-          {/* Notes */}
           <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
             <h3 className="font-serif text-[18px] font-normal mb-1">Notes <span className="text-muted text-[12px] font-sans">— internal only</span></h3>
             <div className="flex-1 mt-2">
-              <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] focus:bg-white focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none transition" placeholder="Add internal notes..." />
-              <button type="button" onClick={() => saveNotes(formData.sku, notes)} className="mt-2 text-sm font-medium border border-line bg-white rounded-lg px-3 py-1.5 hover:bg-[#F6F4EF] cursor-pointer">Post Note</button>
+              <textarea
+                rows={4}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] focus:bg-white focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none transition"
+                placeholder="Add internal notes..."
+              />
+              <button
+                type="button"
+                onClick={() => saveNotes(initialData?.sku || formData.sku, notes)}
+                className="mt-2 text-sm font-medium border border-line bg-white rounded-lg px-3 py-1.5 hover:bg-[#F6F4EF] cursor-pointer"
+              >
+                Post Note
+              </button>
             </div>
           </div>
 
-          {/* Activity Log */}
           <div className="bg-card border border-line rounded-[10px] p-5 h-64 overflow-y-auto">
             <h3 className="font-serif text-[18px] font-normal mb-3">Activity log</h3>
             {(!auditLogs || auditLogs.length === 0) ? (
               <p className="text-sm text-muted">No changes recorded yet.</p>
             ) : (
               <ul className="space-y-3 relative before:absolute before:inset-y-0 before:left-[7px] before:w-[1px] before:bg-line">
-                {auditLogs.map((log:any) => (
+                {auditLogs.map((log: any) => (
                   <li key={log.id} className="relative pl-5 text-[12px]">
                     <span className="absolute left-1 top-1.5 w-1.5 h-1.5 rounded-full bg-muted"></span>
                     <span className="font-medium text-ink">{log.admin_name}</span> {log.action_type.replace(/_/g, ' ')} <span className="text-muted">· {new Date(log.created_at).toLocaleDateString()}</span>
