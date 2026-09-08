@@ -43,8 +43,6 @@ export default function SettingsClient({
 
   const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 
-  // --- STATE FOR ALL 8 TABS ---
-
   // 1. Automation State
   const [automation, setAutomation] = useState(
     settingsMap.automation || {
@@ -69,16 +67,16 @@ export default function SettingsClient({
     settingsMap.rental_rules || {
       period: {
         rental_days: 3,
-        return_deadline: 'Day 4 — return only',
+        return_deadline: 'Day 4 - return only',
         late_fee_day_1: 100000,
         escalation: 'Doubles each additional day',
-        qc_refund_window: '2 × 24 hours after receipt',
+        qc_refund_window: '2 x 24 hours after receipt',
         max_return_reminders: 2,
       },
       late_fee_schedule: [
         { label: 'Below Rp 500.000', fee: 100000 },
-        { label: 'Rp 500.000 – 1.000.000', fee: 140000 },
-        { label: 'Rp 1.000.001 – 2.000.000', fee: 200000 },
+        { label: 'Rp 500.000 - 1.000.000', fee: 140000 },
+        { label: 'Rp 1.000.001 - 2.000.000', fee: 200000 },
         { label: 'Above Rp 2.000.000', fee: 400000 },
       ],
     }
@@ -89,8 +87,8 @@ export default function SettingsClient({
   const [fittings, setFittings] = useState(
     settingsMap.fittings || {
       operating_hours: {
-        weekday: { regular: '10:00 – 17:00', after_hours: '17:00 – 18:00' },
-        saturday: { regular: '10:00 – 13:00', after_hours: '13:00 – 15:00' },
+        weekday: { regular: '10:00 - 17:00', after_hours: '17:00 - 18:00' },
+        saturday: { regular: '10:00 - 13:00', after_hours: '13:00 - 15:00' },
         sunday: { closed: true, note: 'Sunday: closed, no bookings possible.' },
       },
       session_rules: {
@@ -105,16 +103,46 @@ export default function SettingsClient({
   const [notifications, setNotifications] = useState(settingsMap.notifications || {});
   const [previewTemplateKey, setPreviewTemplateKey] = useState<string | null>(null);
 
-  // 5. Shipping State
-  const [shipping, setShipping] = useState(
-    settingsMap.shipping || {
-      dispatch_addresses: { primary: '', secondary: '' },
-      return_address: { drop_off_point: '' },
-      delivery_lead_times: [],
-      courier_policy: { provider: '', dispatch_mode: '', return_couriers_offered: '' },
-      refund_payout_methods: '',
-    }
-  );
+  // 5. Shipping State (Normalized to structured dispatch addresses)
+  const [shipping, setShipping] = useState(() => {
+    const raw = settingsMap.shipping || {};
+    const rawPrimary = raw.dispatch_addresses?.primary;
+    const rawSecondary = raw.dispatch_addresses?.secondary;
+
+    return {
+      ...raw,
+      dispatch_addresses: {
+        primary: typeof rawPrimary === 'object' && rawPrimary !== null ? rawPrimary : {
+          name: 'KORA Showroom Jakarta',
+          phone: '081234567890',
+          street_address: typeof rawPrimary === 'string' ? rawPrimary : 'Jl. Gunawarman No. 30, Kebayoran Baru',
+          city: 'Jakarta Selatan',
+          postal_code: '12180',
+          latitude: -6.23827,
+          longitude: 106.81056,
+        },
+        secondary: typeof rawSecondary === 'object' && rawSecondary !== null ? rawSecondary : {
+          name: 'KORA Studio Semarang',
+          phone: '081234567891',
+          street_address: typeof rawSecondary === 'string' ? rawSecondary : 'Puri Anjasmoro L2 No. 9B',
+          city: 'Semarang',
+          postal_code: '50144',
+          latitude: -6.974,
+          longitude: 110.393,
+        },
+      },
+      return_address: raw.return_address || {
+        drop_off_point: 'St. Moritz Ambassador Suites Tower, Unit 3808, Jl. Kembangan Kerep No. 1',
+      },
+      delivery_lead_times: raw.delivery_lead_times || [],
+      courier_policy: raw.courier_policy || {
+        provider: 'Biteship - multi-courier (Paxel, Gosend, JNE, Tiki...)',
+        dispatch_mode: 'Manual - admin books after address confirmation',
+        return_couriers_offered: 'Paxel - Regular, Gosend - Instant, JNE - REG, Tiki - ONS',
+      },
+      refund_payout_methods: raw.refund_payout_methods || 'Bank transfer, Dana, OVO, GoPay, Cash',
+    };
+  });
 
   // 6. Website Content State
   const [websiteContent, setWebsiteContent] = useState(
@@ -146,7 +174,7 @@ export default function SettingsClient({
     }
   );
 
-  // --- SAVE HANDLERS ---
+  // Handlers
   const handleSave = async (key: string, payload: any) => {
     setLoading(true);
     setFeedback(null);
@@ -210,25 +238,19 @@ export default function SettingsClient({
     <div>
       {/* Tab Navigation */}
       <div className="flex gap-4 border-b border-line mb-6 overflow-x-auto">
-        {TABS.map((t) => {
-          const isActive = activeTab === t.key;
-          return (
-            <Link
-              key={t.key}
-              href={`?tab=${t.key}`}
-              className={`pb-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                isActive
-                  ? 'text-wine-ink border-b-2 border-wine'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              {t.label}
-            </Link>
-          );
-        })}
+        {TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={`?tab=${t.key}`}
+            className={`pb-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === t.key ? 'text-wine-ink border-b-2 border-wine' : 'text-muted hover:text-ink'
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
       </div>
 
-      {/* Feedback Toast */}
       {feedback && (
         <div
           className={`mb-4 p-3 rounded-lg text-xs font-medium border ${
@@ -241,24 +263,16 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 1. TAB: AUTOMATION */}
-      {/* ========================================================================= */}
+      {/* 1. AUTOMATION */}
       {activeTab === 'automation' && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-            {/* Left: Dress Turnaround Buffer */}
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-1">Dress turnaround buffer</h3>
               <p className="text-muted text-[12.5px] mb-4">
-                Days blocked on the rent calendar between the current renter’s return deadline and the next renter’s start date.
+                Days blocked on the rent calendar between the return deadline and next start date.
               </p>
-
               <div className="space-y-3">
-                <div className="flex justify-between text-[10.5px] uppercase tracking-wider text-muted border-b border-line pb-1.5 font-medium">
-                  <span>Dress Type</span>
-                  <span>Days Before Next Renter</span>
-                </div>
                 {automation.dress_buffers.map((item: any, idx: number) => (
                   <div key={item.type} className="flex items-center justify-between py-1">
                     <span className="text-[13px] text-ink font-medium">{item.type}</span>
@@ -271,26 +285,18 @@ export default function SettingsClient({
                         next[idx].days = parseInt(e.target.value) || 0;
                         setAutomation({ ...automation, dress_buffers: next });
                       }}
-                      className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none"
+                      className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA]"
                     />
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Right: Accessory Turnaround Buffer */}
             <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
               <div>
                 <h3 className="font-serif text-[18px] font-normal mb-1">Accessory turnaround buffer</h3>
-                <p className="text-muted text-[12.5px] mb-4">
-                  Accessories usually turn around faster — set them independently of dresses.
-                </p>
-
+                <p className="text-muted text-[12.5px] mb-4">Set accessory turnaround buffers independently of dresses.</p>
                 <div className="space-y-3">
-                  <div className="flex justify-between text-[10.5px] uppercase tracking-wider text-muted border-b border-line pb-1.5 font-medium">
-                    <span>Accessory Type</span>
-                    <span>Days Before Next Renter</span>
-                  </div>
                   {automation.accessory_buffers.map((item: any, idx: number) => (
                     <div key={item.type} className="flex items-center justify-between py-1">
                       <span className="text-[13px] text-ink font-medium">{item.type}</span>
@@ -303,16 +309,14 @@ export default function SettingsClient({
                           next[idx].days = parseInt(e.target.value) || 0;
                           setAutomation({ ...automation, accessory_buffers: next });
                         }}
-                        className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none"
+                        className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA]"
                       />
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Callout */}
-              <div className="mt-6 p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] text-[11.5px] leading-relaxed text-ink">
-                <strong>Override anywhere, anytime.</strong> Type defaults apply automatically to every item’s availability calendar. A per-item override (set on the item in Inventory) always wins — change it mid-season and future bookings adapt instantly.
+              <div className="mt-6 p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] text-[11.5px] text-ink">
+                <strong>Override anywhere, anytime.</strong> Type defaults apply automatically to item calendars. A per-item override set in Inventory always wins.
               </div>
             </div>
           </div>
@@ -328,13 +332,10 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 2. TAB: RENTAL RULES */}
-      {/* ========================================================================= */}
+      {/* 2. RENTAL RULES */}
       {activeTab === 'rental-rules' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Rental Period */}
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-4">Rental period</h3>
               <div className="grid grid-cols-2 gap-3.5 mb-3">
@@ -349,7 +350,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, rental_days: parseInt(e.target.value) || 1 },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
                 <div>
@@ -362,7 +363,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, return_deadline: e.target.value },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
               </div>
@@ -379,7 +380,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, late_fee_day_1: parseInt(e.target.value) || 0 },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
                 <div>
@@ -392,7 +393,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, escalation: e.target.value },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
               </div>
@@ -408,7 +409,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, qc_refund_window: e.target.value },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
                 <div>
@@ -422,13 +423,12 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, max_return_reminders: parseInt(e.target.value) || 1 },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Deposit Tiers */}
             <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
               <div>
                 <h3 className="font-serif text-[18px] font-normal mb-3">Deposit tiers</h3>
@@ -447,7 +447,7 @@ export default function SettingsClient({
                             ? `Up to ${formatRupiah(tier.price_up_to)}`
                             : i === depositTiers.length - 1
                             ? `Above ${formatRupiah(depositTiers[i - 1]?.price_up_to)}`
-                            : `${formatRupiah(depositTiers[i - 1]?.price_up_to + 1)} – ${formatRupiah(tier.price_up_to)}`}
+                            : `${formatRupiah(depositTiers[i - 1]?.price_up_to + 1)} - ${formatRupiah(tier.price_up_to)}`}
                         </td>
                         <td className="py-2.5 text-right font-medium text-ink">
                           <input
@@ -472,10 +472,9 @@ export default function SettingsClient({
             </div>
           </div>
 
-          {/* Late Fee Schedule */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">
-              Late fee schedule <span className="text-[12px] text-muted font-sans">— per day late, deducted from deposit</span>
+              Late fee schedule <span className="text-[12px] text-muted font-sans">- per day late, deducted from deposit</span>
             </h3>
             <div className="divide-y divide-line mt-3 max-w-xl">
               {rentalRules.late_fee_schedule.map((row: any, idx: number) => (
@@ -494,9 +493,6 @@ export default function SettingsClient({
                 </div>
               ))}
             </div>
-            <p className="text-[11.5px] text-muted mt-3">
-              This penalty applies for items returned past the deadline with no prior arrangement.
-            </p>
           </div>
 
           <button
@@ -510,20 +506,16 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 3. TAB: FITTINGS */}
-      {/* ========================================================================= */}
+      {/* 3. FITTINGS */}
       {activeTab === 'fittings' && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-            {/* Operating Hours */}
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-1">Operating hours</h3>
               <p className="text-muted text-[12.5px] mb-4">Drives the day-aware slot picker on the fittings schedule.</p>
-
               <div className="space-y-4">
                 <div>
-                  <div className="text-[10.5px] tracking-wider uppercase text-muted font-medium mb-1.5">Monday – Friday</div>
+                  <div className="text-[10.5px] tracking-wider uppercase text-muted font-medium mb-1.5">Monday - Friday</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] text-muted mb-1">REGULAR HOURS</label>
@@ -604,11 +596,9 @@ export default function SettingsClient({
               </div>
             </div>
 
-            {/* Session Rules */}
             <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
               <div>
                 <h3 className="font-serif text-[18px] font-normal mb-4">Session rules</h3>
-
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
@@ -653,7 +643,7 @@ export default function SettingsClient({
               </div>
 
               <div className="text-[11.5px] text-muted mt-6">
-                Slot length is fixed at 1 hour — no buffer is added between back-to-back sessions (staff manages the changeover).
+                Slot length is fixed at 1 hour - staff manages the changeover.
               </div>
             </div>
           </div>
@@ -669,15 +659,13 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 4. TAB: NOTIFICATIONS */}
-      {/* ========================================================================= */}
+      {/* 4. NOTIFICATIONS */}
       {activeTab === 'notifications' && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">WhatsApp automation</h3>
             <p className="text-muted text-[12.5px] mb-5">
-              Placeholders in [BRACKETS] are auto-filled from the actual order, customer, or return record at send time. Click Preview on any row to see it rendered against a sample.
+              Placeholders in [BRACKETS] are auto-filled from the record at send time.
             </p>
 
             <div className="space-y-4">
@@ -723,7 +711,6 @@ export default function SettingsClient({
             {loading ? 'Saving...' : 'Save changes'}
           </button>
 
-          {/* Sample Preview Modal */}
           {previewTemplateKey && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
               <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-lg border border-line">
@@ -755,69 +742,186 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 5. TAB: SHIPPING */}
-      {/* ========================================================================= */}
+      {/* 5. SHIPPING (WITH COORDINATES FOR BITESHIP) */}
       {activeTab === 'shipping' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Dispatch Hubs */}
+            {/* Primary Origin (Showroom) */}
             <div className="bg-card border border-line rounded-[10px] p-5">
-              <h3 className="font-serif text-[18px] font-normal mb-1">Dispatch addresses</h3>
-              <p className="text-muted text-[12.5px] mb-3">Outbound origins to customer.</p>
-              <div className="space-y-3">
+              <div className="flex justify-between items-start mb-1">
+                <h3 className="font-serif text-[18px] font-normal">Primary Origin (Showroom)</h3>
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-ok-bg text-ok px-2 py-0.5 rounded">
+                  Biteship Origin
+                </span>
+              </div>
+              <p className="text-muted text-[12px] mb-3">
+                Courier pickup location. Accurate latitude, longitude, and phone are strictly required by Biteship.
+              </p>
+
+              <div className="space-y-2.5 text-[13px]">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Contact Name</label>
+                    <input
+                      value={shipping.dispatch_addresses?.primary?.name || ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: { ...shipping.dispatch_addresses?.primary, name: e.target.value },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Phone Number</label>
+                    <input
+                      value={shipping.dispatch_addresses?.primary?.phone || ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: { ...shipping.dispatch_addresses?.primary, phone: e.target.value },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                    Primary — Showroom
-                  </label>
+                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Street Address</label>
                   <input
-                    value={shipping.dispatch_addresses?.primary || ''}
+                    value={shipping.dispatch_addresses?.primary?.street_address || ''}
                     onChange={(e) =>
                       setShipping({
                         ...shipping,
-                        dispatch_addresses: { ...shipping.dispatch_addresses, primary: e.target.value },
+                        dispatch_addresses: {
+                          ...shipping.dispatch_addresses,
+                          primary: { ...shipping.dispatch_addresses?.primary, street_address: e.target.value },
+                        },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                    className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">City</label>
+                    <input
+                      value={shipping.dispatch_addresses?.primary?.city || ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: { ...shipping.dispatch_addresses?.primary, city: e.target.value },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Postal Code</label>
+                    <input
+                      value={shipping.dispatch_addresses?.primary?.postal_code || ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: { ...shipping.dispatch_addresses?.primary, postal_code: e.target.value },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 p-2.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-ink font-semibold mb-0.5">
+                      Origin Latitude
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={shipping.dispatch_addresses?.primary?.latitude ?? ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: {
+                              ...shipping.dispatch_addresses?.primary,
+                              latitude: e.target.value ? parseFloat(e.target.value) : null,
+                            },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded px-2 py-1 bg-white text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-ink font-semibold mb-0.5">
+                      Origin Longitude
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={shipping.dispatch_addresses?.primary?.longitude ?? ''}
+                      onChange={(e) =>
+                        setShipping({
+                          ...shipping,
+                          dispatch_addresses: {
+                            ...shipping.dispatch_addresses,
+                            primary: {
+                              ...shipping.dispatch_addresses?.primary,
+                              longitude: e.target.value ? parseFloat(e.target.value) : null,
+                            },
+                          },
+                        })
+                      }
+                      className="w-full border border-line rounded px-2 py-1 bg-white text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Inbound Return Destination */}
+            <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
+              <div>
+                <h3 className="font-serif text-[18px] font-normal mb-1">Return Destination</h3>
+                <p className="text-muted text-[12px] mb-3">Address printed on return booking slips.</p>
                 <div>
-                  <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                    Secondary — Studio
+                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-1">
+                    Drop-Off Point
                   </label>
-                  <input
-                    value={shipping.dispatch_addresses?.secondary || ''}
+                  <textarea
+                    rows={4}
+                    value={shipping.return_address?.drop_off_point || ''}
                     onChange={(e) =>
                       setShipping({
                         ...shipping,
-                        dispatch_addresses: { ...shipping.dispatch_addresses, secondary: e.target.value },
+                        return_address: { ...shipping.return_address, drop_off_point: e.target.value },
                       })
                     }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Return Address */}
-            <div className="bg-card border border-line rounded-[10px] p-5">
-              <h3 className="font-serif text-[18px] font-normal mb-1">Return address</h3>
-              <p className="text-muted text-[12.5px] mb-3">Inbound destination for courier slips.</p>
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Drop-Off Point
-                </label>
-                <textarea
-                  rows={3}
-                  value={shipping.return_address?.drop_off_point || ''}
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      return_address: { ...shipping.return_address, drop_off_point: e.target.value },
-                    })
-                  }
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                />
+              <div className="mt-4 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] text-xs text-muted">
+                <strong>Biteship Note:</strong> On-demand couriers (GoSend, Grab, Paxel) will fail if origin or destination coordinates are missing.
               </div>
             </div>
           </div>
@@ -861,7 +965,7 @@ export default function SettingsClient({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-3 border-t border-line">
               <div>
                 <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Courier Policy — Return Couriers Offered
+                  Return Couriers Offered
                 </label>
                 <input
                   value={shipping.courier_policy?.return_couriers_offered || ''}
@@ -898,15 +1002,12 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 6. TAB: WEBSITE CONTENT */}
-      {/* ========================================================================= */}
+      {/* 6. WEBSITE CONTENT */}
       {activeTab === 'website-content' && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-4 max-w-2xl">
             <h3 className="font-serif text-[18px] font-normal mb-1">Shipping & return policy</h3>
-            <p className="text-muted text-[12.5px] mb-3">One shared block shown across every product detail page on the public storefront.</p>
-
+            <p className="text-muted text-[12.5px] mb-3">One shared block shown across every product detail page.</p>
             <textarea
               rows={5}
               value={websiteContent.shipping_return_policy}
@@ -928,12 +1029,9 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 7. TAB: USERS & ROLES */}
-      {/* ========================================================================= */}
+      {/* 7. USERS & ROLES */}
       {activeTab === 'users-roles' && (
         <div className="space-y-5">
-          {/* Users List */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-serif text-[18px] font-normal">Users</h3>
@@ -976,7 +1074,7 @@ export default function SettingsClient({
                       <td className="py-3 text-muted text-xs">
                         {u.role === 'superadmin'
                           ? 'Everything incl. settings & payouts'
-                          : 'Orders, fittings, inventory status — no settings, no reports'}
+                          : 'Orders, fittings, inventory status - no settings, no reports'}
                       </td>
                       <td className="py-3 text-right">
                         {isSuperAdmin && u.id !== currentAdmin?.id && (
@@ -1005,7 +1103,6 @@ export default function SettingsClient({
             </div>
           </div>
 
-          {/* Permissions Matrix */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">Permissions</h3>
             <p className="text-muted text-[12.5px] mb-4">Guardrails for sensitive system actions.</p>
@@ -1081,10 +1178,6 @@ export default function SettingsClient({
                 </select>
               </div>
             </div>
-
-            <p className="text-[11.5px] text-muted">
-              Website orders can never be reset to draft. Deletion is blocked on any item with existing order history.
-            </p>
           </div>
 
           <button
@@ -1096,7 +1189,6 @@ export default function SettingsClient({
             {loading ? 'Saving...' : 'Save changes'}
           </button>
 
-          {/* Add User Modal */}
           {isAddUserOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
               <form onSubmit={handleCreateUser} className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg border border-line">
@@ -1166,9 +1258,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 8. TAB: BUSINESS INFO */}
-      {/* ========================================================================= */}
+      {/* 8. BUSINESS INFO */}
       {activeTab === 'business-info' && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-xl space-y-3.5">

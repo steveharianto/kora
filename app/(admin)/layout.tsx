@@ -2,13 +2,29 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTransition } from 'react';
+import { useTransition, useEffect, useState } from 'react';
 import { logoutAdmin } from '@/app/actions/auth';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/admin';
   const [isPending, startTransition] = useTransition();
+  const [adminRole, setAdminRole] = useState<string>('Staff');
+
+  useEffect(() => {
+    // Read session display without exposing sensitive secrets
+    const match = document.cookie.match(/kora_admin_session=([^;]+)/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(match[1]));
+        if (parsed?.role?.toLowerCase().includes('super')) {
+          setAdminRole('Super Admin');
+        } else {
+          setAdminRole('Staff');
+        }
+      } catch {}
+    }
+  }, [pathname]);
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -16,14 +32,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     });
   };
 
-  // Render raw children on the login page without the admin sidebar shell
   if (isLoginPage) {
     return <>{children}</>;
   }
 
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 w-60 bg-[#2C3527] text-white flex flex-col p-6 z-20">
         <div className="text-2xl font-serif tracking-[0.3em] text-[#F3EFE8] mb-8">
           KORA
@@ -66,7 +80,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="pt-4 border-t border-[#141811] text-xs text-[#9CA893] flex items-end justify-between">
           <div>
             <span className="block font-semibold text-white">Admin Session</span>
-            Super Admin
+            {adminRole}
           </div>
           <button
             onClick={handleLogout}
@@ -78,7 +92,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* Main Content Pane */}
       <main className="ml-60 flex-1 p-10 min-w-0">
         {children}
       </main>

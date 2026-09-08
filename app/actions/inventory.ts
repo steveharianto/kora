@@ -32,6 +32,23 @@ export async function saveItem(itemData: any, isNew: boolean) {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
+  // Guard: Prevent setting status to "Available" if currently out on an active rental
+  if (!isNew && itemData.status === 'Available') {
+    const { data: activeRentals } = await supabase
+      .from('order_products')
+      .select('orders!inner(id, status)')
+      .eq('item_sku', itemData.sku)
+      .in('orders.status', ['In Shipping', 'Active'])
+      .limit(1);
+
+    if (activeRentals && activeRentals.length > 0) {
+      const activeId = (activeRentals[0] as any).orders?.id;
+      return {
+        error: `Cannot set status to "Available". This garment is currently out on loan with order ${activeId}.`,
+      };
+    }
+  }
+
   const isSuperAdmin = checkSuperAdmin(admin.role);
   const permissions = await getSystemPermissions(supabase);
 
@@ -132,6 +149,23 @@ export async function approvePendingChanges(sku: string) {
 
   if (fetchError || !item) return { error: fetchError?.message || `Item ${sku} not found.` };
   if (!item.pending_action) return { error: 'No pending changes to approve.' };
+
+  // Guard: If approving changes that reset status to Available, verify item is not currently on loan
+  if (item.pending_action === 'EDIT' && item.pending_changes?.status === 'Available') {
+    const { data: activeRentals } = await supabase
+      .from('order_products')
+      .select('orders!inner(id, status)')
+      .eq('item_sku', sku)
+      .in('orders.status', ['In Shipping', 'Active'])
+      .limit(1);
+
+    if (activeRentals && activeRentals.length > 0) {
+      const activeId = (activeRentals[0] as any).orders?.id;
+      return {
+        error: `Cannot approve change: This garment is currently out on loan with order ${activeId}.`,
+      };
+    }
+  }
 
   let dbError = null;
 
@@ -241,7 +275,6 @@ export async function toggleArchive(sku: string, currentStatus: boolean) {
   const permissions = await getSystemPermissions(supabase);
   const actionType = currentStatus ? 'UNARCHIVE' : 'ARCHIVE';
 
-  // Check if staff can archive directly based on settings
   const canDirectArchive = isSuperAdmin || permissions.archive_inventory_item === 'staff_and_superadmin';
 
   let dbError = null;
@@ -283,7 +316,6 @@ export async function deleteItem(sku: string) {
   const isSuperAdmin = checkSuperAdmin(admin.role);
   const permissions = await getSystemPermissions(supabase);
 
-  // Check if staff can delete directly based on settings
   const canDirectDelete = isSuperAdmin || permissions.delete_inventory_item === 'staff_and_superadmin';
 
   if (canDirectDelete) {
