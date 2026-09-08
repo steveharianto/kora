@@ -28,7 +28,7 @@ export default function ItemForm({
   // Normalize role check (handles 'superadmin', 'Super Admin', 'Superadmin')
   const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 
-  // FIX 1: Safely merge initialData with pending_changes so SKU & required fields aren't wiped out
+  // Safely merge initialData with pending_changes so SKU & required fields aren't wiped out
   const viewData = useMemo(() => {
     if (!initialData) return {};
     const pending = initialData.pending_changes || {};
@@ -115,6 +115,17 @@ export default function ItemForm({
   const [isColorOpen, setIsColorOpen] = useState(false);
   const [colorFocusedIndex, setColorFocusedIndex] = useState(-1);
 
+  // Dynamic Turnaround Buffer derived from Type settings
+  const defaultBufferDays = useMemo(() => {
+    const selectedType = types?.find((t: any) => String(t.id) === String(formData.type_id));
+    return selectedType?.default_buffer_days ?? 3;
+  }, [types, formData.type_id]);
+
+  const effectiveBuffer = useMemo(() => {
+    const parsed = parseInt(String(formData.buffer_override));
+    return !isNaN(parsed) && parsed >= 0 ? parsed : defaultBufferDays;
+  }, [formData.buffer_override, defaultBufferDays]);
+
   // --- 1. Validation & Header Badges ---
   const missingFields = useMemo(() => {
     const m = [];
@@ -129,17 +140,17 @@ export default function ItemForm({
 
   const isComplete = missingFields.length === 0;
 
-  // Calculate availability (FREE NOW vs BOOKED)
+  // Calculate availability (FREE NOW vs BOOKED) using dynamic buffer
   const isBooked = useMemo(() => {
     if (!orders) return false;
     const today = new Date();
     return orders.some((o: any) => {
       const returnDate = new Date(o.return_date);
       const freeDate = new Date(returnDate);
-      freeDate.setDate(freeDate.getDate() + (formData.buffer_override || 3));
+      freeDate.setDate(freeDate.getDate() + effectiveBuffer);
       return today >= new Date(o.event_start_date) && today <= freeDate;
     });
-  }, [orders, formData.buffer_override]);
+  }, [orders, effectiveBuffer]);
 
   // --- 3. Auto Deposit Calculation ---
   const calculatedDeposit = useMemo(() => {
@@ -311,10 +322,10 @@ export default function ItemForm({
       for (const img of images) {
         await addImageRecord(targetSku, img.image_url, img.display_order);
       }
-      if (!isSuperAdmin) alert('Creation request submitted for approval.');
+      if (!isSuperAdmin) alert('Item saved.');
       router.push(`/admin/inventory/${targetSku}`);
     } else {
-      if (!isSuperAdmin) alert('Edit request submitted for approval.');
+      if (!isSuperAdmin) alert('Changes saved!');
       else alert('Changes saved!');
       router.refresh();
     }
@@ -329,7 +340,6 @@ export default function ItemForm({
     if (res?.error) {
       setErrorMsg(res.error);
     } else {
-      if (!isSuperAdmin) alert(`${initialData.is_archived ? 'Unarchive' : 'Archive'} request submitted for approval.`);
       router.refresh();
     }
     setLoading(false);
@@ -347,14 +357,10 @@ export default function ItemForm({
       return;
     }
 
-    if (!isSuperAdmin) {
-      alert('Delete request submitted for approval.');
-    }
     router.push('/admin/inventory');
     router.refresh();
   };
 
-  // FIX 2: Check server action results and report errors if present
   const handleApprove = async () => {
     const targetSku = initialData?.sku || formData.sku;
     setLoading(true);
@@ -678,6 +684,7 @@ export default function ItemForm({
               />
             </div>
 
+            {/* Pricing & Dynamic Deposit/Buffer Calc */}
             <div className="grid grid-cols-2 gap-3.5 mb-3.5 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Deposit (From Tier)</label>
@@ -690,7 +697,7 @@ export default function ItemForm({
                   name="buffer_override"
                   value={formData.buffer_override}
                   onChange={handleChange}
-                  placeholder="Default (3)"
+                  placeholder={`Default (${defaultBufferDays})`}
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                 />
               </div>
@@ -860,7 +867,7 @@ export default function ItemForm({
                 orders.map((o: any) => {
                   const retDate = new Date(o.return_date);
                   const freeDate = new Date(retDate);
-                  freeDate.setDate(freeDate.getDate() + (formData.buffer_override || 3));
+                  freeDate.setDate(freeDate.getDate() + effectiveBuffer);
                   return (
                     <tr key={o.order_id} className="border-b border-line border-dashed last:border-none">
                       <td className="py-2.5 font-bold">{o.order_id}</td>

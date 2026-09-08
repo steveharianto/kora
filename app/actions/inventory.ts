@@ -8,6 +8,23 @@ function checkSuperAdmin(role?: string): boolean {
   return role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 }
 
+// Retrieves configured permissions from app_settings with clean fallbacks
+async function getSystemPermissions(supabase: any) {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'permissions')
+    .single();
+
+  return data?.value || {
+    reset_order_draft: 'superadmin_only',
+    refund_store_credit: 'superadmin_only',
+    archive_inventory_item: 'staff_and_superadmin',
+    delete_inventory_item: 'superadmin_only',
+    staff_edits_product_info: 'require_approval',
+  };
+}
+
 export async function saveItem(itemData: any, isNew: boolean) {
   if (!itemData?.sku) return { error: 'SKU is required.' };
 
@@ -16,6 +33,10 @@ export async function saveItem(itemData: any, isNew: boolean) {
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
   const isSuperAdmin = checkSuperAdmin(admin.role);
+  const permissions = await getSystemPermissions(supabase);
+
+  // Direct save allowed for superadmins OR if staff direct save is enabled in settings
+  const canDirectSave = isSuperAdmin || permissions.staff_edits_product_info === 'direct_save';
 
   const coreData = {
     sku: itemData.sku,
@@ -27,7 +48,9 @@ export async function saveItem(itemData: any, isNew: boolean) {
     color: itemData.color,
     tags: itemData.tags || [],
     rental_price: itemData.rental_price ? parseFloat(itemData.rental_price) : null,
-    buffer_override: itemData.buffer_override ? parseInt(itemData.buffer_override) : null,
+    buffer_override: itemData.buffer_override !== '' && itemData.buffer_override !== null && itemData.buffer_override !== undefined
+      ? parseInt(itemData.buffer_override)
+      : null,
     status: itemData.status,
     website_status: itemData.website_status,
     description: itemData.description,
@@ -35,8 +58,8 @@ export async function saveItem(itemData: any, isNew: boolean) {
     measurements: itemData.measurements,
   };
 
-  if (isSuperAdmin) {
-    // SUPERADMIN: Direct Execution
+  if (canDirectSave) {
+    // DIRECT EXECUTION: Superadmin or staff with direct permission
     const dbPayload = {
       ...coreData,
       pending_changes: null,
@@ -52,7 +75,7 @@ export async function saveItem(itemData: any, isNew: boolean) {
       if (error) return { error: error.message };
     }
   } else {
-    // STAFF: Route to Pending
+    // STAGED APPROVAL: Required for staff when require_approval is set
     if (isNew) {
       const dbPayload = {
         sku: itemData.sku,
@@ -81,7 +104,9 @@ export async function saveItem(itemData: any, isNew: boolean) {
     admin_name: admin.name,
     entity_type: 'item',
     entity_id: itemData.sku,
-    action_type: isSuperAdmin ? (isNew ? 'CREATE' : 'DIRECT_EDIT') : (isNew ? 'REQUEST_CREATE' : 'REQUEST_EDIT'),
+    action_type: canDirectSave
+      ? (isNew ? 'CREATE' : 'DIRECT_EDIT')
+      : (isNew ? 'REQUEST_CREATE' : 'REQUEST_EDIT'),
     field_name: 'all',
   });
 
@@ -213,11 +238,15 @@ export async function toggleArchive(sku: string, currentStatus: boolean) {
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
   const isSuperAdmin = checkSuperAdmin(admin.role);
+  const permissions = await getSystemPermissions(supabase);
   const actionType = currentStatus ? 'UNARCHIVE' : 'ARCHIVE';
+
+  // Check if staff can archive directly based on settings
+  const canDirectArchive = isSuperAdmin || permissions.archive_inventory_item === 'staff_and_superadmin';
 
   let dbError = null;
 
-  if (isSuperAdmin) {
+  if (canDirectArchive) {
     const { error } = await supabase.from('items').update({ is_archived: !currentStatus }).eq('sku', sku);
     dbError = error;
   } else {
@@ -235,7 +264,7 @@ export async function toggleArchive(sku: string, currentStatus: boolean) {
     admin_name: admin.name,
     entity_type: 'item',
     entity_id: sku,
-    action_type: isSuperAdmin ? actionType : `REQUEST_${actionType}`,
+    action_type: canDirectArchive ? actionType : `REQUEST_${actionType}`,
     field_name: 'is_archived',
   });
 
@@ -252,8 +281,12 @@ export async function deleteItem(sku: string) {
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
   const isSuperAdmin = checkSuperAdmin(admin.role);
+  const permissions = await getSystemPermissions(supabase);
 
-  if (isSuperAdmin) {
+  // Check if staff can delete directly based on settings
+  const canDirectDelete = isSuperAdmin || permissions.delete_inventory_item === 'staff_and_superadmin';
+
+  if (canDirectDelete) {
     const { error } = await supabase.from('items').delete().eq('sku', sku);
     if (error) return { error: 'Cannot delete item. It may have existing order history.' };
   } else {
@@ -269,7 +302,7 @@ export async function deleteItem(sku: string) {
     admin_name: admin.name,
     entity_type: 'item',
     entity_id: sku,
-    action_type: isSuperAdmin ? 'DELETE_ITEM' : 'REQUEST_DELETE',
+    action_type: canDirectDelete ? 'DELETE_ITEM' : 'REQUEST_DELETE',
     field_name: 'all',
   });
 
