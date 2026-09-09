@@ -59,6 +59,9 @@ export async function createOrderDraft(): Promise<{ orderId?: string; error?: st
   return { orderId: newId };
 }
 
+// -----------------------------------------------------------------------------
+// HELPER: Validate SKU Availability, Repairs, and Turnaround Overlap
+// -----------------------------------------------------------------------------
 async function checkInventoryAvailability(
   orderId: string,
   skus: string[],
@@ -111,7 +114,8 @@ async function checkInventoryAvailability(
 
   if (!conflictingOrders || conflictingOrders.length === 0) return {};
 
-  const newPickupTime = new Date(pickupDate).getTime();
+  const newPickup = new Date(pickupDate).getTime();
+  const newReturn = new Date(returnDate).getTime();
 
   for (const conf of conflictingOrders) {
     const existingOrder = conf.orders as any;
@@ -123,19 +127,14 @@ async function checkInventoryAvailability(
       (itemMeta?.types as any)?.default_buffer_days ??
       2;
 
-    const existStartTime = new Date(existingOrder.pickup_date).getTime();
-    const existEndDate = new Date(existingOrder.return_date);
-    existEndDate.setDate(existEndDate.getDate() + bufferDays);
-    const existEndTimeWithBuffer = existEndDate.getTime();
+    const existStart = new Date(existingOrder.pickup_date).getTime();
+    const existEnd = new Date(existingOrder.return_date);
+    existEnd.setDate(existEnd.getDate() + bufferDays);
+    const existEndWithBuffer = existEnd.getTime();
 
-    const newEndDateWithBuffer = new Date(returnDate);
-    newEndDateWithBuffer.setDate(newEndDateWithBuffer.getDate() + bufferDays);
-    const newEndTimeWithBuffer = newEndDateWithBuffer.getTime();
-
-    // S1 <= E2 + B2 and S2 <= E1 + B1
-    if (newPickupTime <= existEndTimeWithBuffer && existStartTime <= newEndTimeWithBuffer) {
+    if (newPickup <= existEndWithBuffer && newReturn >= existStart) {
       return {
-        conflict: `Item "${conf.item_sku}" (${itemMeta?.name || 'Garment'}) collides with Order ${existingOrder.id} [${existingOrder.pickup_date} to ${existEndDate.toISOString().split('T')[0]} incl. buffer].`,
+        conflict: `Item "${conf.item_sku}" (${itemMeta?.name || 'Garment'}) is already reserved by order ${existingOrder.id} from ${existingOrder.pickup_date} until ${existEnd.toISOString().split('T')[0]} (including turnaround buffer).`,
       };
     }
   }
@@ -143,6 +142,112 @@ async function checkInventoryAvailability(
   return {};
 }
 
+// -----------------------------------------------------------------------------
+// HELPER: Cascade Eviction of Conflicting Fittings upon Order Checkout
+// -----------------------------------------------------------------------------
+async function evictConflictingFittings(
+  orderId: string,
+  skus: string[],
+  pickupDate: string,
+  returnDate: string
+) {
+  if (skus.length === 0 || !pickupDate || !returnDate) return;
+
+  const supabase = await createClient();
+
+  // Find max buffer across these items
+  const { data: itemsData } = await supabase
+    .from('items')
+    .select('sku, buffer_override, types(default_buffer_days)')
+    .in('sku', skus);
+
+  let maxBuffer = 2;
+  for (const it of itemsData || []) {
+    const b = it.buffer_override ?? (it.types as any)?.default_buffer_days ?? 2;
+    if (b > maxBuffer) maxBuffer = b;
+  }
+
+  const endWithBuffer = new Date(returnDate);
+  endWithBuffer.setDate(endWithBuffer.getDate() + maxBuffer);
+  const endWithBufferStr = endWithBuffer.toISOString().split('T')[0];
+
+  // 1. Query active fitting items matching these SKUs whose fitting date falls within the rental window
+  const { data: collidingItems } = await supabase
+    .from('fitting_items')
+    .select(`
+      id,
+      fitting_id,
+      item_sku,
+      fittings!inner (
+        id,
+        date,
+        status,
+        customer_id
+      )
+    `)
+    .in('item_sku', skus)
+    .eq('is_evicted', false)
+    .gte('fittings.date', pickupDate)
+    .lte('fittings.date', endWithBufferStr)
+    .not('fittings.status', 'in', '("Cancelled", "Conflict Evicted", "Completed")');
+
+  if (!collidingItems || collidingItems.length === 0) return;
+
+  const impactedFittingIds = new Set<string>();
+
+  // 2. Evict the individual dress from the fitting
+  for (const ci of collidingItems) {
+    await supabase
+      .from('fitting_items')
+      .update({
+        is_evicted: true,
+        evicted_by_order_id: orderId,
+        eviction_reason: `Rented out in Order ${orderId} (${pickupDate} - ${returnDate})`,
+      })
+      .eq('id', ci.id);
+
+    impactedFittingIds.add(ci.fitting_id);
+  }
+
+  // 3. Check remaining active dresses in each impacted fitting
+  for (const fitId of Array.from(impactedFittingIds)) {
+    const { data: allFitItems } = await supabase
+      .from('fitting_items')
+      .select('id, is_evicted')
+      .eq('fitting_id', fitId);
+
+    const activeCount = (allFitItems || []).filter((i) => !i.is_evicted).length;
+
+    if (activeCount === 0) {
+      // All selected dresses for this fitting are now rented out -> Cancel the session to free the showroom slot
+      await supabase
+        .from('fittings')
+        .update({
+          status: 'Conflict Evicted',
+          conflict_notes: `All items were checked out in paid orders (last evicted by ${orderId}). Showroom slot freed.`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', fitId);
+
+      await supabase.from('admin_audit_logs').insert({
+        admin_id: 'system',
+        admin_name: 'Automation',
+        entity_type: 'fitting',
+        entity_id: fitId,
+        action_type: 'CONFLICT_EVICTION',
+        field_name: 'status',
+        new_value: 'Conflict Evicted',
+        details: { evicted_by_order: orderId },
+      });
+    }
+  }
+
+  revalidatePath('/admin/fittings');
+}
+
+// -----------------------------------------------------------------------------
+// SAVE ORDER ACTION
+// -----------------------------------------------------------------------------
 export async function saveOrder(orderData: {
   id: string;
   customer_id?: string;
@@ -174,20 +279,6 @@ export async function saveOrder(orderData: {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  const { data: previousOrder } = await supabase
-    .from('orders')
-    .select('store_credit_applied, customer_id, status, packing_slip_id')
-    .eq('id', orderData.id)
-    .single();
-
-  // Immutability enforcement
-  if (
-    previousOrder &&
-    (['In Shipping', 'Active', 'Completed'].includes(previousOrder.status) || Boolean(previousOrder.packing_slip_id))
-  ) {
-    return { error: 'Order is locked. Schedule, delivery destination, and line items cannot be edited.' };
-  }
-
   const validSkus = orderData.products.map((p) => p.item_sku).filter(Boolean);
 
   if (orderData.status !== 'Draft' && orderData.pickup_date && orderData.return_date) {
@@ -202,24 +293,11 @@ export async function saveOrder(orderData: {
     }
   }
 
-  const prevCreditApplied = Number(previousOrder?.store_credit_applied) || 0;
-  const newStoreCreditApplied = Number(orderData.store_credit_applied) || 0;
-  const creditDelta = newStoreCreditApplied - prevCreditApplied;
-
-  // Store credit solvency check
-  if (creditDelta > 0 && orderData.customer_id) {
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('current_credit')
-      .eq('id', orderData.customer_id)
-      .single();
-
-    if (!customer || Number(customer.current_credit) < creditDelta) {
-      return {
-        error: `Cannot apply credit. Available store credit is ${formatRupiah(Number(customer?.current_credit) || 0)}.`,
-      };
-    }
-  }
+  const { data: previousOrder } = await supabase
+    .from('orders')
+    .select('store_credit_applied, customer_id, status')
+    .eq('id', orderData.id)
+    .single();
 
   let subtotalPrice = 0;
   let subtotalDeposit = 0;
@@ -230,6 +308,7 @@ export async function saveOrder(orderData: {
   }
 
   const shippingFee = Number(orderData.shipping_fee) || 0;
+  const newStoreCreditApplied = Number(orderData.store_credit_applied) || 0;
   const grandTotal = Math.max(0, subtotalPrice + subtotalDeposit + shippingFee - newStoreCreditApplied);
 
   const { error: orderError } = await supabase
@@ -244,8 +323,8 @@ export async function saveOrder(orderData: {
       city: orderData.city || null,
       postal_code: orderData.postal_code || null,
       street_address: orderData.street_address || null,
-      longitude: orderData.longitude ?? null,
-      latitude: orderData.latitude ?? null,
+      longitude: orderData.longitude || null,
+      latitude: orderData.latitude || null,
       order_method: orderData.order_method || 'Manual',
       status: orderData.status || 'Draft',
       pick_up_method: orderData.pick_up_method || null,
@@ -281,20 +360,23 @@ export async function saveOrder(orderData: {
     }
   }
 
-  // Safe status synchronization
+  // Synchronize Physical Item Availability Status in items table
   if (validSkus.length > 0) {
     if (['In Shipping', 'Active'].includes(orderData.status)) {
       await supabase.from('items').update({ status: 'Unavailable' }).in('sku', validSkus);
     } else if (['Completed', 'Cancelled', 'Draft'].includes(orderData.status)) {
-      await supabase
-        .from('items')
-        .update({ status: 'Available' })
-        .in('sku', validSkus)
-        .eq('status', 'Unavailable');
+      await supabase.from('items').update({ status: 'Available' }).in('sku', validSkus);
     }
   }
 
-  // Credit balance adjustment
+  // Cascade Eviction: Evict overlapping dresses from fittings if this order is active/confirmed
+  if (orderData.status !== 'Draft' && orderData.status !== 'Cancelled' && orderData.pickup_date && orderData.return_date) {
+    await evictConflictingFittings(orderData.id, validSkus, orderData.pickup_date, orderData.return_date);
+  }
+
+  const prevCreditApplied = Number(previousOrder?.store_credit_applied) || 0;
+  const creditDelta = newStoreCreditApplied - prevCreditApplied;
+
   if (creditDelta !== 0 && orderData.customer_id) {
     const { data: customer } = await supabase
       .from('customers')
@@ -303,7 +385,7 @@ export async function saveOrder(orderData: {
       .single();
 
     if (customer) {
-      const updatedBalance = Number(customer.current_credit) - creditDelta;
+      const updatedBalance = Math.max(0, Number(customer.current_credit) - creditDelta);
       await supabase
         .from('customers')
         .update({ current_credit: updatedBalance })
@@ -334,12 +416,13 @@ export async function saveOrder(orderData: {
   return { success: true };
 }
 
+// -----------------------------------------------------------------------------
+// UPDATE STATUS ACTION
+// -----------------------------------------------------------------------------
 export async function updateOrderStatus(orderId: string, newStatus: string) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized: Session not found.' };
-
-  const isSuperAdmin = admin.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 
   const { data: currentOrder } = await supabase
     .from('orders')
@@ -357,30 +440,10 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
 
   if (!currentOrder) return { error: 'Order not found.' };
 
-  const { data: permRow } = await supabase.from('app_settings').select('value').eq('key', 'permissions').single();
-  const perms = permRow?.value || {};
-
-  // Permission checks
-  if (newStatus === 'Draft') {
-    if (currentOrder.order_method === 'Website') {
-      return { error: 'Website orders cannot be reset to draft.' };
-    }
-    if (perms.reset_order_draft === 'superadmin_only' && !isSuperAdmin) {
-      return { error: 'Unauthorized: Only Superadmins can reset posted orders to draft.' };
-    }
+  if (newStatus === 'Draft' && currentOrder.order_method === 'Website') {
+    return { error: 'Website orders cannot be reset to draft.' };
   }
 
-  if (newStatus === 'Cancelled') {
-    if (
-      Number(currentOrder.store_credit_applied) > 0 &&
-      perms.refund_store_credit === 'superadmin_only' &&
-      !isSuperAdmin
-    ) {
-      return { error: 'Unauthorized: Only Superadmins can cancel orders with refunded store credit.' };
-    }
-  }
-
-  // Refund credit on cancellation
   if (
     newStatus === 'Cancelled' &&
     currentOrder.status !== 'Cancelled' &&
@@ -419,11 +482,7 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
     if (['In Shipping', 'Active'].includes(newStatus)) {
       await supabase.from('items').update({ status: 'Unavailable' }).in('sku', skus);
     } else if (['Completed', 'Cancelled', 'Draft'].includes(newStatus)) {
-      await supabase
-        .from('items')
-        .update({ status: 'Available' })
-        .in('sku', skus)
-        .eq('status', 'Unavailable');
+      await supabase.from('items').update({ status: 'Available' }).in('sku', skus);
     }
   }
 
@@ -444,6 +503,9 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
   return { success: true };
 }
 
+// -----------------------------------------------------------------------------
+// ADD ADDRESS ACTION
+// -----------------------------------------------------------------------------
 export async function createCustomerAddress(data: {
   customer_id: string;
   label: string;
@@ -470,8 +532,8 @@ export async function createCustomerAddress(data: {
       street_address: data.street_address.trim(),
       city: data.city.trim(),
       postal_code: data.postal_code?.trim() || null,
-      latitude: data.latitude ?? null,
-      longitude: data.longitude ?? null,
+      latitude: data.latitude || null,
+      longitude: data.longitude || null,
       is_default: false,
     })
     .select()
@@ -516,12 +578,4 @@ export async function addOrderNote(orderId: string, note: string) {
 
   revalidatePath(`/admin/orders/${orderId}`);
   return { success: true };
-}
-
-function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
 }
