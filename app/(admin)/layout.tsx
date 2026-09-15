@@ -12,17 +12,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [adminRole, setAdminRole] = useState<string>('Staff');
 
   useEffect(() => {
-    // Read session display without exposing sensitive secrets
-    const match = document.cookie.match(/kora_admin_session=([^;]+)/);
+    // Read non-sensitive role cookie set by server action
+    const match = document.cookie.match(/kora_admin_role=([^;]+)/);
     if (match) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(match[1]));
-        if (parsed?.role?.toLowerCase().includes('super')) {
-          setAdminRole('Super Admin');
-        } else {
-          setAdminRole('Staff');
-        }
-      } catch {}
+      const role = decodeURIComponent(match[1]).toLowerCase();
+      if (role.includes('super')) {
+        setAdminRole('Super Admin');
+      } else {
+        setAdminRole('Staff');
+      }
     }
   }, [pathname]);
 
@@ -83,6 +81,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {adminRole}
           </div>
           <button
+            type="button"
             onClick={handleLogout}
             disabled={isPending}
             className="hover:text-[#D9A79C] transition-colors disabled:opacity-50 cursor-pointer"

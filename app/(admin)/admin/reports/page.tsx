@@ -24,11 +24,26 @@ export default async function AdminReportsPage() {
     getAuditReportData(),
   ]);
 
-  const rev = 'kpis' in revenueData ? revenueData : { kpis: {} as any, rows: [] };
-  const inv = 'kpis' in inventoryData ? inventoryData : { kpis: {} as any, rows: [] };
-  const ret = 'kpis' in returnsData ? returnsData : { kpis: {} as any, rows: [] };
-  const cus = 'kpis' in customersData ? customersData : { kpis: {} as any, rows: [] };
-  const aud = 'kpis' in auditData ? auditData : { kpis: {} as any, rows: [] };
+  const rev = {
+    kpis: 'kpis' in revenueData && revenueData.kpis ? revenueData.kpis : ({} as any),
+    rows: 'rows' in revenueData && Array.isArray(revenueData.rows) ? revenueData.rows : [],
+  };
+  const inv = {
+    kpis: 'kpis' in inventoryData && inventoryData.kpis ? inventoryData.kpis : ({} as any),
+    rows: 'rows' in inventoryData && Array.isArray(inventoryData.rows) ? inventoryData.rows : [],
+  };
+  const ret = {
+    kpis: 'kpis' in returnsData && returnsData.kpis ? returnsData.kpis : ({} as any),
+    rows: 'rows' in returnsData && Array.isArray(returnsData.rows) ? returnsData.rows : [],
+  };
+  const cus = {
+    kpis: 'kpis' in customersData && customersData.kpis ? customersData.kpis : ({} as any),
+    rows: 'rows' in customersData && Array.isArray(customersData.rows) ? customersData.rows : [],
+  };
+  const aud = {
+    kpis: 'kpis' in auditData && auditData.kpis ? auditData.kpis : ({} as any),
+    rows: 'rows' in auditData && Array.isArray(auditData.rows) ? auditData.rows : [],
+  };
 
   return (
     <div className="max-w-[1250px] pb-24 font-sans text-ink space-y-6">

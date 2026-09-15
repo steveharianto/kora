@@ -25,10 +25,8 @@ export default function ItemForm({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Normalize role check (handles 'superadmin', 'Super Admin', 'Superadmin')
   const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
 
-  // Safely merge initialData with pending_changes so SKU & required fields aren't wiped out
   const viewData = useMemo(() => {
     if (!initialData) return {};
     const pending = initialData.pending_changes || {};
@@ -44,7 +42,6 @@ export default function ItemForm({
     };
   }, [initialData]);
 
-  // Form State
   const [formData, setFormData] = useState({
     sku: viewData.sku || '',
     brand_id: viewData.brand_id || '',
@@ -54,12 +51,12 @@ export default function ItemForm({
     size: viewData.size || '',
     color: viewData.color || '',
     rental_price: viewData.rental_price || '',
-    buffer_override: viewData.buffer_override || '',
+    buffer_override: viewData.buffer_override ?? '',
     status: viewData.status || 'Available',
     website_status: viewData.website_status || 'Draft',
     description: viewData.description || '',
     tags: viewData.tags || [],
-    date_added: viewData.date_added || new Date().toISOString().split('T')[0],
+    date_added: viewData.date_added || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date()),
   });
 
   const [meas, setMeas] = useState({
@@ -72,7 +69,6 @@ export default function ItemForm({
   const [images, setImages] = useState(initialImages || []);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Sync state when router.refresh() updates initialData
   useEffect(() => {
     if (!initialData) return;
     const pending = initialData.pending_changes || {};
@@ -91,12 +87,12 @@ export default function ItemForm({
       size: merged.size || '',
       color: merged.color || '',
       rental_price: merged.rental_price || '',
-      buffer_override: merged.buffer_override || '',
+      buffer_override: merged.buffer_override ?? '',
       status: merged.status || 'Available',
       website_status: merged.website_status || 'Draft',
       description: merged.description || '',
       tags: merged.tags || [],
-      date_added: merged.date_added || new Date().toISOString().split('T')[0],
+      date_added: merged.date_added || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date()),
     });
     setMeas({
       outer: { ...(initialData.measurements?.outer || {}), ...(pending.measurements?.outer || {}) },
@@ -107,7 +103,6 @@ export default function ItemForm({
     setImages(initialImages || []);
   }, [initialData, initialImages]);
 
-  // Custom Input Refs
   const tagInputRef = useRef<HTMLInputElement>(null);
   const [tagInputValue, setTagInputValue] = useState('');
 
@@ -115,18 +110,16 @@ export default function ItemForm({
   const [isColorOpen, setIsColorOpen] = useState(false);
   const [colorFocusedIndex, setColorFocusedIndex] = useState(-1);
 
-  // Dynamic Turnaround Buffer derived from Type settings
   const defaultBufferDays = useMemo(() => {
     const selectedType = types?.find((t: any) => String(t.id) === String(formData.type_id));
     return selectedType?.default_buffer_days ?? 3;
   }, [types, formData.type_id]);
 
   const effectiveBuffer = useMemo(() => {
-    const parsed = parseInt(String(formData.buffer_override));
+    const parsed = parseInt(String(formData.buffer_override), 10);
     return !isNaN(parsed) && parsed >= 0 ? parsed : defaultBufferDays;
   }, [formData.buffer_override, defaultBufferDays]);
 
-  // --- 1. Validation & Header Badges ---
   const missingFields = useMemo(() => {
     const m = [];
     if (!formData.sku) m.push('Code/SKU');
@@ -140,32 +133,37 @@ export default function ItemForm({
 
   const isComplete = missingFields.length === 0;
 
-  // Calculate availability (FREE NOW vs BOOKED) using dynamic buffer
   const isBooked = useMemo(() => {
-    if (!orders) return false;
+    if (!orders || orders.length === 0) return false;
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     return orders.some((o: any) => {
-      const returnDate = new Date(o.return_date);
-      const freeDate = new Date(returnDate);
-      freeDate.setDate(freeDate.getDate() + effectiveBuffer);
-      return today >= new Date(o.event_start_date) && today <= freeDate;
+      if (!o.pickup_date || !o.return_date) return false;
+      const [sy, sm, sd] = o.pickup_date.split('-').map(Number);
+      const start = new Date(sy, sm - 1, sd).getTime();
+
+      const [ry, rm, rd] = o.return_date.split('-').map(Number);
+      const end = new Date(ry, rm - 1, rd);
+      end.setDate(end.getDate() + effectiveBuffer);
+      const endWithBuffer = end.getTime();
+
+      const nowTime = today.getTime();
+      return nowTime >= start && nowTime <= endWithBuffer;
     });
   }, [orders, effectiveBuffer]);
 
-  // --- 3. Auto Deposit Calculation ---
   const calculatedDeposit = useMemo(() => {
     const price = parseFloat(formData.rental_price) || 0;
     const tier = depositTiers.find((t: any) => price <= t.price_up_to) || depositTiers[depositTiers.length - 1];
     return tier ? tier.deposit_value : 0;
   }, [formData.rental_price, depositTiers]);
 
-  // --- Handlers ---
   const handleChange = (e: any) => setFormData({ ...formData, [e.target.name]: e.target.value });
   const handleMeasChange = (group: string, field: string, value: string) => {
-    setMeas({ ...meas, [group]: { ...meas[group as keyof typeof meas], [field]: value ? parseInt(value) : undefined } });
+    setMeas({ ...meas, [group]: { ...meas[group as keyof typeof meas], [field]: value ? parseInt(value, 10) : undefined } });
   };
 
-  // --- Tags Logic ---
   const addTag = (value: string) => {
     const cleanValue = value.trim().replace(/,+$/, '');
     if (cleanValue && !formData.tags.includes(cleanValue)) {
@@ -198,7 +196,6 @@ export default function ItemForm({
     }
   };
 
-  // --- Color Combobox Logic ---
   const filteredColors = colorOptions.filter((c: string) =>
     c.toLowerCase().includes(formData.color.toLowerCase())
   );
@@ -230,10 +227,10 @@ export default function ItemForm({
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setColorFocusedIndex(prev => Math.min(prev + 1, filteredColors.length - 1));
+      setColorFocusedIndex((prev) => Math.min(prev + 1, filteredColors.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setColorFocusedIndex(prev => Math.max(prev - 1, 0));
+      setColorFocusedIndex((prev) => Math.max(prev - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (colorFocusedIndex >= 0 && colorFocusedIndex < filteredColors.length) {
@@ -246,7 +243,6 @@ export default function ItemForm({
     }
   };
 
-  // --- Image Upload Logic ---
   const handleImageUpload = async (e: any) => {
     const targetSku = initialData?.sku || formData.sku;
     const file = e.target.files[0];
@@ -295,7 +291,7 @@ export default function ItemForm({
 
   const removeImage = async (id: number) => {
     const targetSku = initialData?.sku || formData.sku;
-    if (!confirm("Remove picture?")) return;
+    if (!confirm('Remove picture?')) return;
 
     if (!isNew) {
       await deleteImageRecord(id, targetSku);
@@ -303,7 +299,6 @@ export default function ItemForm({
     setImages(images.filter((img: any) => img.id !== id));
   };
 
-  // --- Submissions & Approval Actions ---
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
@@ -322,11 +317,10 @@ export default function ItemForm({
       for (const img of images) {
         await addImageRecord(targetSku, img.image_url, img.display_order);
       }
-      if (!isSuperAdmin) alert('Item saved.');
+      alert('Item saved.');
       router.push(`/admin/inventory/${targetSku}`);
     } else {
-      if (!isSuperAdmin) alert('Changes saved!');
-      else alert('Changes saved!');
+      alert('Changes saved!');
       router.refresh();
     }
     setLoading(false);
@@ -400,7 +394,6 @@ export default function ItemForm({
     setLoading(false);
   };
 
-  // --- Dynamic Approval Banner Logic ---
   let pendingBanner = null;
   if (isSuperAdmin && initialData?.pending_action) {
     const pa = initialData.pending_action;
@@ -470,7 +463,7 @@ export default function ItemForm({
             </h1>
             {!isNew && (
               <p className="text-muted text-[13px] mt-1">
-                {brands.find((b: any) => b.id == formData.brand_id)?.name || 'No Brand'} · added {new Date(formData.date_added).toLocaleDateString()}
+                {brands.find((b: any) => b.id == formData.brand_id)?.name || 'No Brand'} · added {formData.date_added}
               </p>
             )}
           </div>
@@ -519,7 +512,6 @@ export default function ItemForm({
 
         {/* 2-Column Grid */}
         <div className={`grid grid-cols-1 lg:grid-cols-2 gap-4 ${initialData?.pending_action ? 'opacity-90 pointer-events-none' : ''}`}>
-
           {/* LEFT: Item Info */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-3">Item information</h3>
@@ -684,14 +676,14 @@ export default function ItemForm({
               />
             </div>
 
-            {/* Pricing & Dynamic Deposit/Buffer Calc */}
+            {/* Pricing & Deposit / Turnaround Buffer Info */}
             <div className="grid grid-cols-2 gap-3.5 mb-3.5 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Deposit (From Tier)</label>
                 <input disabled value={formatRupiah(calculatedDeposit)} className="w-full text-[13px] border-none bg-transparent font-semibold text-ink" />
               </div>
               <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Buffer Override</label>
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Buffer Override (Days)</label>
                 <input
                   type="number"
                   name="buffer_override"
@@ -791,7 +783,7 @@ export default function ItemForm({
 
               <div className="text-[11px] tracking-[0.16em] uppercase text-wine-ink font-bold mb-1 mt-4">Outer</div>
               <div className="grid grid-cols-3 gap-2 mb-4">
-                {['bust', 'waist', 'hips', 'length_front', 'length_back', 'shoulder', 'neck_hole', 'arm_hole', 'arm_length'].map(f => (
+                {['bust', 'waist', 'hips', 'length_front', 'length_back', 'shoulder', 'neck_hole', 'arm_hole', 'arm_length'].map((f) => (
                   <div key={`outer-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
                     <input
@@ -806,7 +798,7 @@ export default function ItemForm({
 
               <div className="text-[11px] tracking-[0.16em] uppercase text-wine-ink font-bold mb-1">Inner</div>
               <div className="grid grid-cols-3 gap-2 mb-4">
-                {['bust', 'waist', 'hips', 'length'].map(f => (
+                {['bust', 'waist', 'hips', 'length'].map((f) => (
                   <div key={`inner-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
                     <input
@@ -821,7 +813,7 @@ export default function ItemForm({
 
               <div className="text-[11px] tracking-[0.16em] uppercase text-wine-ink font-bold mb-1">Skirt</div>
               <div className="grid grid-cols-3 gap-2">
-                {['waist', 'hips', 'length'].map(f => (
+                {['waist', 'hips', 'length'].map((f) => (
                   <div key={`skirt-${f}`}>
                     <label className="block text-[10px] text-muted mb-0.5 capitalize">{f.replace('_', ' ')}</label>
                     <input
@@ -838,7 +830,7 @@ export default function ItemForm({
         </div>
       </form>
 
-      {/* 5. Booking Schedule */}
+      {/* Booking Schedule */}
       {!isNew && (
         <div className="mt-4 bg-card border border-line rounded-[10px] p-5">
           <div className="flex justify-between items-center mb-4">
@@ -865,17 +857,19 @@ export default function ItemForm({
                 <tr><td colSpan={7} className="py-4 text-muted">No historical bookings.</td></tr>
               ) : (
                 orders.map((o: any) => {
-                  const retDate = new Date(o.return_date);
-                  const freeDate = new Date(retDate);
+                  const [ry, rm, rd] = (o.return_date || '').split('-').map(Number);
+                  const freeDate = new Date(ry, rm - 1, rd);
                   freeDate.setDate(freeDate.getDate() + effectiveBuffer);
+                  const freeDateStr = isNaN(freeDate.getTime()) ? '—' : freeDate.toISOString().split('T')[0];
+
                   return (
                     <tr key={o.order_id} className="border-b border-line border-dashed last:border-none">
                       <td className="py-2.5 font-bold">{o.order_id}</td>
                       <td className="py-2.5">{o.customer_name}</td>
-                      <td className="py-2.5">{o.order_date}</td>
+                      <td className="py-2.5">{o.pickup_date || o.order_date}</td>
                       <td className="py-2.5">{o.event_start_date}</td>
                       <td className="py-2.5">{o.return_date}</td>
-                      <td className="py-2.5 text-muted">{freeDate.toISOString().split('T')[0]}</td>
+                      <td className="py-2.5 text-muted">{freeDateStr}</td>
                       <td className="py-2.5"><span className="bg-[#F6F4EF] text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold">{o.status}</span></td>
                     </tr>
                   );
@@ -886,7 +880,7 @@ export default function ItemForm({
         </div>
       )}
 
-      {/* 6. Notes & Activity Log */}
+      {/* Notes & Activity Log */}
       {!isNew && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
           <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
@@ -918,7 +912,7 @@ export default function ItemForm({
                 {auditLogs.map((log: any) => (
                   <li key={log.id} className="relative pl-5 text-[12px]">
                     <span className="absolute left-1 top-1.5 w-1.5 h-1.5 rounded-full bg-muted"></span>
-                    <span className="font-medium text-ink">{log.admin_name}</span> {log.action_type.replace(/_/g, ' ')} <span className="text-muted">· {new Date(log.created_at).toLocaleDateString()}</span>
+                    <span className="font-medium text-ink">{log.admin_name}</span> {log.action_type.replace(/_/g, ' ')} <span className="text-muted">· {log.created_at?.split('T')[0]}</span>
                   </li>
                 ))}
               </ul>

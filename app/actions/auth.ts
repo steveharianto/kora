@@ -24,7 +24,6 @@ export async function loginAdmin(formData: { email: string; password: string }) 
     .eq('email', email)
     .single();
 
-  // Print diagnostics to terminal console
   if (error) {
     console.error('Supabase Query Error:', error.message, error.details);
     return { error: `Database error: ${error.message}` };
@@ -56,7 +55,7 @@ export async function loginAdmin(formData: { email: string; password: string }) 
     role: admin.role,
   };
 
-  // 5. Set session cookie
+  // 5. Set session cookie (httpOnly for security) and role cookie (readable by client UI)
   const cookieStore = await cookies();
   cookieStore.set('kora_admin_session', JSON.stringify(sessionData), {
     httpOnly: true,
@@ -66,12 +65,21 @@ export async function loginAdmin(formData: { email: string; password: string }) 
     maxAge: 60 * 60 * 24 * 7, // 7 days
   });
 
+  cookieStore.set('kora_admin_role', admin.role, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7,
+  });
+
   return { success: true };
 }
 
 export async function logoutAdmin() {
   const cookieStore = await cookies();
   cookieStore.delete('kora_admin_session');
+  cookieStore.delete('kora_admin_role');
   redirect('/admin');
 }
 
@@ -81,7 +89,27 @@ export async function getCurrentAdmin(): Promise<AdminSession | null> {
   if (!sessionCookie?.value) return null;
 
   try {
-    return JSON.parse(sessionCookie.value) as AdminSession;
+    const parsed = JSON.parse(sessionCookie.value) as AdminSession;
+    if (!parsed?.id) return null;
+
+    // Validate against database to ensure account still exists and remains active
+    const supabase = await createClient();
+    const { data: admin, error } = await supabase
+      .from('admins')
+      .select('id, name, email, role, is_active')
+      .eq('id', parsed.id)
+      .single();
+
+    if (error || !admin || !admin.is_active) {
+      return null;
+    }
+
+    return {
+      id: admin.id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role,
+    };
   } catch {
     return null;
   }

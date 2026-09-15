@@ -49,13 +49,31 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
 
   const { data: fittings } = await fittingsQuery;
 
+  // Completed Returns Query to subtract refunded customer deposits
+  let returnsQuery = supabase
+    .from('returns')
+    .select('refund_amount')
+    .eq('refund_status', 'Refunded');
+
+  if (startDate) returnsQuery = returnsQuery.gte('refunded_at', startDate);
+  if (endDate) returnsQuery = returnsQuery.lte('refunded_at', endDate);
+
+  const { data: completedReturns } = await returnsQuery;
+  const totalRefundedDeposits = (completedReturns || []).reduce(
+    (sum, r) => sum + (Number(r.refund_amount) || 0),
+    0
+  );
+
   // Aggregations
   const grossRental = (orders || []).reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
   const depositsHeld = (orders || []).reduce((sum, o) => sum + (Number(o.total_deposit) || 0), 0);
   const shippingFees = (orders || []).reduce((sum, o) => sum + (Number(o.shipping_fee) || 0), 0);
   const creditApplied = (orders || []).reduce((sum, o) => sum + (Number(o.store_credit_applied) || 0), 0);
   const fittingsIncome = (fittings || []).reduce((sum, f) => sum + (Number(f.after_hours_fee) || 0), 0);
-  const netCashflow = grossRental + depositsHeld + shippingFees + fittingsIncome - creditApplied;
+
+  // Net realized cashflow incorporates refunded deposits
+  const netCashflow =
+    grossRental + (depositsHeld - totalRefundedDeposits) + shippingFees + fittingsIncome - creditApplied;
 
   const rows = (orders || []).map((o) => {
     const custName = `${(o.customers as any)?.first_name || ''} ${(o.customers as any)?.last_name || ''}`.trim() || 'Customer';

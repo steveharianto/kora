@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   updateCustomer,
@@ -35,6 +35,19 @@ export default function CustomerDetailClient({
     current_credit: customer.current_credit || 0,
   });
 
+  // Keep state in sync with server prop refreshes
+  useEffect(() => {
+    setProfile({
+      first_name: customer.first_name || '',
+      last_name: customer.last_name || '',
+      phone: customer.phone || '',
+      gender: customer.gender || '',
+      dob: customer.dob || '',
+      status: customer.status || 'Not Submitted',
+      current_credit: customer.current_credit || 0,
+    });
+  }, [customer]);
+
   // Address Modal State
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<any>(null);
@@ -58,8 +71,12 @@ export default function CustomerDetailClient({
     setErrorMsg('');
 
     const res = await updateCustomer(customer.id, profile);
-    if (res.error) setErrorMsg(res.error);
-    else alert('Customer profile updated.');
+    if (res.error) {
+      setErrorMsg(res.error);
+    } else {
+      alert('Customer profile updated.');
+      router.refresh();
+    }
 
     setLoading(false);
   };
@@ -73,8 +90,8 @@ export default function CustomerDetailClient({
         street_address: addr.street_address || '',
         city: addr.city || '',
         postal_code: addr.postal_code || '',
-        latitude: addr.latitude || null,
-        longitude: addr.longitude || null,
+        latitude: addr.latitude ?? null,
+        longitude: addr.longitude ?? null,
         is_default: addr.is_default || false,
       });
     } else {
@@ -132,6 +149,7 @@ export default function CustomerDetailClient({
     setLoading(true);
     await reviewKtp(customer.id, newStatus, ktpNotes);
     setKtpNotes('');
+    setProfile((prev) => ({ ...prev, status: newStatus }));
     router.refresh();
     setLoading(false);
   };
@@ -295,7 +313,7 @@ export default function CustomerDetailClient({
               <button
                 type="button"
                 onClick={() => openAddressModal()}
-                className="text-xs font-semibold text-wine-ink border border-wine/30 bg-wine-soft px-3 py-1.5 rounded-lg hover:bg-wine hover:text-white transition"
+                className="text-xs font-semibold text-wine-ink border border-wine/30 bg-wine-soft px-3 py-1.5 rounded-lg hover:bg-wine hover:text-white transition cursor-pointer"
               >
                 + Add Address
               </button>
@@ -355,7 +373,7 @@ export default function CustomerDetailClient({
                       {addr.city}, {addr.postal_code || 'No Postal Code'}
                     </p>
 
-                    {addr.latitude && addr.longitude && (
+                    {addr.latitude !== null && addr.longitude !== null && (
                       <div className="text-[11px] text-muted mt-2 flex items-center gap-1.5">
                         <span>📍 {addr.latitude}, {addr.longitude}</span>
                         <a
@@ -397,14 +415,14 @@ export default function CustomerDetailClient({
                 <button
                   type="button"
                   onClick={() => handleKtpReview('Not Submitted')}
-                  className="px-3 py-1 bg-white border border-line text-xs rounded-md hover:bg-bad-bg hover:text-bad"
+                  className="px-3 py-1 bg-white border border-line text-xs rounded-md hover:bg-bad-bg hover:text-bad cursor-pointer"
                 >
                   Reject / Reset
                 </button>
                 <button
                   type="button"
                   onClick={() => handleKtpReview('Verified')}
-                  className="px-3 py-1 bg-wine text-white text-xs rounded-md hover:bg-[#181E15]"
+                  className="px-3 py-1 bg-wine text-white text-xs rounded-md hover:bg-[#181E15] cursor-pointer"
                 >
                   Approve KTP
                 </button>
@@ -468,7 +486,6 @@ export default function CustomerDetailClient({
             </p>
 
             <form onSubmit={handleSaveAddress} className="space-y-3.5">
-              {/* Map Geocoder */}
               <AddressMapPicker
                 initialData={addressForm}
                 onChange={(loc) => {
@@ -578,14 +595,14 @@ export default function CustomerDetailClient({
                 <button
                   type="button"
                   onClick={() => setIsAddressModalOpen(false)}
-                  className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
+                  className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50"
+                  className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? 'Menyimpan...' : 'Simpan Alamat'}
                 </button>

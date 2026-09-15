@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -37,7 +37,6 @@ export default function OrderForm({
   const [noteText, setNoteText] = useState('');
   const [copiedResi, setCopiedResi] = useState(false);
 
-  // Local state for allCustomers so newly added addresses update the dropdown instantly
   const [allCustomers, setAllCustomers] = useState<any[]>(initialCustomers);
 
   const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
@@ -64,8 +63,8 @@ export default function OrderForm({
     city: initialOrder.city || '',
     postal_code: initialOrder.postal_code || '',
     street_address: initialOrder.street_address || '',
-    longitude: initialOrder.longitude || null,
-    latitude: initialOrder.latitude || null,
+    longitude: initialOrder.longitude ?? null,
+    latitude: initialOrder.latitude ?? null,
     order_method: initialOrder.order_method || 'Manual',
     status: initialOrder.status || 'Draft',
     pick_up_method: initialOrder.pick_up_method || 'JNE - REG',
@@ -75,7 +74,41 @@ export default function OrderForm({
     store_credit_applied: Number(initialOrder.store_credit_applied) || 0,
   });
 
-  // ADDRESS LOCK GUARDRAIL: When an order is ongoing / dispatched / completed, address is locked
+  // Synchronize state when router.refresh() updates initialOrder prop
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      id: initialOrder.id,
+      order_date: initialOrder.order_date || prev.order_date,
+      event_start_date: initialOrder.event_start_date || '',
+      event_days: initialOrder.event_days || 1,
+      pickup_date: initialOrder.pickup_date || '',
+      return_date: initialOrder.return_date || '',
+      city: initialOrder.city || '',
+      postal_code: initialOrder.postal_code || '',
+      street_address: initialOrder.street_address || '',
+      longitude: initialOrder.longitude ?? null,
+      latitude: initialOrder.latitude ?? null,
+      order_method: initialOrder.order_method || 'Manual',
+      status: initialOrder.status || 'Draft',
+      pick_up_method: initialOrder.pick_up_method || 'JNE - REG',
+      packing_slip_id: initialOrder.packing_slip_id || '',
+      payment_method: initialOrder.payment_method || 'QRIS (EDC)',
+      shipping_fee: Number(initialOrder.shipping_fee) || 0,
+      store_credit_applied: Number(initialOrder.store_credit_applied) || 0,
+    }));
+    setSelectedCustomerId(initialOrder.customer_id || '');
+    setProducts(
+      (initialOrder.order_products || []).map((op: any) => ({
+        item_sku: op.item_sku,
+        label: op.items?.name || '',
+        quantity: op.quantity || 1,
+        price: Number(op.price) || 0,
+        deposit: Number(op.deposit) || 0,
+      }))
+    );
+  }, [initialOrder]);
+
   const isAddressLocked = useMemo(() => {
     return (
       ['In Shipping', 'Active', 'Completed'].includes(formData.status) ||
@@ -83,7 +116,6 @@ export default function OrderForm({
     );
   }, [formData.status, formData.packing_slip_id]);
 
-  // Modal State for Adding New Address
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [geocodingLoading, setGeocodingLoading] = useState(false);
@@ -107,7 +139,6 @@ export default function OrderForm({
     }))
   );
 
-  // Dispatch Date Calculations
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const isPickupTodayOrPast = Boolean(formData.pickup_date && formData.pickup_date <= todayStr);
   const isPickupFuture = Boolean(formData.pickup_date && formData.pickup_date > todayStr);
@@ -131,7 +162,10 @@ export default function OrderForm({
       return;
     }
 
-    const eventDate = new Date(val);
+    const [y, m, d] = val.split('-').map(Number);
+    const eventDate = new Date(y, m - 1, d);
+    if (isNaN(eventDate.getTime())) return;
+
     const pickupD = new Date(eventDate);
     pickupD.setDate(pickupD.getDate() - leadTimeDays);
 
@@ -207,8 +241,11 @@ export default function OrderForm({
       products,
     });
 
-    if (res?.error) setErrorMsg(res.error);
-    else router.refresh();
+    if (res?.error) {
+      setErrorMsg(res.error);
+    } else {
+      router.refresh();
+    }
     setLoading(false);
   };
 
@@ -216,8 +253,12 @@ export default function OrderForm({
     setLoading(true);
     setErrorMsg('');
     const res = await updateOrderStatus(formData.id, newStatus);
-    if (res?.error) setErrorMsg(res.error);
-    else router.refresh();
+    if (res?.error) {
+      setErrorMsg(res.error);
+    } else {
+      setFormData((prev) => ({ ...prev, status: newStatus }));
+      router.refresh();
+    }
     setLoading(false);
   };
 
@@ -226,7 +267,7 @@ export default function OrderForm({
       const confirmEarly = confirm(
         `ATTENTION: PREMATURE BOOKING WARNING\n\n` +
         `This order has a scheduled send date of ${formData.pickup_date} (in the future).\n\n` +
-        `Booking Biteship now will dispatch an immediate pickup request to the courier today. The courier will arrive within hours, and the waybill may expire if the package is not handed over.\n\n` +
+        `Booking Biteship now will dispatch an immediate pickup request to the courier today.\n\n` +
         `Are you sure you want to summon the courier today anyway?`
       );
       if (!confirmEarly) return;
@@ -265,7 +306,6 @@ export default function OrderForm({
     router.refresh();
   };
 
-  // OpenStreetMap / Nominatim search handler for coordinates resolution
   const handleGeocodeSearch = async () => {
     const query = `${newAddress.street_address}, ${newAddress.city}, Indonesia`.trim();
     if (!query || query.length < 5) {
@@ -297,7 +337,6 @@ export default function OrderForm({
     }
   };
 
-  // Save new address from modal and select immediately
   const handleSaveNewAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId) {
@@ -319,7 +358,6 @@ export default function OrderForm({
 
     if (res.address) {
       const added = res.address;
-      // Update local customers list with new address
       setAllCustomers((prev) =>
         prev.map((c) => {
           if (c.id === selectedCustomerId) {
@@ -332,17 +370,15 @@ export default function OrderForm({
         })
       );
 
-      // Auto-select this newly created address in the order form
       setFormData((prev) => ({
         ...prev,
         street_address: added.street_address,
         city: added.city,
         postal_code: added.postal_code || '',
-        latitude: added.latitude,
-        longitude: added.longitude,
+        latitude: added.latitude ?? null,
+        longitude: added.longitude ?? null,
       }));
 
-      // Reset modal
       setIsAddressModalOpen(false);
       setNewAddress({
         label: 'Home',
@@ -405,7 +441,7 @@ export default function OrderForm({
               type="button"
               onClick={() => handleStatusTransition('Ordered')}
               disabled={loading || !isComplete}
-              className="px-3.5 py-1.5 bg-ink text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition disabled:opacity-50"
+              className="px-3.5 py-1.5 bg-ink text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
             >
               Post Order
             </button>
@@ -416,7 +452,7 @@ export default function OrderForm({
               type="button"
               onClick={() => handleStatusTransition('Draft')}
               disabled={loading}
-              className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
+              className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
               Reset to Draft
             </button>
@@ -427,7 +463,7 @@ export default function OrderForm({
               type="button"
               onClick={handleBiteshipBooking}
               disabled={dispatching || loading || !isComplete}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 shadow-sm ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer ${
                 isPickupTodayOrPast
                   ? 'bg-wine text-white hover:bg-[#181E15]'
                   : 'bg-[#F4EBE6] text-[#8C2C1D] border border-[#E5CAC3] hover:bg-[#EEDFD8]'
@@ -443,7 +479,7 @@ export default function OrderForm({
               type="button"
               onClick={() => handleStatusTransition('Active')}
               disabled={loading}
-              className="px-3.5 py-1.5 bg-ok-bg text-ok border border-ok/30 rounded-lg text-xs font-semibold hover:bg-ok-bg/80"
+              className="px-3.5 py-1.5 bg-ok-bg text-ok border border-ok/30 rounded-lg text-xs font-semibold hover:bg-ok-bg/80 cursor-pointer"
             >
               Mark Active
             </button>
@@ -454,7 +490,7 @@ export default function OrderForm({
               type="button"
               onClick={() => handleStatusTransition('Cancelled')}
               disabled={loading}
-              className="px-3 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg"
+              className="px-3 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg cursor-pointer"
             >
               Cancel Order
             </button>
@@ -472,7 +508,7 @@ export default function OrderForm({
             type="button"
             onClick={handleSave}
             disabled={loading}
-            className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50"
+            className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
           >
             {loading ? 'Saving...' : 'Save'}
           </button>
@@ -626,8 +662,8 @@ export default function OrderForm({
                       street_address: defaultAddr.street_address || '',
                       city: defaultAddr.city || '',
                       postal_code: defaultAddr.postal_code || '',
-                      latitude: defaultAddr.latitude || null,
-                      longitude: defaultAddr.longitude || null,
+                      latitude: defaultAddr.latitude ?? null,
+                      longitude: defaultAddr.longitude ?? null,
                     }));
                   } else {
                     setFormData((prev) => ({
@@ -738,7 +774,7 @@ export default function OrderForm({
               />
             </div>
 
-            {/* DELIVERY ADDRESS SECTION WITH DYNAMIC SELECTION, ADD MODAL, & LOCK */}
+            {/* DELIVERY ADDRESS SECTION */}
             <div className="pt-2 border-t border-line">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] tracking-[0.14em] uppercase text-muted font-medium flex items-center gap-1">
@@ -765,7 +801,6 @@ export default function OrderForm({
                 </div>
               )}
 
-              {/* Address dropdown from customer's saved records */}
               {customerAddresses.length > 0 ? (
                 <div className="mb-2">
                   <select
@@ -781,8 +816,8 @@ export default function OrderForm({
                           street_address: addr.street_address || '',
                           city: addr.city || '',
                           postal_code: addr.postal_code || '',
-                          latitude: addr.latitude || null,
-                          longitude: addr.longitude || null,
+                          latitude: addr.latitude ?? null,
+                          longitude: addr.longitude ?? null,
                         }));
                       }
                     }}
@@ -837,9 +872,8 @@ export default function OrderForm({
                 />
               </div>
 
-              {/* Coordinates status badge for Biteship */}
               <div className="mt-2 flex items-center justify-between text-[11px]">
-                {formData.latitude && formData.longitude ? (
+                {formData.latitude !== null && formData.longitude !== null ? (
                   <span className="text-[#2E7D47] font-medium flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
                     GPS Coordinates pinned ({Number(formData.latitude).toFixed(4)}, {Number(formData.longitude).toFixed(4)})
@@ -957,9 +991,10 @@ export default function OrderForm({
             <div key={idx} className="grid grid-cols-12 gap-2 items-center">
               <div className="col-span-3">
                 <select
+                  disabled={isAddressLocked}
                   value={p.item_sku}
                   onChange={(e) => handleProductSelect(idx, e.target.value)}
-                  className="w-full text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA]"
+                  className="w-full text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 >
                   <option value="">— Select SKU —</option>
                   {allItems.map((i: any) => (
@@ -981,59 +1016,66 @@ export default function OrderForm({
                 <input
                   type="number"
                   min={1}
+                  disabled={isAddressLocked}
                   value={p.quantity}
                   onChange={(e) => {
                     const next = [...products];
                     next[idx].quantity = parseInt(e.target.value) || 1;
                     setProducts(next);
                   }}
-                  className="w-full text-center text-xs border border-line rounded py-1.5 bg-[#FDFCFA]"
+                  className="w-full text-center text-xs border border-line rounded py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
               <div className="col-span-2">
                 <input
                   type="number"
+                  disabled={isAddressLocked}
                   value={p.price}
                   onChange={(e) => {
                     const next = [...products];
                     next[idx].price = parseFloat(e.target.value) || 0;
                     setProducts(next);
                   }}
-                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA]"
+                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
               <div className="col-span-1">
                 <input
                   type="number"
+                  disabled={isAddressLocked}
                   value={p.deposit}
                   onChange={(e) => {
                     const next = [...products];
                     next[idx].deposit = parseFloat(e.target.value) || 0;
                     setProducts(next);
                   }}
-                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA]"
+                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
               <div className="col-span-1 text-right">
-                <button
-                  type="button"
-                  onClick={() => handleRemoveLine(idx)}
-                  className="text-muted hover:text-bad px-1 text-base leading-none"
-                >
-                  ×
-                </button>
+                {!isAddressLocked && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveLine(idx)}
+                    className="text-muted hover:text-bad px-1 text-base leading-none cursor-pointer"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={handleAddLine}
-          className="text-xs font-semibold text-wine-ink hover:underline cursor-pointer"
-        >
-          + add a line
-        </button>
+        {!isAddressLocked && (
+          <button
+            type="button"
+            onClick={handleAddLine}
+            className="text-xs font-semibold text-wine-ink hover:underline cursor-pointer"
+          >
+            + add a line
+          </button>
+        )}
       </div>
 
       {/* Financial Summary */}
@@ -1050,9 +1092,10 @@ export default function OrderForm({
             <span className="text-muted">Shipping fee (ongkir)</span>
             <input
               type="number"
+              disabled={isAddressLocked}
               value={formData.shipping_fee}
               onChange={(e) => setFormData({ ...formData, shipping_fee: parseFloat(e.target.value) || 0 })}
-              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA]"
+              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
             />
           </div>
 
@@ -1072,12 +1115,13 @@ export default function OrderForm({
             </div>
             <input
               type="number"
+              disabled={isAddressLocked}
               max={Number(activeCustomer?.current_credit) || 0}
               value={formData.store_credit_applied}
               onChange={(e) =>
                 setFormData({ ...formData, store_credit_applied: parseFloat(e.target.value) || 0 })
               }
-              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA]"
+              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
             />
           </div>
 
@@ -1105,7 +1149,7 @@ export default function OrderForm({
             <div className="flex justify-end mt-2">
               <button
                 type="submit"
-                className="px-3.5 py-1 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF]"
+                className="px-3.5 py-1 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF] cursor-pointer"
               >
                 Post
               </button>
@@ -1131,9 +1175,7 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* =================================================================== */}
-      {/* MODAL: ADD NEW CUSTOMER ADDRESS WITH MAP PIN & NOMINATIM SEARCH    */}
-      {/* =================================================================== */}
+      {/* MODAL: ADD NEW CUSTOMER ADDRESS */}
       {isAddressModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
@@ -1150,7 +1192,7 @@ export default function OrderForm({
               <button
                 type="button"
                 onClick={() => setIsAddressModalOpen(false)}
-                className="text-muted hover:text-ink p-1"
+                className="text-muted hover:text-ink p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1210,7 +1252,6 @@ export default function OrderForm({
                 </div>
               </div>
 
-              {/* Coordinates Geocoding Section */}
               <div className="p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-ink flex items-center gap-1">
@@ -1267,8 +1308,7 @@ export default function OrderForm({
                   </div>
                 </div>
 
-                {/* Map preview if coordinates are found */}
-                {newAddress.latitude && newAddress.longitude && (
+                {newAddress.latitude !== null && newAddress.longitude !== null && (
                   <div className="w-full h-32 rounded-lg overflow-hidden border border-line mt-2 relative">
                     <iframe
                       title="OpenStreetMap Pin Preview"
@@ -1287,14 +1327,14 @@ export default function OrderForm({
               <button
                 type="button"
                 onClick={() => setIsAddressModalOpen(false)}
-                className="px-3.5 py-1.5 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
+                className="px-3.5 py-1.5 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={modalLoading}
-                className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50"
+                className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
               >
                 {modalLoading ? 'Saving...' : 'Save & Select Address'}
               </button>

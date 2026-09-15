@@ -22,37 +22,45 @@ export default function CreateReturnRequestPage() {
   useEffect(() => {
     const fetchOrders = async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from('orders')
-        .select(`
-          id,
-          order_date,
-          event_start_date,
-          return_date,
-          total_deposit,
-          street_address,
-          city,
-          postal_code,
-          latitude,
-          longitude,
-          customers (
-            id,
-            first_name,
-            last_name,
-            phone,
-            addresses (*)
-          ),
-          order_products (
-            item_sku,
-            items (
-              name
-            )
-          )
-        `)
-        .in('status', ['Active', 'In Shipping', 'Ordered'])
-        .order('order_date', { ascending: false });
 
-      setActiveOrders(data || []);
+      // Fetch existing returns to filter out orders that already have a return
+      const [ordersRes, returnsRes] = await Promise.all([
+        supabase
+          .from('orders')
+          .select(`
+            id,
+            order_date,
+            event_start_date,
+            return_date,
+            total_deposit,
+            street_address,
+            city,
+            postal_code,
+            latitude,
+            longitude,
+            customers (
+              id,
+              first_name,
+              last_name,
+              phone,
+              addresses (*)
+            ),
+            order_products (
+              item_sku,
+              items (
+                name
+              )
+            )
+          `)
+          .in('status', ['Active', 'In Shipping', 'Ordered'])
+          .order('order_date', { ascending: false }),
+        supabase.from('returns').select('order_id'),
+      ]);
+
+      const existingOrderIds = new Set((returnsRes.data || []).map((r) => r.order_id));
+      const filtered = (ordersRes.data || []).filter((o) => !existingOrderIds.has(o.id));
+
+      setActiveOrders(filtered);
     };
 
     fetchOrders();
@@ -148,7 +156,7 @@ export default function CreateReturnRequestPage() {
                 ))}
               </select>
               <p className="text-[11px] text-muted mt-1">
-                Completed, cancelled, and not-yet-delivered orders never appear here.
+                Completed, cancelled, and orders that already have an open return request never appear here.
               </p>
             </div>
 

@@ -5,11 +5,8 @@ import { Plus } from 'lucide-react';
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
+  const [year, month, day] = dateStr.split('T')[0].split('-');
+  if (!year || !month || !day) return '—';
   return `${day}/${month}/${year}`;
 }
 
@@ -78,20 +75,22 @@ export default async function ReturnsPage({
 
   const existingReturnOrderIds = new Set((rawReturns || []).map((r) => r.order_id));
 
-  const todayObj = new Date();
-  todayObj.setHours(0, 0, 0, 0);
-  const todayStr = todayObj.toISOString().split('T')[0];
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
 
-  const tomorrowObj = new Date(todayObj);
-  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(tomorrowDate);
 
-  // Helper to compute aging pill
   const getAgingBadge = (deadlineStr?: string | null) => {
     if (!deadlineStr) return { text: '—', color: 'muted' };
-    const deadline = new Date(deadlineStr);
-    deadline.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((todayObj.getTime() - deadline.getTime()) / (1000 * 60 * 60 * 24));
+    const [dy, dm, dd] = deadlineStr.split('-').map(Number);
+    const deadline = new Date(dy, dm - 1, dd).getTime();
+
+    const [ty, tm, td] = todayStr.split('-').map(Number);
+    const today = new Date(ty, tm - 1, td).getTime();
+
+    const diffDays = Math.round((today - deadline) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) return { text: 'DUE TODAY', color: 'amber' };
     if (diffDays === -1) return { text: 'DUE TOMORROW', color: 'amber' };
@@ -122,9 +121,13 @@ export default async function ReturnsPage({
       (r.status === 'Shipping' && r.deadline && r.deadline <= todayStr)
   );
 
-  // Orders without return request ending tomorrow
-  const deadlineTomorrowOrders = (activeOrders || [])
-    .filter((o) => !existingReturnOrderIds.has(o.id) && o.return_date === tomorrowStr)
+  // Orders without return request ending today or tomorrow
+  const dueSoonUnrequestedOrders = (activeOrders || [])
+    .filter(
+      (o) =>
+        !existingReturnOrderIds.has(o.id) &&
+        (o.return_date === todayStr || o.return_date === tomorrowStr)
+    )
     .map((o: any) => ({
       id: `NO-REQ-${o.id}`,
       order_id: o.id,
@@ -132,7 +135,7 @@ export default async function ReturnsPage({
       firstItem: o.order_products?.[0]?.item_sku || 'Garment',
       return_method: '—',
       deadline: o.return_date,
-      aging: { text: 'DUE TOMORROW', color: 'amber' },
+      aging: getAgingBadge(o.return_date),
       waybill_id: '—',
       deposit_held: o.total_deposit || 150000,
       status: 'NO REQUEST',
@@ -143,32 +146,27 @@ export default async function ReturnsPage({
   // Orders without return request that are already overdue
   const overdueUnrequestedOrders = (activeOrders || [])
     .filter((o) => !existingReturnOrderIds.has(o.id) && o.return_date && o.return_date < todayStr)
-    .map((o: any) => {
-      const aging = getAgingBadge(o.return_date);
-      return {
-        id: `NO-REQ-${o.id}`,
-        order_id: o.id,
-        customerName: `${o.customers?.first_name || ''} ${o.customers?.last_name || ''}`.trim(),
-        firstItem: o.order_products?.[0]?.item_sku || 'Garment',
-        return_method: '—',
-        deadline: o.return_date,
-        aging,
-        waybill_id: '—',
-        deposit_held: o.total_deposit || 150000,
-        status: 'NO REQUEST',
-        requested_at: null,
-        isPlaceholder: true,
-      };
-    });
+    .map((o: any) => ({
+      id: `NO-REQ-${o.id}`,
+      order_id: o.id,
+      customerName: `${o.customers?.first_name || ''} ${o.customers?.last_name || ''}`.trim(),
+      firstItem: o.order_products?.[0]?.item_sku || 'Garment',
+      return_method: '—',
+      deadline: o.return_date,
+      aging: getAgingBadge(o.return_date),
+      waybill_id: '—',
+      deposit_held: o.total_deposit || 150000,
+      status: 'NO REQUEST',
+      requested_at: null,
+      isPlaceholder: true,
+    }));
 
-  // Overdue returns that are stalled in shipping
   const overdueShippingReturns = formattedReturns.filter(
     (r) => r.status === 'Shipping' && r.deadline && r.deadline < todayStr
   );
 
   const overdueGroup = [...overdueShippingReturns, ...overdueUnrequestedOrders];
 
-  // All Returns Tab Filters
   let filteredAll = formattedReturns;
   if (searchQuery) {
     filteredAll = filteredAll.filter(
@@ -225,9 +223,7 @@ export default async function ReturnsPage({
         </Link>
       </div>
 
-      {/* =================================================================== */}
-      {/* TAB 1: WORK QUEUE                                                   */}
-      {/* =================================================================== */}
+      {/* TAB 1: WORK QUEUE */}
       {currentTab === 'queue' && (
         <div className="space-y-7">
           {/* SECTION 1: NEEDS ACTION */}
@@ -310,10 +306,10 @@ export default async function ReturnsPage({
             </div>
           </div>
 
-          {/* SECTION 2: DEADLINE TOMORROW — REMIND */}
+          {/* SECTION 2: DEADLINE TODAY & TOMORROW */}
           <div>
             <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted mb-2.5">
-              DEADLINE TOMORROW — REMIND — {deadlineTomorrowOrders.length}
+              DEADLINE TODAY & TOMORROW — {dueSoonUnrequestedOrders.length}
             </div>
 
             <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
@@ -334,14 +330,14 @@ export default async function ReturnsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {deadlineTomorrowOrders.length === 0 ? (
+                    {dueSoonUnrequestedOrders.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="px-3 py-6 text-center text-muted text-xs">
-                          No rental returns ending tomorrow.
+                          No upcoming returns scheduled for today or tomorrow.
                         </td>
                       </tr>
                     ) : (
-                      deadlineTomorrowOrders.map((o) => (
+                      dueSoonUnrequestedOrders.map((o) => (
                         <tr key={o.id} className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none">
                           <td className="px-3 py-3 text-muted">—</td>
                           <td className="px-3 py-3 font-bold text-ink">
@@ -374,7 +370,7 @@ export default async function ReturnsPage({
             </div>
           </div>
 
-          {/* SECTION 3: OVERDUE — NOTHING IN MOTION */}
+          {/* SECTION 3: OVERDUE */}
           <div>
             <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted mb-2.5">
               OVERDUE — NOTHING IN MOTION — {overdueGroup.length}
@@ -451,9 +447,7 @@ export default async function ReturnsPage({
         </div>
       )}
 
-      {/* =================================================================== */}
-      {/* TAB 2: ALL RETURNS ARCHIVE                                          */}
-      {/* =================================================================== */}
+      {/* TAB 2: ALL RETURNS */}
       {currentTab === 'all' && (
         <div>
           <form method="GET" className="flex flex-wrap items-center gap-3 mb-4 text-[13px]">

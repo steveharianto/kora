@@ -24,6 +24,17 @@ export async function createReturnRequest(payload: {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
+  // Guard against unique constraint violations
+  const { data: existingReturn } = await supabase
+    .from('returns')
+    .select('id')
+    .eq('order_id', payload.order_id)
+    .maybeSingle();
+
+  if (existingReturn) {
+    return { error: `A return request (${existingReturn.id}) already exists for this order.` };
+  }
+
   // Fetch the anchor order with customer and products
   const { data: order, error: orderErr } = await supabase
     .from('orders')
@@ -91,8 +102,8 @@ export async function createReturnRequest(payload: {
     pickup_street_address: address.street_address,
     pickup_city: address.city,
     pickup_postal_code: address.postal_code,
-    pickup_latitude: address.latitude,
-    pickup_longitude: address.longitude,
+    pickup_latitude: address.latitude ?? null,
+    pickup_longitude: address.longitude ?? null,
     deposit_held: depositHeld,
     refund_amount: depositHeld,
   });
@@ -183,9 +194,14 @@ export async function dispatchReturnViaBiteship(returnId: string, courierChoice?
     courierType = 'reg';
   }
 
-  // Guard: Coordinates check for instant couriers
+  // Guard: Coordinates check for instant couriers (safely supporting equator latitude 0.0)
   if (['gojek', 'grab'].includes(courierCompany)) {
-    if (!ret.pickup_latitude || !ret.pickup_longitude) {
+    if (
+      ret.pickup_latitude === null ||
+      ret.pickup_latitude === undefined ||
+      ret.pickup_longitude === null ||
+      ret.pickup_longitude === undefined
+    ) {
       return {
         error: 'Customer pickup coordinates (latitude & longitude) are required for instant courier dispatch. Please pin location first.',
       };
@@ -207,10 +223,16 @@ export async function dispatchReturnViaBiteship(returnId: string, courierChoice?
       phone: ret.pickup_phone || '081234567890',
       address: `${ret.pickup_street_address}, ${ret.pickup_city}`,
       postal_code: ret.pickup_postal_code ? String(ret.pickup_postal_code) : undefined,
-      coordinate: ret.pickup_latitude && ret.pickup_longitude ? {
-        latitude: Number(ret.pickup_latitude),
-        longitude: Number(ret.pickup_longitude),
-      } : undefined,
+      coordinate:
+        ret.pickup_latitude !== null &&
+        ret.pickup_latitude !== undefined &&
+        ret.pickup_longitude !== null &&
+        ret.pickup_longitude !== undefined
+          ? {
+              latitude: Number(ret.pickup_latitude),
+              longitude: Number(ret.pickup_longitude),
+            }
+          : undefined,
     },
     destination: {
       name: showroom.name || 'KORA Showroom',
@@ -382,6 +404,10 @@ export async function releaseDepositAndCompleteReturn(
     .single();
 
   if (retErr || !ret) return { error: 'Return record not found.' };
+
+  if (ret.status === 'Completed' || ret.refund_status === 'Refunded') {
+    return { error: 'Deposit has already been released for this return.' };
+  }
 
   const depositHeld = Number(ret.deposit_held) || 0;
   const qcDeduction = Math.max(0, Number(payload.qc_deduction) || 0);

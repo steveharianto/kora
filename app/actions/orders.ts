@@ -155,7 +155,6 @@ async function evictConflictingFittings(
 
   const supabase = await createClient();
 
-  // Find max buffer across these items
   const { data: itemsData } = await supabase
     .from('items')
     .select('sku, buffer_override, types(default_buffer_days)')
@@ -171,7 +170,6 @@ async function evictConflictingFittings(
   endWithBuffer.setDate(endWithBuffer.getDate() + maxBuffer);
   const endWithBufferStr = endWithBuffer.toISOString().split('T')[0];
 
-  // 1. Query active fitting items matching these SKUs whose fitting date falls within the rental window
   const { data: collidingItems } = await supabase
     .from('fitting_items')
     .select(`
@@ -195,7 +193,6 @@ async function evictConflictingFittings(
 
   const impactedFittingIds = new Set<string>();
 
-  // 2. Evict the individual dress from the fitting
   for (const ci of collidingItems) {
     await supabase
       .from('fitting_items')
@@ -209,7 +206,6 @@ async function evictConflictingFittings(
     impactedFittingIds.add(ci.fitting_id);
   }
 
-  // 3. Check remaining active dresses in each impacted fitting
   for (const fitId of Array.from(impactedFittingIds)) {
     const { data: allFitItems } = await supabase
       .from('fitting_items')
@@ -219,7 +215,6 @@ async function evictConflictingFittings(
     const activeCount = (allFitItems || []).filter((i) => !i.is_evicted).length;
 
     if (activeCount === 0) {
-      // All selected dresses for this fitting are now rented out -> Cancel the session to free the showroom slot
       await supabase
         .from('fittings')
         .update({
@@ -229,8 +224,9 @@ async function evictConflictingFittings(
         })
         .eq('id', fitId);
 
+      // Automated system action: admin_id must be null to prevent UUID syntax error
       await supabase.from('admin_audit_logs').insert({
-        admin_id: 'system',
+        admin_id: null,
         admin_name: 'Automation',
         entity_type: 'fitting',
         entity_id: fitId,
@@ -323,8 +319,8 @@ export async function saveOrder(orderData: {
       city: orderData.city || null,
       postal_code: orderData.postal_code || null,
       street_address: orderData.street_address || null,
-      longitude: orderData.longitude || null,
-      latitude: orderData.latitude || null,
+      longitude: orderData.longitude ?? null,
+      latitude: orderData.latitude ?? null,
       order_method: orderData.order_method || 'Manual',
       status: orderData.status || 'Draft',
       pick_up_method: orderData.pick_up_method || null,
@@ -374,30 +370,77 @@ export async function saveOrder(orderData: {
     await evictConflictingFittings(orderData.id, validSkus, orderData.pickup_date, orderData.return_date);
   }
 
+  // Store credit reconciliation
+  const prevCustomerId = previousOrder?.customer_id;
+  const newCustomerId = orderData.customer_id;
   const prevCreditApplied = Number(previousOrder?.store_credit_applied) || 0;
-  const creditDelta = newStoreCreditApplied - prevCreditApplied;
 
-  if (creditDelta !== 0 && orderData.customer_id) {
-    const { data: customer } = await supabase
+  if (prevCustomerId && prevCustomerId !== newCustomerId && prevCreditApplied > 0) {
+    // Refund credit to previous customer
+    const { data: prevCust } = await supabase
       .from('customers')
       .select('current_credit')
-      .eq('id', orderData.customer_id)
+      .eq('id', prevCustomerId)
       .single();
-
-    if (customer) {
-      const updatedBalance = Math.max(0, Number(customer.current_credit) - creditDelta);
+    if (prevCust) {
       await supabase
         .from('customers')
-        .update({ current_credit: updatedBalance })
-        .eq('id', orderData.customer_id);
-
+        .update({ current_credit: Number(prevCust.current_credit) + prevCreditApplied })
+        .eq('id', prevCustomerId);
       await supabase.from('credit_logs').insert({
-        customer_id: orderData.customer_id,
-        movement: creditDelta > 0 ? 'credit_applied' : 'credit_in',
+        customer_id: prevCustomerId,
+        movement: 'credit_in',
         ref: orderData.id,
-        method: 'Order Checkout Adjustment',
-        amount: Math.abs(creditDelta),
+        method: 'Customer Reassignment Refund',
+        amount: prevCreditApplied,
       });
+    }
+
+    // Deduct credit from newly assigned customer
+    if (newCustomerId && newStoreCreditApplied > 0) {
+      const { data: newCust } = await supabase
+        .from('customers')
+        .select('current_credit')
+        .eq('id', newCustomerId)
+        .single();
+      if (newCust) {
+        await supabase
+          .from('customers')
+          .update({ current_credit: Math.max(0, Number(newCust.current_credit) - newStoreCreditApplied) })
+          .eq('id', newCustomerId);
+        await supabase.from('credit_logs').insert({
+          customer_id: newCustomerId,
+          movement: 'credit_applied',
+          ref: orderData.id,
+          method: 'Order Checkout',
+          amount: newStoreCreditApplied,
+        });
+      }
+    }
+  } else if (newCustomerId) {
+    const creditDelta = newStoreCreditApplied - prevCreditApplied;
+    if (creditDelta !== 0) {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('current_credit')
+        .eq('id', newCustomerId)
+        .single();
+
+      if (customer) {
+        const updatedBalance = Math.max(0, Number(customer.current_credit) - creditDelta);
+        await supabase
+          .from('customers')
+          .update({ current_credit: updatedBalance })
+          .eq('id', newCustomerId);
+
+        await supabase.from('credit_logs').insert({
+          customer_id: newCustomerId,
+          movement: creditDelta > 0 ? 'credit_applied' : 'credit_in',
+          ref: orderData.id,
+          method: 'Order Checkout Adjustment',
+          amount: Math.abs(creditDelta),
+        });
+      }
     }
   }
 
@@ -444,6 +487,20 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
     return { error: 'Website orders cannot be reset to draft.' };
   }
 
+  // Server-side RBAC guard for Reset to Draft
+  const isSuperAdmin = admin.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+  if (newStatus === 'Draft' && !isSuperAdmin) {
+    const { data: permSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'permissions')
+      .single();
+    if (permSetting?.value?.reset_order_draft === 'superadmin_only') {
+      return { error: 'Unauthorized: Only superadmins can reset orders to draft.' };
+    }
+  }
+
+  // Refund store credit and zero it out on the order to prevent duplicate refund loops
   if (
     newStatus === 'Cancelled' &&
     currentOrder.status !== 'Cancelled' &&
@@ -471,6 +528,11 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
         method: 'Cancellation Refund',
         amount: Number(currentOrder.store_credit_applied),
       });
+
+      await supabase
+        .from('orders')
+        .update({ store_credit_applied: 0 })
+        .eq('id', orderId);
     }
   }
 
@@ -532,8 +594,8 @@ export async function createCustomerAddress(data: {
       street_address: data.street_address.trim(),
       city: data.city.trim(),
       postal_code: data.postal_code?.trim() || null,
-      latitude: data.latitude || null,
-      longitude: data.longitude || null,
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
       is_default: false,
     })
     .select()

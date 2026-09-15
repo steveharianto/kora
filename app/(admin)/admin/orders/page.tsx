@@ -5,11 +5,8 @@ import CreateOrderButton from './CreateOrderButton';
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
+  const [year, month, day] = dateStr.split('T')[0].split('-');
+  if (!year || !month || !day) return '—';
   return `${day}/${month}/${year}`;
 }
 
@@ -79,13 +76,13 @@ export default async function OrdersPage({
     };
   });
 
-  // Calculate today & tomorrow dates in local format (YYYY-MM-DD)
-  const todayObj = new Date();
-  const todayStr = todayObj.toISOString().split('T')[0];
+  // Calculate local date (Asia/Jakarta)
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
 
-  const tomorrowObj = new Date();
-  tomorrowObj.setDate(todayObj.getDate() + 1);
-  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(tomorrowDate);
 
   // Work Queue Categories
   const packTodayOrders = allOrders.filter(
@@ -143,7 +140,31 @@ export default async function OrdersPage({
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalResults);
   const paginatedOrders = filtered.slice(startIndex, endIndex);
 
-  // Forward current filter state to CSV export handler
+  // Helper to preserve filters across tab and page switches
+  const buildQueryString = (overrides: Record<string, string | number>) => {
+    const params = new URLSearchParams();
+    const current: Record<string, string | number> = {
+      tab: currentTab,
+      search: searchQuery,
+      from: fromDate,
+      to: toDate,
+      status: statusFilter,
+      view: viewFilter,
+      page: currentPage,
+      ...overrides,
+    };
+
+    Object.entries(current).forEach(([k, v]) => {
+      if (v && v !== 'all' && !(k === 'page' && Number(v) === 1)) {
+        params.set(k, String(v));
+      }
+    });
+
+    const str = params.toString();
+    return str ? `?${str}` : '/admin/orders';
+  };
+
+  // Forward filter state to CSV export handler
   const exportParams = new URLSearchParams();
   if (searchQuery) exportParams.set('search', searchQuery);
   if (fromDate) exportParams.set('from', fromDate);
@@ -180,7 +201,7 @@ export default async function OrdersPage({
       {/* Primary Tab Bar */}
       <div className="flex gap-5 border-b border-line mb-6">
         <Link
-          href="?tab=queue"
+          href={buildQueryString({ tab: 'queue', page: 1 })}
           className={`pb-2.5 text-sm font-medium transition-colors ${
             currentTab === 'queue' ? 'text-wine-ink border-b-2 border-wine' : 'text-muted hover:text-ink'
           }`}
@@ -188,7 +209,7 @@ export default async function OrdersPage({
           Work Queue
         </Link>
         <Link
-          href="?tab=all"
+          href={buildQueryString({ tab: 'all', page: 1 })}
           className={`pb-2.5 text-sm font-medium transition-colors ${
             currentTab === 'all' ? 'text-wine-ink border-b-2 border-wine' : 'text-muted hover:text-ink'
           }`}
@@ -197,9 +218,7 @@ export default async function OrdersPage({
         </Link>
       </div>
 
-      {/* ===================================================================== */}
-      {/* TAB 1: WORK QUEUE                                                     */}
-      {/* ===================================================================== */}
+      {/* TAB 1: WORK QUEUE */}
       {currentTab === 'queue' && (
         <div className="space-y-7">
           {/* SECTION 1: PACK & DISPATCH TODAY */}
@@ -398,9 +417,7 @@ export default async function OrdersPage({
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* TAB 2: ALL ORDERS                                                     */}
-      {/* ===================================================================== */}
+      {/* TAB 2: ALL ORDERS */}
       {currentTab === 'all' && (
         <div>
           {/* Filters Bar */}
@@ -477,7 +494,7 @@ export default async function OrdersPage({
             </span>
             <div className="flex items-center gap-1 ml-1">
               <Link
-                href={`?tab=all&page=${Math.max(1, currentPage - 1)}`}
+                href={buildQueryString({ page: Math.max(1, currentPage - 1) })}
                 className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] ${
                   currentPage <= 1 ? 'pointer-events-none opacity-40' : ''
                 }`}
@@ -485,7 +502,7 @@ export default async function OrdersPage({
                 ‹
               </Link>
               <Link
-                href={`?tab=all&page=${Math.min(totalPages, currentPage + 1)}`}
+                href={buildQueryString({ page: Math.min(totalPages, currentPage + 1) })}
                 className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] ${
                   currentPage >= totalPages ? 'pointer-events-none opacity-40' : ''
                 }`}
