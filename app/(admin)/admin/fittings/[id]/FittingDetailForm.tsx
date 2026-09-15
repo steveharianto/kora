@@ -11,7 +11,14 @@ import {
   addFittingNote,
 } from '@/app/actions/fittings';
 import { formatRupiah } from '@/lib/utils';
-import { MessageCircle, Check, X, AlertTriangle } from 'lucide-react';
+import { MessageCircle, AlertTriangle } from 'lucide-react';
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return '—';
+  const [year, month, day] = dateStr.split('T')[0].split('-');
+  if (!year || !month || !day) return '—';
+  return `${day}/${month}/${year}`;
+}
 
 export default function FittingDetailForm({
   initialFitting,
@@ -35,22 +42,23 @@ export default function FittingDetailForm({
   const dress2 = fittingItems.find((fi) => fi.slot_number === 2);
   const dress3 = fittingItems.find((fi) => fi.slot_number === 3);
 
-  // WhatsApp reminder generator using notifications.fitting_reminder template
+  // WhatsApp reminder generator
   const whatsAppUrl = useMemo(() => {
     if (!customerPhone) return '';
     const rawPhone = String(customerPhone).replace(/\D/g, '');
     const phone = rawPhone.startsWith('0') ? `62${rawPhone.slice(1)}` : rawPhone;
 
-    const defaultTpl = 'Hi [CUSTOMER_NAME], just a reminder about your fitting session tomorrow at [FITTING_TIME]. See you soon!';
+    const defaultTpl = 'Hi [CUSTOMER_NAME], just a reminder about your fitting session on [FITTING_DATE] at [FITTING_TIME]. See you soon!';
     const rawTpl = notificationTemplates?.fitting_reminder?.template || defaultTpl;
 
     const timeFormatted = initialFitting.slot ? initialFitting.slot.slice(0, 5) : '10:00';
     const message = rawTpl
       .replace(/\[CUSTOMER_NAME\]/g, customerName)
+      .replace(/\[FITTING_DATE\]/g, formatDate(initialFitting.date))
       .replace(/\[FITTING_TIME\]/g, timeFormatted);
 
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-  }, [customerPhone, customerName, initialFitting.slot, notificationTemplates]);
+  }, [customerPhone, customerName, initialFitting.date, initialFitting.slot, notificationTemplates]);
 
   const handleStatusChange = async (newStatus: string) => {
     setLoading(true);
@@ -105,7 +113,7 @@ export default function FittingDetailForm({
             {initialFitting.id}
           </h1>
           <p className="text-xs text-muted mt-0.5">
-            {customerName} · {initialFitting.date} {initialFitting.slot ? initialFitting.slot.slice(0, 5) : ''}
+            {customerName} · {formatDate(initialFitting.date)} {initialFitting.slot ? initialFitting.slot.slice(0, 5) : ''}
           </p>
         </div>
 
@@ -129,7 +137,7 @@ export default function FittingDetailForm({
               type="button"
               onClick={() => handleStatusChange('Confirmed')}
               disabled={loading}
-              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
+              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
               Confirm
             </button>
@@ -140,7 +148,7 @@ export default function FittingDetailForm({
               type="button"
               onClick={() => handleStatusChange('Completed')}
               disabled={loading}
-              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
+              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
               Mark done
             </button>
@@ -151,7 +159,7 @@ export default function FittingDetailForm({
               type="button"
               onClick={() => handleStatusChange('Cancelled')}
               disabled={loading}
-              className="px-3.5 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg"
+              className="px-3.5 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg cursor-pointer"
             >
               Cancel session
             </button>
@@ -274,7 +282,6 @@ export default function FittingDetailForm({
 
         {/* RIGHT COLUMN: Dresses & After-Hours Fee */}
         <div className="space-y-4">
-          {/* Dresses Card */}
           <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-3">
             <h3 className="font-serif text-[18px] font-normal mb-1">Dresses — up to 3 *</h3>
 
@@ -415,7 +422,7 @@ export default function FittingDetailForm({
                 <li key={log.id} className="border-b border-line pb-1.5 last:border-none">
                   <span className="font-semibold">{log.admin_name}</span>: {log.action_type}{' '}
                   {log.new_value && <span className="text-wine-ink font-medium">({log.new_value})</span>}
-                  <span className="text-muted ml-1">· {new Date(log.created_at).toLocaleDateString()}</span>
+                  <span className="text-muted ml-1">· {formatDate(log.created_at)}</span>
                 </li>
               ))}
             </ul>
@@ -423,7 +430,7 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      {/* Floating Action Pill: "Post the order first" */}
+      {/* Floating Action Pill */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
         <button
           type="button"

@@ -18,10 +18,40 @@ export default function AddCustomerModal() {
     dob: '',
   });
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '');
+    // Auto-normalize Indonesian local 08xx to international 628xx
+    if (val.startsWith('08')) {
+      val = '62' + val.slice(1);
+    }
+    setFormData((prev) => ({ ...prev, phone: val }));
+  };
+
+  const handleDobChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    if (!val) {
+      setFormData((prev) => ({ ...prev, dob: '' }));
+      return;
+    }
+    const parts = val.split('-');
+    // Strict 4-digit year limit
+    if (parts[0] && parts[0].length > 4) {
+      parts[0] = parts[0].slice(0, 4);
+      val = parts.join('-');
+    }
+    setFormData((prev) => ({ ...prev, dob: val }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
+
+    if (formData.phone.length < 9) {
+      setErrorMsg('Please enter a valid phone number with country code (e.g. 628... or 614...).');
+      setLoading(false);
+      return;
+    }
 
     const res = await createCustomer(formData);
     if (res.error) {
@@ -83,15 +113,18 @@ export default function AddCustomerModal() {
 
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
-                  Phone (WhatsApp) <span className="text-bad">*</span>
+                  Phone (WhatsApp with Country Code) <span className="text-bad">*</span>
                 </label>
                 <input
                   required
-                  placeholder="e.g. 08123456789"
+                  placeholder="e.g. 628217389482 or 6148379202"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  onChange={handlePhoneChange}
+                  className="w-full text-[13px] font-mono border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                 />
+                <span className="text-[10px] text-muted mt-1 block">
+                  Must start with country code (e.g. 62 for Indonesia, 61 for Australia) without the &apos;+&apos; sign.
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -111,8 +144,9 @@ export default function AddCustomerModal() {
                   <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Date of Birth</label>
                   <input
                     type="date"
+                    max="9999-12-31"
                     value={formData.dob}
-                    onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                    onChange={handleDobChange}
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>

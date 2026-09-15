@@ -7,13 +7,11 @@ export interface DashboardMetrics {
   dateRangeLabel: string;
   previousRangeLabel: string;
 
-  // Revenue Trend
   totalRevenue: number;
   previousRevenue: number;
   revenueDeltaPercent: number;
   dailyRevenueTrend: { date: string; amount: number }[];
 
-  // Top Dresses
   topDresses: {
     sku: string;
     name: string;
@@ -22,28 +20,24 @@ export interface DashboardMetrics {
   }[];
   topDressLeadText: string;
 
-  // Donut 1: Orders by Status
   orderStatusBreakdown: {
     totalOrders: number;
     orderDeltaPercent: number;
     segments: { label: string; count: number; percent: number; color: string }[];
   };
 
-  // Donut 2: Channel Split
   channelSplit: {
     websitePercent: number;
     websiteDeltaPt: number;
     segments: { label: string; count: number; percent: number; color: string }[];
   };
 
-  // Donut 3: Customer Retention
   customerRetention: {
     newPercent: number;
     newDeltaPt: number;
     segments: { label: string; count: number; percent: number; color: string }[];
   };
 
-  // Triage Feeds (Real-time)
   triage: {
     dispatchToday: {
       orderId: string;
@@ -82,20 +76,20 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
   if (rangeKey === 'today') days = 1;
   if (rangeKey === 'month') days = now.getDate();
 
-  // Current period bounds
+  // Current period bounds formatted in Indonesian timezone
   const startDateObj = new Date(now);
   startDateObj.setDate(now.getDate() - days);
   startDateObj.setHours(0, 0, 0, 0);
-  const startDateStr = startDateObj.toISOString().split('T')[0];
-  const endDateStr = now.toISOString().split('T')[0];
 
-  // Previous period bounds (for deltas)
+  const startDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(startDateObj);
+  const endDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
+
+  // Previous period bounds (for comparative metrics)
   const prevStartDateObj = new Date(startDateObj);
   prevStartDateObj.setDate(startDateObj.getDate() - days);
-  const prevStartDateStr = prevStartDateObj.toISOString().split('T')[0];
+  const prevStartDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(prevStartDateObj);
   const prevEndDateStr = startDateStr;
 
-  // 1. Fetch Orders in Current and Previous Periods
   const [currentOrdersRes, previousOrdersRes] = await Promise.all([
     supabase
       .from('orders')
@@ -130,7 +124,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
   const currentOrders = currentOrdersRes.data || [];
   const previousOrders = previousOrdersRes.data || [];
 
-  // --- REVENUE CALCULATION ---
+  // Revenue Calculations
   const totalRevenue = currentOrders.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0);
   const previousRevenue = previousOrders.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0);
   const revenueDeltaPercent =
@@ -138,10 +132,10 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
       ? Math.round(((totalRevenue - previousRevenue) / previousRevenue) * 100)
       : 100;
 
-  // Daily Trend aggregation
+  // Daily Trend Aggregation
   const dailyMap: Record<string, number> = {};
   for (let d = new Date(startDateObj); d <= now; d.setDate(d.getDate() + 1)) {
-    const key = d.toISOString().split('T')[0].slice(5); // MM-DD
+    const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d).slice(5);
     dailyMap[key] = 0;
   }
   currentOrders.forEach((o) => {
@@ -155,7 +149,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     amount,
   }));
 
-  // --- TOP DRESSES CALCULATION ---
+  // Top Dresses Calculation
   const dressYieldMap: Record<string, { name: string; revenue: number }> = {};
   currentOrders.forEach((o) => {
     (o.order_products || []).forEach((p: any) => {
@@ -183,7 +177,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     ? `${topDress.name} leads with Rp ${(topDress.revenue / 1000000).toFixed(1)} jt — ${topDress.sharePercent}% of this period's dress revenue across ${sortedDresses.length} style(s)`
     : 'No dress rentals recorded in this window.';
 
-  // --- DONUT 1: ORDERS BY STATUS ---
+  // Donut 1: Orders by Status
   const totalOrders = currentOrders.length;
   const prevTotalOrders = previousOrders.length;
   const orderDeltaPercent =
@@ -211,7 +205,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     color: statusColors[status] || '#8C827A',
   }));
 
-  // --- DONUT 2: CHANNEL SPLIT ---
+  // Donut 2: Channel Split
   const websiteCount = currentOrders.filter((o) => o.order_method === 'Website').length;
   const manualCount = totalOrders - websiteCount;
   const websitePercent = totalOrders > 0 ? Math.round((websiteCount / totalOrders) * 100) : 100;
@@ -226,7 +220,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     { label: 'Manual', count: manualCount, percent: 100 - websitePercent, color: '#2B6CB0' },
   ];
 
-  // --- DONUT 3: CUSTOMER RETENTION ---
+  // Donut 3: Customer Retention
   const customerOrderCountsRes = await supabase
     .from('orders')
     .select('customer_id');
@@ -256,15 +250,14 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     { label: 'Returning', count: returningCustCount, percent: returningPercent, color: '#2B6CB0' },
   ];
 
-  // --- LIVE OPERATIONAL TRIAGE (Real-time, ignores date range filter) ---
-  const todayStr = now.toISOString().split('T')[0];
+  // Live Operational Triage Feeds
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
 
   const tomorrowObj = new Date(now);
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+  const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(tomorrowObj);
 
   const [triageDispatchRes, triageReturnsRes, triageKtpRes, triageFittingsRes] = await Promise.all([
-    // 1. Pack & Dispatch Today
     supabase
       .from('orders')
       .select(`
@@ -282,7 +275,6 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
       .eq('status', 'Ordered')
       .limit(6),
 
-    // 2. Returns Due & Overdue
     supabase
       .from('returns')
       .select(`
@@ -290,25 +282,25 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
         order_id,
         status,
         orders (
-          return_date
+          return_date,
+          order_products (
+            item_sku
+          )
         ),
         customers (
           first_name,
           last_name
-        ),
-        order_products:orders(order_products(item_sku))
+        )
       `)
       .in('status', ['Requested', 'Shipping', 'Received'])
       .limit(6),
 
-    // 3. KTP Pending Review
     supabase
       .from('customers')
       .select('id, first_name, last_name, status')
       .in('status', ['KTP Pending', 'Not Submitted'])
       .limit(6),
 
-    // 4. Fittings Today & Tomorrow
     supabase
       .from('fittings')
       .select(`
@@ -330,7 +322,6 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
       .limit(6),
   ]);
 
-  // Format Triage Feeds
   const dispatchToday = (triageDispatchRes.data || []).map((o: any) => ({
     orderId: o.id,
     customerName: `${o.customers?.first_name || ''} ${o.customers?.last_name || ''}`.trim(),
@@ -344,7 +335,13 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     let isOverdue = false;
 
     if (returnDeadline) {
-      const diff = Math.round((now.getTime() - new Date(returnDeadline).getTime()) / (1000 * 60 * 60 * 24));
+      const [ry, rm, rd] = returnDeadline.split('-').map(Number);
+      const deadlineTime = new Date(ry, rm - 1, rd).getTime();
+
+      const [ty, tm, td] = todayStr.split('-').map(Number);
+      const todayTime = new Date(ty, tm - 1, td).getTime();
+
+      const diff = Math.round((todayTime - deadlineTime) / (1000 * 60 * 60 * 24));
       if (diff > 0) {
         agingText = `${diff} d late`;
         isOverdue = true;
@@ -357,7 +354,7 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
       id: r.id,
       orderId: r.order_id,
       customerName: `${r.customers?.first_name || ''} ${r.customers?.last_name || ''}`.trim(),
-      sku: (r.order_products as any)?.[0]?.order_products?.[0]?.item_sku || 'Garment',
+      sku: r.orders?.order_products?.[0]?.item_sku || 'Garment',
       agingText,
       isOverdue,
     };
@@ -381,7 +378,6 @@ export async function getDashboardMetrics(rangeKey: string = '30d'): Promise<Das
     };
   });
 
-  // Greeting based on server time
   const hour = now.getHours();
   let greeting = 'Good morning';
   if (hour >= 12 && hour < 17) greeting = 'Good afternoon';

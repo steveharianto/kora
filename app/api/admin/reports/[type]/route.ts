@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/navigation';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentAdmin } from '@/app/actions/auth';
 import { generateCsvString } from '@/lib/csv';

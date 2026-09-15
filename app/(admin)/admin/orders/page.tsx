@@ -5,11 +5,8 @@ import CreateOrderButton from './CreateOrderButton';
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
+  const [year, month, day] = dateStr.split('T')[0].split('-');
+  if (!year || !month || !day) return '—';
   return `${day}/${month}/${year}`;
 }
 
@@ -24,16 +21,20 @@ export default async function OrdersPage({
     status?: string;
     view?: string;
     page?: string;
+    sort?: string;
+    order?: string;
   }>;
 }) {
   const resolvedParams = await searchParams;
-  const currentTab = resolvedParams.tab || 'queue';
+  const currentTab = resolvedParams.tab === 'all' ? 'all' : 'queue';
   const searchQuery = (resolvedParams.search || '').trim().toLowerCase();
   const fromDate = resolvedParams.from || '';
   const toDate = resolvedParams.to || '';
   const statusFilter = resolvedParams.status || 'all';
-  const viewFilter = resolvedParams.view || 'active';
+  const viewFilter = resolvedParams.view || (currentTab === 'all' ? 'all' : 'active');
   const currentPage = Math.max(1, parseInt(resolvedParams.page || '1', 10));
+  const sortBy = resolvedParams.sort || 'date';
+  const sortOrder = resolvedParams.order === 'asc' ? 'asc' : 'desc';
   const PAGE_SIZE = 8;
 
   const supabase = await createClient();
@@ -79,13 +80,12 @@ export default async function OrdersPage({
     };
   });
 
-  // Calculate today & tomorrow dates in local format (YYYY-MM-DD)
-  const todayObj = new Date();
-  const todayStr = todayObj.toISOString().split('T')[0];
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
 
-  const tomorrowObj = new Date();
-  tomorrowObj.setDate(todayObj.getDate() + 1);
-  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(tomorrowDate);
 
   // Work Queue Categories
   const packTodayOrders = allOrders.filter(
@@ -137,13 +137,136 @@ export default async function OrdersPage({
     filtered = filtered.filter((o) => !['Completed', 'Cancelled'].includes(o.status));
   }
 
+  // Column Sorting Engine
+  filtered.sort((a, b) => {
+    let valA: any = a.order_date || '';
+    let valB: any = b.order_date || '';
+
+    switch (sortBy) {
+      case 'id':
+        valA = a.id;
+        valB = b.id;
+        break;
+      case 'customer':
+        valA = a.customerName.toLowerCase();
+        valB = b.customerName.toLowerCase();
+        break;
+      case 'city':
+        valA = (a.city || '').toLowerCase();
+        valB = (b.city || '').toLowerCase();
+        break;
+      case 'product':
+        valA = a.productSku.toLowerCase();
+        valB = b.productSku.toLowerCase();
+        break;
+      case 'pickup':
+        valA = a.pickup_date || '';
+        valB = b.pickup_date || '';
+        break;
+      case 'return':
+        valA = a.return_date || '';
+        valB = b.return_date || '';
+        break;
+      case 'revenue':
+        valA = Number(a.total_price) || 0;
+        valB = Number(b.total_price) || 0;
+        break;
+      case 'deposit':
+        valA = Number(a.total_deposit) || 0;
+        valB = Number(b.total_deposit) || 0;
+        break;
+      case 'total':
+        valA = Number(a.total) || 0;
+        valB = Number(b.total) || 0;
+        break;
+      case 'date':
+      default:
+        valA = a.order_date || '';
+        valB = b.order_date || '';
+        break;
+    }
+
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   const totalResults = filtered.length;
   const totalPages = Math.ceil(totalResults / PAGE_SIZE) || 1;
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalResults);
   const paginatedOrders = filtered.slice(startIndex, endIndex);
 
-  // Forward current filter state to CSV export handler
+  // Safe Query String Builder that preserves explicit tab states
+  const buildQueryString = (overrides: Record<string, string | number>) => {
+    const params = new URLSearchParams();
+    const merged: Record<string, string | number> = {
+      tab: currentTab,
+      search: searchQuery,
+      from: fromDate,
+      to: toDate,
+      status: statusFilter,
+      view: viewFilter,
+      sort: sortBy,
+      order: sortOrder,
+      page: currentPage,
+      ...overrides,
+    };
+
+    if (merged.tab === 'all') {
+      params.set('tab', 'all');
+    }
+    if (merged.search) {
+      params.set('search', String(merged.search));
+    }
+    if (merged.from) {
+      params.set('from', String(merged.from));
+    }
+    if (merged.to) {
+      params.set('to', String(merged.to));
+    }
+    if (merged.status && merged.status !== 'all') {
+      params.set('status', String(merged.status));
+    }
+    if (merged.tab === 'all') {
+      if (merged.view && merged.view !== 'all') {
+        params.set('view', String(merged.view));
+      }
+    } else {
+      if (merged.view && merged.view !== 'active') {
+        params.set('view', String(merged.view));
+      }
+    }
+    if (merged.sort && (merged.sort !== 'date' || merged.order === 'asc')) {
+      params.set('sort', String(merged.sort));
+      params.set('order', String(merged.order));
+    }
+    if (merged.page && Number(merged.page) > 1) {
+      params.set('page', String(merged.page));
+    }
+
+    const str = params.toString();
+    return str ? `?${str}` : '/admin/orders';
+  };
+
+  const renderSortHeader = (field: string, label: string, align: 'left' | 'right' = 'left') => {
+    const isActive = sortBy === field;
+    const nextOrder = isActive && sortOrder === 'asc' ? 'desc' : 'asc';
+    const indicator = isActive ? (sortOrder === 'asc' ? '▲' : '▼') : '▾';
+
+    return (
+      <th className={`px-3 py-3 ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <Link
+          href={buildQueryString({ sort: field, order: nextOrder, page: 1 })}
+          className="inline-flex items-center gap-1 text-muted hover:text-ink transition cursor-pointer select-none"
+        >
+          <span>{label}</span>
+          <span className={isActive ? 'text-wine-ink font-bold' : 'text-muted/60'}>{indicator}</span>
+        </Link>
+      </th>
+    );
+  };
+
   const exportParams = new URLSearchParams();
   if (searchQuery) exportParams.set('search', searchQuery);
   if (fromDate) exportParams.set('from', fromDate);
@@ -153,7 +276,7 @@ export default async function OrdersPage({
   const exportHref = `/admin/orders/export${exportParams.toString() ? `?${exportParams.toString()}` : ''}`;
 
   return (
-    <div className="max-w-[1250px] pb-24 font-sans text-ink">
+    <div className="max-w-[1250px] mx-auto pb-24 font-sans text-ink">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>
@@ -161,7 +284,7 @@ export default async function OrdersPage({
             Operations
           </div>
           <h1 className="font-serif text-[32px] font-normal tracking-[0.01em] text-ink">
-            Orders Page
+            Orders
           </h1>
         </div>
 
@@ -177,10 +300,10 @@ export default async function OrdersPage({
         </div>
       </div>
 
-      {/* Primary Tab Bar */}
+      {/* Tab Bar */}
       <div className="flex gap-5 border-b border-line mb-6">
         <Link
-          href="?tab=queue"
+          href="/admin/orders"
           className={`pb-2.5 text-sm font-medium transition-colors ${
             currentTab === 'queue' ? 'text-wine-ink border-b-2 border-wine' : 'text-muted hover:text-ink'
           }`}
@@ -188,7 +311,7 @@ export default async function OrdersPage({
           Work Queue
         </Link>
         <Link
-          href="?tab=all"
+          href="/admin/orders?tab=all"
           className={`pb-2.5 text-sm font-medium transition-colors ${
             currentTab === 'all' ? 'text-wine-ink border-b-2 border-wine' : 'text-muted hover:text-ink'
           }`}
@@ -197,9 +320,7 @@ export default async function OrdersPage({
         </Link>
       </div>
 
-      {/* ===================================================================== */}
-      {/* TAB 1: WORK QUEUE                                                     */}
-      {/* ===================================================================== */}
+      {/* TAB 1: WORK QUEUE */}
       {currentTab === 'queue' && (
         <div className="space-y-7">
           {/* SECTION 1: PACK & DISPATCH TODAY */}
@@ -215,16 +336,16 @@ export default async function OrdersPage({
                 <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
-                      <th className="px-3 py-2.5">Date ▾</th>
-                      <th className="px-3 py-2.5">Order ID ▾</th>
-                      <th className="px-3 py-2.5">Customer ▾</th>
-                      <th className="px-3 py-2.5">City ▾</th>
-                      <th className="px-3 py-2.5">Product ▾</th>
-                      <th className="px-3 py-2.5">Pick Up/Send ▾</th>
-                      <th className="px-3 py-2.5">Return ▾</th>
-                      <th className="px-3 py-2.5">Revenue ▾</th>
-                      <th className="px-3 py-2.5">Deposit ▾</th>
-                      <th className="px-3 py-2.5">Total ▾</th>
+                      <th className="px-3 py-2.5">Date</th>
+                      <th className="px-3 py-2.5">Order ID</th>
+                      <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">City</th>
+                      <th className="px-3 py-2.5">Product</th>
+                      <th className="px-3 py-2.5">Pick Up/Send</th>
+                      <th className="px-3 py-2.5">Return</th>
+                      <th className="px-3 py-2.5 text-right">Revenue</th>
+                      <th className="px-3 py-2.5 text-right">Deposit</th>
+                      <th className="px-3 py-2.5 text-right">Total</th>
                       <th className="px-3 py-2.5">Courier</th>
                     </tr>
                   </thead>
@@ -249,9 +370,9 @@ export default async function OrdersPage({
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
                           <td className="px-3 py-3 font-medium text-wine-ink">{formatDate(o.pickup_date)}</td>
                           <td className="px-3 py-3 text-muted">{formatDate(o.return_date)}</td>
-                          <td className="px-3 py-3">{o.revenueFormatted}</td>
-                          <td className="px-3 py-3">{o.depositFormatted}</td>
-                          <td className="px-3 py-3 font-bold">{o.totalFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.revenueFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.depositFormatted}</td>
+                          <td className="px-3 py-3 text-right font-bold">{o.totalFormatted}</td>
                           <td className="px-3 py-3 text-muted text-xs">{o.pick_up_method || 'Paxel'}</td>
                         </tr>
                       ))
@@ -278,16 +399,16 @@ export default async function OrdersPage({
                 <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
-                      <th className="px-3 py-2.5">Date ▾</th>
-                      <th className="px-3 py-2.5">Order ID ▾</th>
-                      <th className="px-3 py-2.5">Customer ▾</th>
-                      <th className="px-3 py-2.5">City ▾</th>
-                      <th className="px-3 py-2.5">Product ▾</th>
-                      <th className="px-3 py-2.5">Pick Up/Send ▾</th>
-                      <th className="px-3 py-2.5">Return ▾</th>
-                      <th className="px-3 py-2.5">Revenue ▾</th>
-                      <th className="px-3 py-2.5">Deposit ▾</th>
-                      <th className="px-3 py-2.5">Total ▾</th>
+                      <th className="px-3 py-2.5">Date</th>
+                      <th className="px-3 py-2.5">Order ID</th>
+                      <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">City</th>
+                      <th className="px-3 py-2.5">Product</th>
+                      <th className="px-3 py-2.5">Pick Up/Send</th>
+                      <th className="px-3 py-2.5">Return</th>
+                      <th className="px-3 py-2.5 text-right">Revenue</th>
+                      <th className="px-3 py-2.5 text-right">Deposit</th>
+                      <th className="px-3 py-2.5 text-right">Total</th>
                       <th className="px-3 py-2.5">Courier</th>
                     </tr>
                   </thead>
@@ -312,9 +433,9 @@ export default async function OrdersPage({
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
                           <td className="px-3 py-3 font-medium">{formatDate(o.pickup_date)}</td>
                           <td className="px-3 py-3 text-muted">{formatDate(o.return_date)}</td>
-                          <td className="px-3 py-3">{o.revenueFormatted}</td>
-                          <td className="px-3 py-3">{o.depositFormatted}</td>
-                          <td className="px-3 py-3 font-bold">{o.totalFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.revenueFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.depositFormatted}</td>
+                          <td className="px-3 py-3 text-right font-bold">{o.totalFormatted}</td>
                           <td className="px-3 py-3 text-muted text-xs">{o.pick_up_method || 'Paxel'}</td>
                         </tr>
                       ))
@@ -341,16 +462,16 @@ export default async function OrdersPage({
                 <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
-                      <th className="px-3 py-2.5">Date ▾</th>
-                      <th className="px-3 py-2.5">Order ID ▾</th>
-                      <th className="px-3 py-2.5">Customer ▾</th>
-                      <th className="px-3 py-2.5">City ▾</th>
-                      <th className="px-3 py-2.5">Product ▾</th>
-                      <th className="px-3 py-2.5">Pick Up/Send ▾</th>
-                      <th className="px-3 py-2.5">Return ▾</th>
-                      <th className="px-3 py-2.5">Revenue ▾</th>
-                      <th className="px-3 py-2.5">Deposit ▾</th>
-                      <th className="px-3 py-2.5">Total ▾</th>
+                      <th className="px-3 py-2.5">Date</th>
+                      <th className="px-3 py-2.5">Order ID</th>
+                      <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">City</th>
+                      <th className="px-3 py-2.5">Product</th>
+                      <th className="px-3 py-2.5">Pick Up/Send</th>
+                      <th className="px-3 py-2.5">Return</th>
+                      <th className="px-3 py-2.5 text-right">Revenue</th>
+                      <th className="px-3 py-2.5 text-right">Deposit</th>
+                      <th className="px-3 py-2.5 text-right">Total</th>
                       <th className="px-3 py-2.5">Courier</th>
                     </tr>
                   </thead>
@@ -380,9 +501,9 @@ export default async function OrdersPage({
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
                           <td className="px-3 py-3 text-muted">{formatDate(o.pickup_date)}</td>
                           <td className="px-3 py-3 text-muted">{formatDate(o.return_date)}</td>
-                          <td className="px-3 py-3">{o.revenueFormatted}</td>
-                          <td className="px-3 py-3">{o.depositFormatted}</td>
-                          <td className="px-3 py-3 font-bold">{o.totalFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.revenueFormatted}</td>
+                          <td className="px-3 py-3 text-right">{o.depositFormatted}</td>
+                          <td className="px-3 py-3 text-right font-bold">{o.totalFormatted}</td>
                           <td className="px-3 py-3 text-muted text-xs">{o.pick_up_method || 'Paxel'}</td>
                         </tr>
                       ))
@@ -398,9 +519,7 @@ export default async function OrdersPage({
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* TAB 2: ALL ORDERS                                                     */}
-      {/* ===================================================================== */}
+      {/* TAB 2: ALL ORDERS */}
       {currentTab === 'all' && (
         <div>
           {/* Filters Bar */}
@@ -443,7 +562,7 @@ export default async function OrdersPage({
                 defaultValue={statusFilter}
                 className="px-3 py-1.5 rounded-lg border border-line bg-card text-ink text-xs cursor-pointer"
               >
-                <option value="all">Status (5/7) ▾</option>
+                <option value="all">Status (All) ▾</option>
                 <option value="Draft">Draft</option>
                 <option value="Ordered">Ordered</option>
                 <option value="In Shipping">In Shipping</option>
@@ -458,8 +577,8 @@ export default async function OrdersPage({
               defaultValue={viewFilter}
               className="px-3 py-1.5 rounded-lg border border-line bg-card text-ink text-xs cursor-pointer"
             >
-              <option value="active">View: Active Work ▾</option>
               <option value="all">View: All Orders ▾</option>
+              <option value="active">View: Active Work ▾</option>
             </select>
 
             <button
@@ -468,6 +587,15 @@ export default async function OrdersPage({
             >
               Filter
             </button>
+
+            {(searchQuery || fromDate || toDate || statusFilter !== 'all' || viewFilter !== 'all') && (
+              <Link
+                href="/admin/orders?tab=all"
+                className="text-xs text-muted hover:text-bad underline ml-1"
+              >
+                Reset
+              </Link>
+            )}
           </form>
 
           {/* Pagination */}
@@ -477,7 +605,7 @@ export default async function OrdersPage({
             </span>
             <div className="flex items-center gap-1 ml-1">
               <Link
-                href={`?tab=all&page=${Math.max(1, currentPage - 1)}`}
+                href={buildQueryString({ page: Math.max(1, currentPage - 1) })}
                 className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] ${
                   currentPage <= 1 ? 'pointer-events-none opacity-40' : ''
                 }`}
@@ -485,7 +613,7 @@ export default async function OrdersPage({
                 ‹
               </Link>
               <Link
-                href={`?tab=all&page=${Math.min(totalPages, currentPage + 1)}`}
+                href={buildQueryString({ page: Math.min(totalPages, currentPage + 1) })}
                 className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] ${
                   currentPage >= totalPages ? 'pointer-events-none opacity-40' : ''
                 }`}
@@ -500,17 +628,17 @@ export default async function OrdersPage({
             <div className="w-full overflow-x-auto">
               <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
                 <thead>
-                  <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
-                    <th className="px-3 py-3">Date ▾</th>
-                    <th className="px-3 py-3">Order ID ▾</th>
-                    <th className="px-3 py-3">Customer ▾</th>
-                    <th className="px-3 py-3">City ▾</th>
-                    <th className="px-3 py-3">Product ▾</th>
-                    <th className="px-3 py-3">Pick Up/Send ▾</th>
-                    <th className="px-3 py-3">Return ▾</th>
-                    <th className="px-3 py-3">Revenue ▾</th>
-                    <th className="px-3 py-3">Deposit ▾</th>
-                    <th className="px-3 py-3">Total ▾</th>
+                  <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted font-medium">
+                    {renderSortHeader('date', 'Date')}
+                    {renderSortHeader('id', 'Order ID')}
+                    {renderSortHeader('customer', 'Customer')}
+                    {renderSortHeader('city', 'City')}
+                    {renderSortHeader('product', 'Product')}
+                    {renderSortHeader('pickup', 'Pick Up/Send')}
+                    {renderSortHeader('return', 'Return')}
+                    {renderSortHeader('revenue', 'Revenue', 'right')}
+                    {renderSortHeader('deposit', 'Deposit', 'right')}
+                    {renderSortHeader('total', 'Total', 'right')}
                   </tr>
                 </thead>
                 <tbody>
@@ -541,9 +669,9 @@ export default async function OrdersPage({
                         <td className="px-3 py-3.5 font-mono text-xs">{o.productSku}</td>
                         <td className="px-3 py-3.5">{formatDate(o.pickup_date)}</td>
                         <td className="px-3 py-3.5 text-muted">{formatDate(o.return_date)}</td>
-                        <td className="px-3 py-3.5">{o.revenueFormatted}</td>
-                        <td className="px-3 py-3.5">{o.depositFormatted}</td>
-                        <td className="px-3 py-3.5 font-bold">{o.totalFormatted}</td>
+                        <td className="px-3 py-3.5 text-right">{o.revenueFormatted}</td>
+                        <td className="px-3 py-3.5 text-right">{o.depositFormatted}</td>
+                        <td className="px-3 py-3.5 text-right font-bold">{o.totalFormatted}</td>
                       </tr>
                     ))
                   )}

@@ -64,6 +64,28 @@ export async function updateCustomer(
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
+  const isSuperAdmin = admin.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+  const { data: existingCustomer } = await supabase
+    .from('customers')
+    .select('current_credit')
+    .eq('id', id)
+    .single();
+
+  let creditToSave = existingCustomer?.current_credit ?? 0;
+  if (formData.current_credit !== undefined && formData.current_credit !== existingCustomer?.current_credit) {
+    if (!isSuperAdmin) {
+      return { error: 'Unauthorized: Only Superadmins can manually adjust store credit.' };
+    }
+    creditToSave = formData.current_credit;
+    await supabase.from('credit_logs').insert({
+      customer_id: id,
+      movement: formData.current_credit > (existingCustomer?.current_credit ?? 0) ? 'credit_in' : 'credit_applied',
+      ref: 'Manual Admin Adjustment',
+      method: 'Admin Dashboard',
+      amount: Math.abs(formData.current_credit - (existingCustomer?.current_credit ?? 0)),
+    });
+  }
+
   const { error } = await supabase
     .from('customers')
     .update({
@@ -73,7 +95,7 @@ export async function updateCustomer(
       gender: formData.gender || null,
       dob: formData.dob || null,
       status: formData.status,
-      current_credit: formData.current_credit ?? 0,
+      current_credit: creditToSave,
     })
     .eq('id', id);
 
@@ -135,7 +157,6 @@ export async function saveAddress(
     return { error: 'Street address and city are required.' };
   }
 
-  // If set to default, uncheck previous defaults for this customer
   if (addressData.is_default) {
     await supabase
       .from('addresses')
@@ -149,8 +170,8 @@ export async function saveAddress(
     street_address: addressData.street_address,
     city: addressData.city,
     postal_code: addressData.postal_code,
-    latitude: addressData.latitude || null,
-    longitude: addressData.longitude || null,
+    latitude: addressData.latitude ?? null,
+    longitude: addressData.longitude ?? null,
     is_default: addressData.is_default ?? false,
   };
 
@@ -161,7 +182,6 @@ export async function saveAddress(
       .eq('id', addressData.id);
     if (error) return { error: error.message };
   } else {
-    // If this is the customer's first address, make it default automatically
     const { count } = await supabase
       .from('addresses')
       .select('*', { count: 'exact', head: true })

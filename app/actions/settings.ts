@@ -130,6 +130,10 @@ export async function updateAdminRole(adminId: string, role: string) {
     return { error: 'Unauthorized: Only Superadmins can change user roles.' };
   }
 
+  if (admin.id === adminId && role !== 'superadmin') {
+    return { error: 'You cannot demote your own account from Super Admin.' };
+  }
+
   const { error } = await supabase
     .from('admins')
     .update({ role })

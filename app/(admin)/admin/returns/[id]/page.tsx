@@ -8,6 +8,12 @@ export default async function ReturnDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // Validate format to protect PostgREST filter clauses
+  if (!/^[A-Za-z0-9\-_]+$/.test(id)) {
+    notFound();
+  }
+
   const supabase = await createClient();
 
   // 1. Fetch return record (look up by return ID or order ID)

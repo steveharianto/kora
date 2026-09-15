@@ -32,7 +32,8 @@ export async function getNextFittingId(): Promise<string> {
 export async function getAvailableSlotsForDate(dateStr: string) {
   if (!dateStr) return { slots: [], isClosed: false, reason: 'Date required' };
 
-  const targetDate = new Date(dateStr);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, month - 1, day);
   const dayOfWeek = targetDate.getDay(); // 0 = Sunday, 1 = Monday ... 6 = Saturday
 
   if (dayOfWeek === 0) {
@@ -41,7 +42,6 @@ export async function getAvailableSlotsForDate(dateStr: string) {
 
   const supabase = await createClient();
 
-  // 1. Fetch operating hours configuration from app_settings
   const { data: settingsData } = await supabase
     .from('app_settings')
     .select('value')
@@ -56,12 +56,10 @@ export async function getAvailableSlotsForDate(dateStr: string) {
     session_rules: { after_hours_fee: 100000 },
   };
 
-  // Define time slots depending on day of week
   type SlotDef = { slot: string; end: string; isAfterHours: boolean; fee: number };
   const candidateSlots: SlotDef[] = [];
 
   if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-    // Weekday (10:00 - 16:00 regular, 17:00 after hours)
     for (let h = 10; h <= 16; h++) {
       candidateSlots.push({
         slot: `${String(h).padStart(2, '0')}:00`,
@@ -77,7 +75,6 @@ export async function getAvailableSlotsForDate(dateStr: string) {
       fee: fittingRules.session_rules?.after_hours_fee || 100000,
     });
   } else if (dayOfWeek === 6) {
-    // Saturday (10:00 - 12:00 regular, 13:00 - 14:00 after hours)
     for (let h = 10; h <= 12; h++) {
       candidateSlots.push({
         slot: `${String(h).padStart(2, '0')}:00`,
@@ -96,7 +93,6 @@ export async function getAvailableSlotsForDate(dateStr: string) {
     }
   }
 
-  // 2. Fetch already-booked active fittings on this date
   const { data: bookedFittings } = await supabase
     .from('fittings')
     .select('slot')
@@ -119,7 +115,6 @@ export async function getAvailableSlotsForDate(dateStr: string) {
 export async function getDressesAvailabilityForDate(dateStr: string) {
   const supabase = await createClient();
 
-  // 1. Fetch all items with types
   const { data: items } = await supabase
     .from('items')
     .select(`
@@ -145,7 +140,6 @@ export async function getDressesAvailabilityForDate(dateStr: string) {
     }));
   }
 
-  // 2. Fetch all active orders overlapping dateStr
   const { data: activeOrderProducts } = await supabase
     .from('order_products')
     .select(`
@@ -159,7 +153,8 @@ export async function getDressesAvailabilityForDate(dateStr: string) {
     `)
     .not('orders.status', 'in', '("Cancelled", "Draft")');
 
-  const fitDate = new Date(dateStr).getTime();
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const fitDate = new Date(y, m - 1, d).getTime();
 
   return items.map((item) => {
     if (item.is_archived) {
@@ -169,7 +164,6 @@ export async function getDressesAvailabilityForDate(dateStr: string) {
       return { ...item, isAvailable: false, reason: 'Currently Under Repair' };
     }
 
-    // Check if garment has an order overlapping dateStr
     const itemRentals = (activeOrderProducts || []).filter((p) => p.item_sku === item.sku);
     const bufferDays = item.buffer_override ?? (item.types as any)?.default_buffer_days ?? 2;
 
@@ -177,8 +171,11 @@ export async function getDressesAvailabilityForDate(dateStr: string) {
       const order = rental.orders as any;
       if (!order.pickup_date || !order.return_date) continue;
 
-      const pickupTime = new Date(order.pickup_date).getTime();
-      const returnDateObj = new Date(order.return_date);
+      const [py, pm, pd] = order.pickup_date.split('-').map(Number);
+      const pickupTime = new Date(py, pm - 1, pd).getTime();
+
+      const [ry, rm, rd] = order.return_date.split('-').map(Number);
+      const returnDateObj = new Date(ry, rm - 1, rd);
       returnDateObj.setDate(returnDateObj.getDate() + bufferDays);
       const returnWithBufferTime = returnDateObj.getTime();
 
@@ -237,12 +234,21 @@ export async function createFittingSession(payload: {
     return { error: `Slot ${payload.slot} on ${payload.date} is already booked.` };
   }
 
-  // 3. Determine after-hours fee
+  // 3. Determine after-hours fee using system settings
+  const { data: settings } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'fittings')
+    .single();
+
+  const configuredFee = Number(settings?.value?.session_rules?.after_hours_fee) || 100000;
+
   const slotHour = parseInt(payload.slot.split(':')[0], 10);
-  const targetDate = new Date(payload.date);
+  const [year, month, day] = payload.date.split('-').map(Number);
+  const targetDate = new Date(year, month - 1, day);
   const dayOfWeek = targetDate.getDay();
   const isAfterHours = (dayOfWeek >= 1 && dayOfWeek <= 5 && slotHour >= 17) || (dayOfWeek === 6 && slotHour >= 13);
-  const afterHoursFee = isAfterHours ? 100000 : 0;
+  const afterHoursFee = isAfterHours ? configuredFee : 0;
 
   const newFittingId = await getNextFittingId();
   const endHour = String(slotHour + 1).padStart(2, '0');
@@ -375,7 +381,6 @@ export async function convertFittingToOrder(fittingId: string) {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized: Session not found.' };
 
-  // 1. Fetch fitting with customer and items
   const { data: fitting, error: fitErr } = await supabase
     .from('fittings')
     .select(`
@@ -409,15 +414,12 @@ export async function convertFittingToOrder(fittingId: string) {
 
   if (fitErr || !fitting) return { error: 'Fitting session not found.' };
 
-  // 2. Generate new M-xxxx Order ID
   const newOrderId = await getNextManualOrderId();
 
-  // Find customer's default address
   const defaultAddress =
     fitting.customers?.addresses?.find((a: any) => a.is_default) ||
     fitting.customers?.addresses?.[0];
 
-  // 3. Filter non-evicted dresses
   const activeItems = (fitting.fitting_items || []).filter((fi: any) => !fi.is_evicted);
 
   let totalPrice = 0;
@@ -437,8 +439,8 @@ export async function convertFittingToOrder(fittingId: string) {
     };
   });
 
-  // Event schedule defaults: starts 2 days after fitting
-  const eventDateObj = new Date(fitting.date);
+  const [fy, fm, fd] = fitting.date.split('-').map(Number);
+  const eventDateObj = new Date(fy, fm - 1, fd);
   eventDateObj.setDate(eventDateObj.getDate() + 2);
   const eventStartDate = eventDateObj.toISOString().split('T')[0];
 
@@ -446,7 +448,6 @@ export async function convertFittingToOrder(fittingId: string) {
   returnDateObj.setDate(returnDateObj.getDate() + 3);
   const returnDate = returnDateObj.toISOString().split('T')[0];
 
-  // 4. Insert Order Draft
   const { error: orderErr } = await supabase.from('orders').insert({
     id: newOrderId,
     customer_id: fitting.customer_id,
@@ -458,8 +459,8 @@ export async function convertFittingToOrder(fittingId: string) {
     city: defaultAddress?.city || null,
     postal_code: defaultAddress?.postal_code || null,
     street_address: defaultAddress?.street_address || null,
-    latitude: defaultAddress?.latitude || null,
-    longitude: defaultAddress?.longitude || null,
+    latitude: defaultAddress?.latitude ?? null,
+    longitude: defaultAddress?.longitude ?? null,
     order_method: 'Manual',
     status: 'Draft',
     pick_up_method: 'Self pickup',
@@ -477,13 +478,11 @@ export async function convertFittingToOrder(fittingId: string) {
     await supabase.from('order_products').insert(orderProductRows);
   }
 
-  // 5. Link fitting to this converted order
   await supabase
     .from('fittings')
     .update({ converted_order_id: newOrderId, status: 'Completed' })
     .eq('id', fittingId);
 
-  // 6. Audit Log
   await supabase.from('admin_audit_logs').insert({
     admin_id: admin.id,
     admin_name: admin.name,

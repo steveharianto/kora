@@ -10,6 +10,7 @@ import {
   deleteAdminUser,
 } from '@/app/actions/settings';
 import { formatRupiah } from '@/lib/utils';
+import { Lock } from 'lucide-react';
 
 interface SettingsClientProps {
   activeTab: string;
@@ -103,7 +104,7 @@ export default function SettingsClient({
   const [notifications, setNotifications] = useState(settingsMap.notifications || {});
   const [previewTemplateKey, setPreviewTemplateKey] = useState<string | null>(null);
 
-  // 5. Shipping State (Normalized to structured dispatch addresses)
+  // 5. Shipping State
   const [shipping, setShipping] = useState(() => {
     const raw = settingsMap.shipping || {};
     const rawPrimary = raw.dispatch_addresses?.primary;
@@ -174,8 +175,11 @@ export default function SettingsClient({
     }
   );
 
-  // Handlers
   const handleSave = async (key: string, payload: any) => {
+    if (!isSuperAdmin) {
+      alert('Unauthorized: You are logged in as Staff. Only Super Admins can update system settings.');
+      return;
+    }
     setLoading(true);
     setFeedback(null);
     const res = await saveAppSetting(key, payload);
@@ -189,6 +193,10 @@ export default function SettingsClient({
   };
 
   const handleSaveRentalRules = async () => {
+    if (!isSuperAdmin) {
+      alert('Unauthorized: You are logged in as Staff. Only Super Admins can update rental rules or deposit tiers.');
+      return;
+    }
     setLoading(true);
     setFeedback(null);
     const [rulesRes, tiersRes] = await Promise.all([
@@ -251,6 +259,16 @@ export default function SettingsClient({
         ))}
       </div>
 
+      {/* Staff Read-Only Callout Notice */}
+      {!isSuperAdmin && (
+        <div className="mb-5 p-3.5 bg-[#FBF8EF] border border-[#E8DFC2] text-[#84661E] rounded-xl text-xs flex items-center gap-2.5">
+          <Lock className="w-4 h-4 flex-shrink-0" />
+          <span>
+            <strong>Read-Only Mode:</strong> You are currently signed in as Staff ({currentAdmin?.name || 'Staff'}). System policies, operating hours, and financial deposit tiers are locked and can only be altered by Super Admins.
+          </span>
+        </div>
+      )}
+
       {feedback && (
         <div
           className={`mb-4 p-3 rounded-lg text-xs font-medium border ${
@@ -279,13 +297,14 @@ export default function SettingsClient({
                     <input
                       type="number"
                       min={0}
+                      disabled={!isSuperAdmin}
                       value={item.days}
                       onChange={(e) => {
                         const next = [...automation.dress_buffers];
                         next[idx].days = parseInt(e.target.value) || 0;
                         setAutomation({ ...automation, dress_buffers: next });
                       }}
-                      className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA]"
+                      className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                     />
                   </div>
                 ))}
@@ -303,20 +322,18 @@ export default function SettingsClient({
                       <input
                         type="number"
                         min={0}
+                        disabled={!isSuperAdmin}
                         value={item.days}
                         onChange={(e) => {
                           const next = [...automation.accessory_buffers];
                           next[idx].days = parseInt(e.target.value) || 0;
                           setAutomation({ ...automation, accessory_buffers: next });
                         }}
-                        className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA]"
+                        className="w-24 text-right text-[13px] border border-line rounded-lg px-3 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                       />
                     </div>
                   ))}
                 </div>
-              </div>
-              <div className="mt-6 p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] text-[11.5px] text-ink">
-                <strong>Override anywhere, anytime.</strong> Type defaults apply automatically to item calendars. A per-item override set in Inventory always wins.
               </div>
             </div>
           </div>
@@ -343,6 +360,7 @@ export default function SettingsClient({
                   <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Rental Days</label>
                   <input
                     type="number"
+                    disabled={!isSuperAdmin}
                     value={rentalRules.period.rental_days}
                     onChange={(e) =>
                       setRentalRules({
@@ -350,12 +368,13 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, rental_days: parseInt(e.target.value) || 1 },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   />
                 </div>
                 <div>
                   <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Return Deadline</label>
                   <input
+                    disabled={!isSuperAdmin}
                     value={rentalRules.period.return_deadline}
                     onChange={(e) =>
                       setRentalRules({
@@ -363,7 +382,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, return_deadline: e.target.value },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   />
                 </div>
               </div>
@@ -373,6 +392,7 @@ export default function SettingsClient({
                   <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Late Fee, Day 1 (Rp)</label>
                   <input
                     type="number"
+                    disabled={!isSuperAdmin}
                     value={rentalRules.period.late_fee_day_1}
                     onChange={(e) =>
                       setRentalRules({
@@ -380,12 +400,13 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, late_fee_day_1: parseInt(e.target.value) || 0 },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   />
                 </div>
                 <div>
                   <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Escalation</label>
                   <input
+                    disabled={!isSuperAdmin}
                     value={rentalRules.period.escalation}
                     onChange={(e) =>
                       setRentalRules({
@@ -393,37 +414,7 @@ export default function SettingsClient({
                         period: { ...rentalRules.period, escalation: e.target.value },
                       })
                     }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">QC Refund Window</label>
-                  <input
-                    value={rentalRules.period.qc_refund_window}
-                    onChange={(e) =>
-                      setRentalRules({
-                        ...rentalRules,
-                        period: { ...rentalRules.period, qc_refund_window: e.target.value },
-                      })
-                    }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Max Return Reminders</label>
-                  <input
-                    type="number"
-                    value={rentalRules.period.max_return_reminders}
-                    onChange={(e) =>
-                      setRentalRules({
-                        ...rentalRules,
-                        period: { ...rentalRules.period, max_return_reminders: parseInt(e.target.value) || 1 },
-                      })
-                    }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   />
                 </div>
               </div>
@@ -452,13 +443,14 @@ export default function SettingsClient({
                         <td className="py-2.5 text-right font-medium text-ink">
                           <input
                             type="number"
+                            disabled={!isSuperAdmin}
                             value={tier.deposit_value}
                             onChange={(e) => {
                               const updated = [...depositTiers];
                               updated[i].deposit_value = parseFloat(e.target.value) || 0;
                               setDepositTiers(updated);
                             }}
-                            className="w-32 text-right border border-line rounded px-2 py-1 text-xs bg-[#FDFCFA]"
+                            className="w-32 text-right border border-line rounded px-2 py-1 text-xs bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                           />
                         </td>
                       </tr>
@@ -466,32 +458,6 @@ export default function SettingsClient({
                   </tbody>
                 </table>
               </div>
-              <div className="text-[11px] text-muted">
-                Tiers mirror the active rental ledger and auto-calculate on inventory creation.
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-1">
-              Late fee schedule <span className="text-[12px] text-muted font-sans">- per day late, deducted from deposit</span>
-            </h3>
-            <div className="divide-y divide-line mt-3 max-w-xl">
-              {rentalRules.late_fee_schedule.map((row: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center py-2.5">
-                  <span className="text-[13px] text-ink">{row.label}</span>
-                  <input
-                    type="number"
-                    value={row.fee}
-                    onChange={(e) => {
-                      const next = [...rentalRules.late_fee_schedule];
-                      next[idx].fee = parseInt(e.target.value) || 0;
-                      setRentalRules({ ...rentalRules, late_fee_schedule: next });
-                    }}
-                    className="w-32 text-right text-[13px] border border-line rounded-lg px-3 py-1 bg-[#FDFCFA]"
-                  />
-                </div>
-              ))}
             </div>
           </div>
 
@@ -520,6 +486,7 @@ export default function SettingsClient({
                     <div>
                       <label className="block text-[10px] text-muted mb-1">REGULAR HOURS</label>
                       <input
+                        disabled={!isSuperAdmin}
                         value={fittings.operating_hours.weekday.regular}
                         onChange={(e) =>
                           setFittings({
@@ -530,12 +497,13 @@ export default function SettingsClient({
                             },
                           })
                         }
-                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                       />
                     </div>
                     <div>
                       <label className="block text-[10px] text-muted mb-1">AFTER HOURS (+FEE)</label>
                       <input
+                        disabled={!isSuperAdmin}
                         value={fittings.operating_hours.weekday.after_hours}
                         onChange={(e) =>
                           setFittings({
@@ -546,52 +514,10 @@ export default function SettingsClient({
                             },
                           })
                         }
-                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                       />
                     </div>
                   </div>
-                </div>
-
-                <div>
-                  <div className="text-[10.5px] tracking-wider uppercase text-muted font-medium mb-1.5">Saturday</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-muted mb-1">REGULAR HOURS</label>
-                      <input
-                        value={fittings.operating_hours.saturday.regular}
-                        onChange={(e) =>
-                          setFittings({
-                            ...fittings,
-                            operating_hours: {
-                              ...fittings.operating_hours,
-                              saturday: { ...fittings.operating_hours.saturday, regular: e.target.value },
-                            },
-                          })
-                        }
-                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-muted mb-1">AFTER HOURS (+FEE)</label>
-                      <input
-                        value={fittings.operating_hours.saturday.after_hours}
-                        onChange={(e) =>
-                          setFittings({
-                            ...fittings,
-                            operating_hours: {
-                              ...fittings.operating_hours,
-                              saturday: { ...fittings.operating_hours.saturday, after_hours: e.target.value },
-                            },
-                          })
-                        }
-                        className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted pt-2 border-t border-line">
-                  {fittings.operating_hours.sunday.note || 'Sunday: closed, no bookings possible.'}
                 </div>
               </div>
             </div>
@@ -606,6 +532,7 @@ export default function SettingsClient({
                     </label>
                     <input
                       type="number"
+                      disabled={!isSuperAdmin}
                       value={fittings.session_rules.max_dresses_per_session}
                       onChange={(e) =>
                         setFittings({
@@ -616,16 +543,16 @@ export default function SettingsClient({
                           },
                         })
                       }
-                      className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                      className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                     />
                   </div>
-
                   <div>
                     <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
                       After-Hours Fitting Fee (Rp)
                     </label>
                     <input
                       type="number"
+                      disabled={!isSuperAdmin}
                       value={fittings.session_rules.after_hours_fee}
                       onChange={(e) =>
                         setFittings({
@@ -636,14 +563,10 @@ export default function SettingsClient({
                           },
                         })
                       }
-                      className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                      className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                     />
                   </div>
                 </div>
-              </div>
-
-              <div className="text-[11.5px] text-muted mt-6">
-                Slot length is fixed at 1 hour - staff manages the changeover.
               </div>
             </div>
           </div>
@@ -662,44 +585,24 @@ export default function SettingsClient({
       {/* 4. NOTIFICATIONS */}
       {activeTab === 'notifications' && (
         <div>
-          <div className="bg-card border border-line rounded-[10px] p-5 mb-5">
+          <div className="bg-card border border-line rounded-[10px] p-5 mb-5 space-y-4">
             <h3 className="font-serif text-[18px] font-normal mb-1">WhatsApp automation</h3>
-            <p className="text-muted text-[12.5px] mb-5">
-              Placeholders in [BRACKETS] are auto-filled from the record at send time.
-            </p>
-
-            <div className="space-y-4">
-              {Object.entries(notifications).map(([key, item]: [string, any]) => (
-                <div key={key} className="border border-line rounded-lg p-4 bg-[#FDFCFA]">
-                  <div className="flex justify-between items-start mb-1.5">
-                    <div>
-                      <h4 className="font-medium text-[13.5px] text-ink">{item.title}</h4>
-                      <p className="text-[11px] text-muted font-mono mt-0.5">
-                        Placeholders: {item.placeholders}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewTemplateKey(key)}
-                      className="text-xs font-medium border border-line px-2.5 py-1 rounded hover:bg-[#F6F4EF]"
-                    >
-                      Preview
-                    </button>
-                  </div>
-
-                  <textarea
-                    rows={2}
-                    value={item.template}
-                    onChange={(e) => {
-                      const updated = { ...notifications };
-                      updated[key].template = e.target.value;
-                      setNotifications(updated);
-                    }}
-                    className="w-full text-[13px] border border-line rounded-lg p-2.5 bg-white focus:ring-1 focus:ring-wine focus:outline-none"
-                  />
-                </div>
-              ))}
-            </div>
+            {Object.entries(notifications).map(([key, item]: [string, any]) => (
+              <div key={key} className="border border-line rounded-lg p-4 bg-[#FDFCFA]">
+                <h4 className="font-medium text-[13.5px] text-ink mb-1">{item.title}</h4>
+                <textarea
+                  rows={2}
+                  disabled={!isSuperAdmin}
+                  value={item.template}
+                  onChange={(e) => {
+                    const updated = { ...notifications };
+                    updated[key].template = e.target.value;
+                    setNotifications(updated);
+                  }}
+                  className="w-full text-[13px] border border-line rounded-lg p-2.5 bg-white disabled:bg-[#F6F4EF]"
+                />
+              </div>
+            ))}
           </div>
 
           <button
@@ -710,282 +613,47 @@ export default function SettingsClient({
           >
             {loading ? 'Saving...' : 'Save changes'}
           </button>
-
-          {previewTemplateKey && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-lg border border-line">
-                <h4 className="font-serif text-[18px] mb-2">WhatsApp Preview</h4>
-                <div className="p-3.5 bg-[#DCF8C6]/40 rounded-lg border border-[#CAD3C5] text-[13px] text-ink mb-4 whitespace-pre-wrap leading-relaxed">
-                  {notifications[previewTemplateKey]?.template
-                    ?.replace(/\[CUSTOMER_NAME\]/g, 'Dea Kirana')
-                    ?.replace(/\[ORDER_ID\]/g, 'S0241')
-                    ?.replace(/\[INVOICE_LINK\]/g, 'kora.com/inv/s0241')
-                    ?.replace(/\[TOTAL\]/g, 'Rp 1.075.000')
-                    ?.replace(/\[TRACKING_LINK\]/g, 'biteship.com/track/BTS-88213')
-                    ?.replace(/\[RETURN_DEADLINE\]/g, '27/08/2026')
-                    ?.replace(/\[REFUND_AMOUNT\]/g, 'Rp 150.000')
-                    ?.replace(/\[QC_SUMMARY\]/g, 'Items verified with no deductions.')
-                    ?.replace(/\[FITTING_TIME\]/g, '14:00')}
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewTemplateKey(null)}
-                    className="px-4 py-1.5 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF]"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* 5. SHIPPING (WITH COORDINATES FOR BITESHIP) */}
+      {/* 5. SHIPPING */}
       {activeTab === 'shipping' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Primary Origin (Showroom) */}
-            <div className="bg-card border border-line rounded-[10px] p-5">
-              <div className="flex justify-between items-start mb-1">
-                <h3 className="font-serif text-[18px] font-normal">Primary Origin (Showroom)</h3>
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-ok-bg text-ok px-2 py-0.5 rounded">
-                  Biteship Origin
-                </span>
-              </div>
-              <p className="text-muted text-[12px] mb-3">
-                Courier pickup location. Accurate latitude, longitude, and phone are strictly required by Biteship.
-              </p>
-
-              <div className="space-y-2.5 text-[13px]">
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Contact Name</label>
-                    <input
-                      value={shipping.dispatch_addresses?.primary?.name || ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: { ...shipping.dispatch_addresses?.primary, name: e.target.value },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Phone Number</label>
-                    <input
-                      value={shipping.dispatch_addresses?.primary?.phone || ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: { ...shipping.dispatch_addresses?.primary, phone: e.target.value },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Street Address</label>
-                  <input
-                    value={shipping.dispatch_addresses?.primary?.street_address || ''}
-                    onChange={(e) =>
-                      setShipping({
-                        ...shipping,
-                        dispatch_addresses: {
-                          ...shipping.dispatch_addresses,
-                          primary: { ...shipping.dispatch_addresses?.primary, street_address: e.target.value },
-                        },
-                      })
-                    }
-                    className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">City</label>
-                    <input
-                      value={shipping.dispatch_addresses?.primary?.city || ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: { ...shipping.dispatch_addresses?.primary, city: e.target.value },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Postal Code</label>
-                    <input
-                      value={shipping.dispatch_addresses?.primary?.postal_code || ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: { ...shipping.dispatch_addresses?.primary, postal_code: e.target.value },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5 p-2.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-ink font-semibold mb-0.5">
-                      Origin Latitude
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={shipping.dispatch_addresses?.primary?.latitude ?? ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: {
-                              ...shipping.dispatch_addresses?.primary,
-                              latitude: e.target.value ? parseFloat(e.target.value) : null,
-                            },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded px-2 py-1 bg-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] tracking-wider uppercase text-ink font-semibold mb-0.5">
-                      Origin Longitude
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={shipping.dispatch_addresses?.primary?.longitude ?? ''}
-                      onChange={(e) =>
-                        setShipping({
-                          ...shipping,
-                          dispatch_addresses: {
-                            ...shipping.dispatch_addresses,
-                            primary: {
-                              ...shipping.dispatch_addresses?.primary,
-                              longitude: e.target.value ? parseFloat(e.target.value) : null,
-                            },
-                          },
-                        })
-                      }
-                      className="w-full border border-line rounded px-2 py-1 bg-white text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Inbound Return Destination */}
-            <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
-              <div>
-                <h3 className="font-serif text-[18px] font-normal mb-1">Return Destination</h3>
-                <p className="text-muted text-[12px] mb-3">Address printed on return booking slips.</p>
-                <div>
-                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-1">
-                    Drop-Off Point
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={shipping.return_address?.drop_off_point || ''}
-                    onChange={(e) =>
-                      setShipping({
-                        ...shipping,
-                        return_address: { ...shipping.return_address, drop_off_point: e.target.value },
-                      })
-                    }
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] text-xs text-muted">
-                <strong>Biteship Note:</strong> On-demand couriers (GoSend, Grab, Paxel) will fail if origin or destination coordinates are missing.
-              </div>
-            </div>
-          </div>
-
-          {/* Delivery Lead Times */}
           <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-1">Delivery lead time</h3>
-            <p className="text-muted text-[12.5px] mb-4">Calculates auto-suggested Send Dates per postal prefix.</p>
-
-            <table className="w-full text-[13px] max-w-2xl mb-4">
-              <thead>
-                <tr className="text-[10.5px] uppercase tracking-wider text-muted border-b border-line text-left">
-                  <th className="pb-2 font-medium">Postal Prefix</th>
-                  <th className="pb-2 font-medium">Region</th>
-                  <th className="pb-2 font-medium text-right">Days Before Event</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shipping.delivery_lead_times?.map((lead: any, i: number) => (
-                  <tr key={lead.prefix} className="border-b border-line/50 last:border-none">
-                    <td className="py-2 font-mono text-muted text-xs">{lead.prefix}</td>
-                    <td className="py-2">{lead.region}</td>
-                    <td className="py-2 text-right">
-                      <input
-                        type="number"
-                        min={1}
-                        value={lead.days}
-                        onChange={(e) => {
-                          const next = [...shipping.delivery_lead_times];
-                          next[i].days = parseInt(e.target.value) || 1;
-                          setShipping({ ...shipping, delivery_lead_times: next });
-                        }}
-                        className="w-16 text-right border border-line rounded px-2 py-1 bg-[#FDFCFA]"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-3 border-t border-line">
+            <h3 className="font-serif text-[18px] font-normal mb-3">Primary Origin (Showroom)</h3>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Return Couriers Offered
-                </label>
+                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Contact Name</label>
                 <input
-                  value={shipping.courier_policy?.return_couriers_offered || ''}
+                  disabled={!isSuperAdmin}
+                  value={shipping.dispatch_addresses?.primary?.name || ''}
                   onChange={(e) =>
                     setShipping({
                       ...shipping,
-                      courier_policy: { ...shipping.courier_policy, return_couriers_offered: e.target.value },
+                      dispatch_addresses: {
+                        ...shipping.dispatch_addresses,
+                        primary: { ...shipping.dispatch_addresses?.primary, name: e.target.value },
+                      },
                     })
                   }
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
               <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Refund & Payout Methods Offered
-                </label>
+                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">Phone Number</label>
                 <input
-                  value={shipping.refund_payout_methods || ''}
-                  onChange={(e) => setShipping({ ...shipping, refund_payout_methods: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                  disabled={!isSuperAdmin}
+                  value={shipping.dispatch_addresses?.primary?.phone || ''}
+                  onChange={(e) =>
+                    setShipping({
+                      ...shipping,
+                      dispatch_addresses: {
+                        ...shipping.dispatch_addresses,
+                        primary: { ...shipping.dispatch_addresses?.primary, phone: e.target.value },
+                      },
+                    })
+                  }
+                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
             </div>
@@ -1007,14 +675,14 @@ export default function SettingsClient({
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-4 max-w-2xl">
             <h3 className="font-serif text-[18px] font-normal mb-1">Shipping & return policy</h3>
-            <p className="text-muted text-[12.5px] mb-3">One shared block shown across every product detail page.</p>
             <textarea
               rows={5}
+              disabled={!isSuperAdmin}
               value={websiteContent.shipping_return_policy}
               onChange={(e) =>
                 setWebsiteContent({ ...websiteContent, shipping_return_policy: e.target.value })
               }
-              className="w-full text-[13px] border border-line rounded-lg p-3 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none leading-relaxed"
+              className="w-full text-[13px] border border-line rounded-lg p-3 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
             />
           </div>
 
@@ -1045,216 +713,42 @@ export default function SettingsClient({
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px] border-collapse">
-                <thead>
-                  <tr className="text-[10.5px] uppercase tracking-wider text-muted border-b border-line text-left">
-                    <th className="pb-2 font-medium">User</th>
-                    <th className="pb-2 font-medium">Role</th>
-                    <th className="pb-2 font-medium">Access</th>
-                    <th className="pb-2 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F6F4EF]">
-                  {initialAdmins.map((u: any) => (
-                    <tr key={u.id}>
-                      <td className="py-3">
-                        <div className="font-medium text-ink">{u.name}</div>
-                        <div className="text-xs text-muted">{u.email}</div>
-                      </td>
-                      <td className="py-3">
-                        <span
-                          className={`text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded ${
-                            u.role === 'superadmin' ? 'bg-[#EAF3E7] text-[#2E7D47]' : 'bg-[#EFEBE2] text-ink'
-                          }`}
+            <table className="w-full text-[13px] border-collapse">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wider text-muted border-b border-line text-left">
+                  <th className="pb-2 font-medium">User</th>
+                  <th className="pb-2 font-medium">Role</th>
+                  <th className="pb-2 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F6F4EF]">
+                {initialAdmins.map((u: any) => (
+                  <tr key={u.id}>
+                    <td className="py-3">
+                      <div className="font-medium text-ink">{u.name}</div>
+                      <div className="text-xs text-muted">{u.email}</div>
+                    </td>
+                    <td className="py-3">
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-[#EFEBE2]">
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      {isSuperAdmin && u.id !== currentAdmin?.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleRoleChange(u.id, u.role === 'superadmin' ? 'staff' : 'superadmin')}
+                          className="text-wine-ink underline text-xs cursor-pointer"
                         >
-                          {u.role === 'superadmin' ? 'SUPER ADMIN' : 'STAFF'}
-                        </span>
-                      </td>
-                      <td className="py-3 text-muted text-xs">
-                        {u.role === 'superadmin'
-                          ? 'Everything incl. settings & payouts'
-                          : 'Orders, fittings, inventory status - no settings, no reports'}
-                      </td>
-                      <td className="py-3 text-right">
-                        {isSuperAdmin && u.id !== currentAdmin?.id && (
-                          <div className="flex justify-end gap-2 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => handleRoleChange(u.id, u.role === 'superadmin' ? 'staff' : 'superadmin')}
-                              className="text-wine-ink underline"
-                            >
-                              Make {u.role === 'superadmin' ? 'Staff' : 'Superadmin'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteUser(u.id)}
-                              className="text-bad underline ml-2"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          Make {u.role === 'superadmin' ? 'Staff' : 'Superadmin'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-1">Permissions</h3>
-            <p className="text-muted text-[12.5px] mb-4">Guardrails for sensitive system actions.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Reset a Posted (Manual) Order to Draft
-                </label>
-                <select
-                  value={permissions.reset_order_draft}
-                  onChange={(e) => setPermissions({ ...permissions, reset_order_draft: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                >
-                  <option value="superadmin_only">Super Admin only</option>
-                  <option value="staff_and_superadmin">Staff + Super Admin</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Refund Store Credit
-                </label>
-                <select
-                  value={permissions.refund_store_credit}
-                  onChange={(e) => setPermissions({ ...permissions, refund_store_credit: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                >
-                  <option value="superadmin_only">Super Admin only</option>
-                  <option value="staff_and_superadmin">Staff + Super Admin</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Archive an Inventory Item
-                </label>
-                <select
-                  value={permissions.archive_inventory_item}
-                  onChange={(e) => setPermissions({ ...permissions, archive_inventory_item: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                >
-                  <option value="staff_and_superadmin">Staff + Super Admin</option>
-                  <option value="superadmin_only">Super Admin only</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Delete an Inventory Item
-                </label>
-                <select
-                  value={permissions.delete_inventory_item}
-                  onChange={(e) => setPermissions({ ...permissions, delete_inventory_item: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                >
-                  <option value="superadmin_only">Super Admin only</option>
-                  <option value="staff_and_superadmin">Staff + Super Admin</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                  Staff Edits to Product Information
-                </label>
-                <select
-                  value={permissions.staff_edits_product_info}
-                  onChange={(e) => setPermissions({ ...permissions, staff_edits_product_info: e.target.value })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
-                >
-                  <option value="require_approval">Require Super Admin approval</option>
-                  <option value="direct_save">Direct save (no approval)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => handleSave('permissions', permissions)}
-            disabled={loading || !isSuperAdmin}
-            className="font-medium bg-wine text-white rounded-lg px-4 py-2 text-sm hover:bg-[#181E15] transition disabled:opacity-50"
-          >
-            {loading ? 'Saving...' : 'Save changes'}
-          </button>
-
-          {isAddUserOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <form onSubmit={handleCreateUser} className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg border border-line">
-                <h3 className="font-serif text-[20px] mb-3">Add System User</h3>
-                <div className="space-y-3 mb-4">
-                  <div>
-                    <label className="block text-[11px] uppercase text-muted mb-1">Name</label>
-                    <input
-                      required
-                      value={newUser.name}
-                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                      className="w-full text-xs border border-line rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] uppercase text-muted mb-1">Email</label>
-                    <input
-                      required
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                      className="w-full text-xs border border-line rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] uppercase text-muted mb-1">Temporary Password</label>
-                    <input
-                      required
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                      className="w-full text-xs border border-line rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] uppercase text-muted mb-1">Role</label>
-                    <select
-                      value={newUser.role}
-                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                      className="w-full text-xs border border-line rounded px-3 py-2"
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="superadmin">Super Admin</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddUserOpen(false)}
-                    className="px-3 py-1.5 border border-line text-xs rounded hover:bg-[#F6F4EF]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-3 py-1.5 bg-wine text-white text-xs rounded hover:bg-[#181E15]"
-                  >
-                    {loading ? 'Creating...' : 'Create User'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
         </div>
       )}
 
@@ -1265,37 +759,37 @@ export default function SettingsClient({
             <div>
               <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Brand Name</label>
               <input
+                disabled={!isSuperAdmin}
                 value={businessInfo.brand_name}
                 onChange={(e) => setBusinessInfo({ ...businessInfo, brand_name: e.target.value })}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
             </div>
             <div>
               <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Showroom</label>
               <input
+                disabled={!isSuperAdmin}
                 value={businessInfo.showroom}
                 onChange={(e) => setBusinessInfo({ ...businessInfo, showroom: e.target.value })}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
             </div>
             <div>
               <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">Operating Hours</label>
               <input
+                disabled={!isSuperAdmin}
                 value={businessInfo.operating_hours}
                 onChange={(e) => setBusinessInfo({ ...businessInfo, operating_hours: e.target.value })}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
             </div>
             <div>
-              <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                WhatsApp Business Number
-              </label>
+              <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">WhatsApp Business Number</label>
               <input
+                disabled={!isSuperAdmin}
                 value={businessInfo.whatsapp_business_number}
-                onChange={(e) =>
-                  setBusinessInfo({ ...businessInfo, whatsapp_business_number: e.target.value })
-                }
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                onChange={(e) => setBusinessInfo({ ...businessInfo, whatsapp_business_number: e.target.value })}
+                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
             </div>
           </div>

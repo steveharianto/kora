@@ -38,7 +38,6 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
   const { data: orders, error } = await query;
   if (error) return { error: error.message };
 
-  // Fittings Revenue Query
   let fittingsQuery = supabase
     .from('fittings')
     .select('id, date, after_hours_fee, fee_payment_method')
@@ -49,13 +48,28 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
 
   const { data: fittings } = await fittingsQuery;
 
-  // Aggregations
+  let returnsQuery = supabase
+    .from('returns')
+    .select('refund_amount')
+    .eq('refund_status', 'Refunded');
+
+  if (startDate) returnsQuery = returnsQuery.gte('refunded_at', startDate);
+  if (endDate) returnsQuery = returnsQuery.lte('refunded_at', endDate);
+
+  const { data: completedReturns } = await returnsQuery;
+  const totalRefundedDeposits = (completedReturns || []).reduce(
+    (sum, r) => sum + (Number(r.refund_amount) || 0),
+    0
+  );
+
   const grossRental = (orders || []).reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
   const depositsHeld = (orders || []).reduce((sum, o) => sum + (Number(o.total_deposit) || 0), 0);
   const shippingFees = (orders || []).reduce((sum, o) => sum + (Number(o.shipping_fee) || 0), 0);
   const creditApplied = (orders || []).reduce((sum, o) => sum + (Number(o.store_credit_applied) || 0), 0);
   const fittingsIncome = (fittings || []).reduce((sum, f) => sum + (Number(f.after_hours_fee) || 0), 0);
-  const netCashflow = grossRental + depositsHeld + shippingFees + fittingsIncome - creditApplied;
+
+  const netCashflow =
+    grossRental + (depositsHeld - totalRefundedDeposits) + shippingFees + fittingsIncome - creditApplied;
 
   const rows = (orders || []).map((o) => {
     const custName = `${(o.customers as any)?.first_name || ''} ${(o.customers as any)?.last_name || ''}`.trim() || 'Customer';
@@ -232,10 +246,12 @@ export async function getReturnsReportData(startDate?: string, endDate?: string)
       returnId: r.id,
       orderId: r.order_id,
       customer: custName,
+      date: r.requested_at ? r.requested_at.split('T')[0] : (r.orders as any)?.return_date,
       deadline: (r.orders as any)?.return_date || '—',
       actualDate: r.refunded_at ? r.refunded_at.split('T')[0] : 'In Progress',
       daysLate,
       qcIssues: issueTags.length > 0 ? issueTags.join(', ') : 'Clean',
+      depositHeld: depHeld,
       qcDeduction: deduction,
       refundAmount: refunded,
       refundDestination: r.refund_destination || '—',
@@ -309,7 +325,7 @@ export async function getCustomersReportData() {
       ltv,
       aov,
       storeCredit: credit,
-      joined: c.date_joined ? c.date_joined.split('T')[0] : '—',
+      date_joined: c.date_joined ? c.date_joined.split('T')[0] : '—',
     };
   });
 
@@ -343,6 +359,7 @@ export async function getAuditReportData(startDate?: string, endDate?: string) {
 
   const rows = (logs || []).map((l) => ({
     id: l.id,
+    date: l.created_at ? l.created_at.split('T')[0] : undefined,
     timestamp: l.created_at ? l.created_at.replace('T', ' ').slice(0, 19) : '—',
     admin: l.admin_name || 'System',
     entityType: l.entity_type,
