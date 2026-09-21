@@ -1,9 +1,11 @@
+// app/(admin)/layout.tsx
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTransition, useEffect, useState } from 'react';
 import { logoutAdmin } from '@/app/actions/auth';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -11,8 +13,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isPending, startTransition] = useTransition();
   const [adminRole, setAdminRole] = useState<string>('Staff');
 
+  // Sidebar collapse state — defaults to open, persisted in localStorage
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   useEffect(() => {
-    // Read non-sensitive role cookie set by server action
+    const stored = window.localStorage.getItem('kora_admin_sidebar');
+    if (stored === 'closed') setIsSidebarOpen(false);
+  }, []);
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen((prev) => {
+      const next = !prev;
+      window.localStorage.setItem('kora_admin_sidebar', next ? 'open' : 'closed');
+      return next;
+    });
+  };
+
+  useEffect(() => {
     const match = document.cookie.match(/kora_admin_role=([^;]+)/);
     if (match) {
       const role = decodeURIComponent(match[1]).toLowerCase();
@@ -36,9 +53,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 w-60 bg-[#2C3527] text-white flex flex-col p-6 z-20">
-        <div className="text-2xl font-serif tracking-[0.3em] text-[#F3EFE8] mb-8">
-          KORA
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 w-60 bg-[#2C3527] text-white flex flex-col p-6 z-20 transition-transform duration-200 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between mb-8">
+          <div className="text-2xl font-serif tracking-[0.3em] text-[#F3EFE8]">
+            KORA
+          </div>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Hide sidebar"
+            title="Hide sidebar"
+            className="p-1.5 rounded-lg hover:bg-[#3B4734] transition-colors cursor-pointer text-[#9CA893] hover:text-white"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
         </div>
 
         <nav className="flex-1 space-y-1 text-sm font-medium">
@@ -91,7 +124,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      <main className="ml-60 flex-1 p-10 min-w-0">
+      {/* Main content — margin adjusts with sidebar */}
+      <main
+        className={`flex-1 p-10 min-w-0 transition-all duration-200 ${
+          isSidebarOpen ? 'ml-60' : 'ml-0'
+        }`}
+      >
+        {/* Floating open button when sidebar is hidden */}
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Show sidebar"
+            title="Show sidebar"
+            className="fixed top-4 left-4 z-30 p-2 rounded-lg bg-[#2C3527] text-white shadow-lg hover:bg-[#3B4734] transition-colors cursor-pointer"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        )}
+
         {children}
       </main>
     </div>
