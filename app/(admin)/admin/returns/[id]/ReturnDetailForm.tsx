@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   dispatchReturnViaBiteship,
   saveReturnResi,
   markReturnReceived,
   releaseDepositAndCompleteReturn,
   addReturnNote,
-} from '@/app/actions/returns';
-import { formatRupiah } from '@/lib/utils';
+} from "@/app/actions/returns";
+import { formatRupiah } from "@/lib/utils";
 import {
   Copy,
   Check,
@@ -19,14 +19,15 @@ import {
   Truck,
   Lock,
   AlertTriangle,
-} from 'lucide-react';
+} from "lucide-react";
+import RupiahInput from "@/components/RupiahInput";
 
 function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—';
+  if (!dateStr) return "—";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  if (isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
@@ -40,34 +41,48 @@ export default function ReturnDetailForm({
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState("");
   const [copiedSlip, setCopiedSlip] = useState(false);
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteText] = useState("");
 
   const order = initialReturn.orders || {};
   const customer = initialReturn.customers || {};
-  const customerName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Customer';
+  const customerName =
+    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+    "Customer";
 
   // Logistics state
-  const [courier, setCourier] = useState(initialReturn.courier_company || 'paxel - regular');
-  const [resi, setResi] = useState(initialReturn.waybill_id || '');
+  const [courier, setCourier] = useState(
+    initialReturn.courier_company || "paxel - regular",
+  );
+  const [resi, setResi] = useState(initialReturn.waybill_id || "");
 
   // QC & Settlement State
   const [hasStains, setHasStains] = useState(initialReturn.has_stains || false);
   const [hasDamage, setHasDamage] = useState(initialReturn.has_damage || false);
-  const [isIncomplete, setIsIncomplete] = useState(initialReturn.is_incomplete || false);
+  const [isIncomplete, setIsIncomplete] = useState(
+    initialReturn.is_incomplete || false,
+  );
   const [hasOdor, setHasOdor] = useState(initialReturn.has_odor || false);
 
-  const [qcDeduction, setQcDeduction] = useState(Number(initialReturn.qc_deduction) || 0);
-  const [returnShippingCost, setReturnShippingCost] = useState(Number(initialReturn.return_shipping_cost) || 0);
-  const [deductionReason, setDeductionReason] = useState(initialReturn.deduction_reason || '');
+  const [qcDeduction, setQcDeduction] = useState(
+    Number(initialReturn.qc_deduction) || 0,
+  );
+  const [returnShippingCost, setReturnShippingCost] = useState(
+    Number(initialReturn.return_shipping_cost) || 0,
+  );
+  const [deductionReason, setDeductionReason] = useState(
+    initialReturn.deduction_reason || "",
+  );
   const [refundDestination, setRefundDestination] = useState(
-    initialReturn.refund_destination || 'Primary — Bank transfer · 1021009982 (BCA a.n Dea Kirana)'
+    initialReturn.refund_destination ||
+      "Primary — Bank transfer · 1021009982 (BCA a.n Dea Kirana)",
   );
 
-  const depositHeld = Number(initialReturn.deposit_held) || Number(order.total_deposit) || 150000;
-  const isReceived = ['Received', 'Completed'].includes(initialReturn.status);
-  const isCompleted = initialReturn.status === 'Completed';
+  const depositHeld =
+    Number(initialReturn.deposit_held) || Number(order.total_deposit) || 150000;
+  const isReceived = ["Received", "Completed"].includes(initialReturn.status);
+  const isCompleted = initialReturn.status === "Completed";
 
   // Aging calculation
   const today = new Date();
@@ -77,21 +92,34 @@ export default function ReturnDetailForm({
 
   const lateDays = useMemo(() => {
     if (!deadlineDate) return 0;
-    const refDate = initialReturn.received_at ? new Date(initialReturn.received_at) : today;
+    const refDate = initialReturn.received_at
+      ? new Date(initialReturn.received_at)
+      : today;
     refDate.setHours(0, 0, 0, 0);
-    return Math.max(0, Math.round((refDate.getTime() - deadlineDate.getTime()) / (1000 * 60 * 60 * 24)));
+    return Math.max(
+      0,
+      Math.round(
+        (refDate.getTime() - deadlineDate.getTime()) / (1000 * 60 * 60 * 24),
+      ),
+    );
   }, [deadlineDate, initialReturn.received_at, today]);
 
   const agingBadge = useMemo(() => {
-    if (lateDays > 0) return { text: `${lateDays} D LATE`, color: 'bad' };
-    if (lateDays === 0 && deadlineDate && deadlineDate.getTime() === today.getTime()) {
-      return { text: 'DUE TODAY', color: 'amber' };
+    if (lateDays > 0) return { text: `${lateDays} D LATE`, color: "bad" };
+    if (
+      lateDays === 0 &&
+      deadlineDate &&
+      deadlineDate.getTime() === today.getTime()
+    ) {
+      return { text: "DUE TODAY", color: "amber" };
     }
     return null;
   }, [lateDays, deadlineDate, today]);
 
   // Reference Late Fee calculation from settings
-  const lateFeeDailyRate = Number(rentalRules?.late_fee_per_day) || (depositHeld > 200000 ? 200000 : 140000);
+  const lateFeeDailyRate =
+    Number(rentalRules?.late_fee_per_day) ||
+    (depositHeld > 200000 ? 200000 : 140000);
   const referenceLateFeeTotal = lateDays * lateFeeDailyRate;
 
   // Net Refund calculation
@@ -101,9 +129,9 @@ export default function ReturnDetailForm({
 
   // Reverse Biteship Showroom Destination details
   const showroom = shippingSettings?.dispatch_addresses?.primary || {
-    name: 'St. Moritz Ambassador Suites Tower, Unit 3808',
-    street_address: 'Jl. Kembangan Kerep No. 10G, Jakarta Barat',
-    postal_code: '11610',
+    name: "St. Moritz Ambassador Suites Tower, Unit 3808",
+    street_address: "Jl. Kembangan Kerep No. 10G, Jakarta Barat",
+    postal_code: "11610",
   };
 
   // Manifest slip representation
@@ -111,17 +139,19 @@ export default function ReturnDetailForm({
     return (
       `PICKUP   : ${initialReturn.pickup_street_address}, ${initialReturn.pickup_city}\n` +
       `CONTACT  : ${initialReturn.pickup_phone} (${customerName})\n` +
-      `DROP-OFF : ${showroom.name}, ${showroom.street_address} ${showroom.postal_code || ''}\n` +
-      `ITEM     : ${order.order_products?.[0]?.item_sku || 'Garment'} — 1 pc · garment · ~1 kg\n` +
+      `DROP-OFF : ${showroom.name}, ${showroom.street_address} ${showroom.postal_code || ""}\n` +
+      `ITEM     : ${order.order_products?.[0]?.item_sku || "Garment"} — 1 pc · garment · ~1 kg\n` +
       `REF      : return leg of order ${order.id}`
     );
   }, [initialReturn, customerName, showroom, order]);
 
   // WhatsApp reminder generator
   const whatsAppUrl = useMemo(() => {
-    if (!customer.phone) return '';
-    const rawPhone = String(customer.phone).replace(/\D/g, '');
-    const phone = rawPhone.startsWith('0') ? `62${rawPhone.slice(1)}` : rawPhone;
+    if (!customer.phone) return "";
+    const rawPhone = String(customer.phone).replace(/\D/g, "");
+    const phone = rawPhone.startsWith("0")
+      ? `62${rawPhone.slice(1)}`
+      : rawPhone;
     const msg = `Hi ${customerName}, here are your return instructions for order ${order.id}. Please pack the garment securely with original hangers and garment bag.`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   }, [customer.phone, customerName, order.id]);
@@ -133,9 +163,9 @@ export default function ReturnDetailForm({
   };
 
   const handleBookBiteship = async () => {
-    if (!confirm('Book reverse courier via Biteship now?')) return;
+    if (!confirm("Book reverse courier via Biteship now?")) return;
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await dispatchReturnViaBiteship(initialReturn.id, courier);
     if (res.error) setErrorMsg(res.error);
     else router.refresh();
@@ -145,7 +175,7 @@ export default function ReturnDetailForm({
   const handleSaveResi = async () => {
     if (!resi.trim()) return;
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await saveReturnResi(initialReturn.id, courier, resi);
     if (res.error) setErrorMsg(res.error);
     else router.refresh();
@@ -154,7 +184,7 @@ export default function ReturnDetailForm({
 
   const handleMarkReceived = async () => {
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await markReturnReceived(initialReturn.id);
     if (res.error) setErrorMsg(res.error);
     else router.refresh();
@@ -162,9 +192,14 @@ export default function ReturnDetailForm({
   };
 
   const handleReleaseDeposit = async () => {
-    if (!confirm(`Release deposit of ${formatRupiah(calculatedRefund)} to ${refundDestination}?`)) return;
+    if (
+      !confirm(
+        `Release deposit of ${formatRupiah(calculatedRefund)} to ${refundDestination}?`,
+      )
+    )
+      return;
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await releaseDepositAndCompleteReturn(initialReturn.id, {
       has_stains: hasStains,
       has_damage: hasDamage,
@@ -184,13 +219,16 @@ export default function ReturnDetailForm({
     e.preventDefault();
     if (!noteText.trim()) return;
     await addReturnNote(initialReturn.id, noteText);
-    setNoteText('');
+    setNoteText("");
     router.refresh();
   };
 
   return (
     <div>
-      <Link href="/admin/returns" className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2">
+      <Link
+        href="/admin/returns"
+        className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2"
+      >
         ← Back to Returns
       </Link>
 
@@ -205,7 +243,8 @@ export default function ReturnDetailForm({
             Return — {order.id}
           </h1>
           <p className="text-xs text-muted mt-0.5">
-            {customerName} · {order.order_products?.[0]?.item_sku} · deposit held {formatRupiah(depositHeld)}
+            {customerName} · {order.order_products?.[0]?.item_sku} · deposit
+            held {formatRupiah(depositHeld)}
           </p>
         </div>
 
@@ -213,9 +252,9 @@ export default function ReturnDetailForm({
           {agingBadge && (
             <span
               className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border ${
-                agingBadge.color === 'bad'
-                  ? 'bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]'
-                  : 'bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]'
+                agingBadge.color === "bad"
+                  ? "bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]"
+                  : "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]"
               }`}
             >
               {agingBadge.text}
@@ -224,13 +263,13 @@ export default function ReturnDetailForm({
 
           <span
             className={`text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded border ${
-              initialReturn.status === 'Completed'
-                ? 'bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]'
-                : initialReturn.status === 'Received'
-                ? 'bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]'
-                : initialReturn.status === 'Shipping'
-                ? 'bg-[#EEF4FB] text-[#2B6CB0] border-[#C3D9F2]'
-                : 'bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]'
+              initialReturn.status === "Completed"
+                ? "bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]"
+                : initialReturn.status === "Received"
+                  ? "bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]"
+                  : initialReturn.status === "Shipping"
+                    ? "bg-[#EEF4FB] text-[#2B6CB0] border-[#C3D9F2]"
+                    : "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]"
             }`}
           >
             {initialReturn.status}
@@ -260,17 +299,20 @@ export default function ReturnDetailForm({
       <div
         className={`mb-5 p-3.5 rounded-xl border text-[12.5px] ${
           initialReturn.waybill_id
-            ? 'bg-[#F2F6EF] border-[#CAD3C5] text-wine-ink'
-            : 'bg-warn-bg border-warn/30 text-warn-ink'
+            ? "bg-[#F2F6EF] border-[#CAD3C5] text-wine-ink"
+            : "bg-warn-bg border-warn/30 text-warn-ink"
         }`}
       >
         {initialReturn.waybill_id ? (
           <div>
-            <strong>All required fields complete.</strong> Nothing on this return is holding it in Work queue.
+            <strong>All required fields complete.</strong> Nothing on this
+            return is holding it in Work queue.
           </div>
         ) : (
           <div>
-            <strong>Incomplete — 1 required field still empty.</strong> This return stays in Work queue until every field marked * is filled: <span className="underline">Return resi</span>.
+            <strong>Incomplete — 1 required field still empty.</strong> This
+            return stays in Work queue until every field marked * is filled:{" "}
+            <span className="underline">Return resi</span>.
           </div>
         )}
       </div>
@@ -280,12 +322,17 @@ export default function ReturnDetailForm({
         {/* LEFT CARD: ORDER INFORMATION (READ-ONLY) */}
         <div className="bg-card border border-line rounded-[10px] p-5 space-y-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
           <h3 className="font-serif text-[18px] font-normal mb-1">
-            Order information <span className="text-[11.5px] text-muted font-sans">— from the anchor order, read-only</span>
+            Order information{" "}
+            <span className="text-[11.5px] text-muted font-sans">
+              — from the anchor order, read-only
+            </span>
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Order ID</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Order ID
+              </label>
               <input
                 disabled
                 value={order.id}
@@ -293,7 +340,9 @@ export default function ReturnDetailForm({
               />
             </div>
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Customer</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Customer
+              </label>
               <input
                 disabled
                 value={customerName}
@@ -304,18 +353,22 @@ export default function ReturnDetailForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Phone</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Phone
+              </label>
               <input
                 disabled
-                value={customer.phone || ''}
+                value={customer.phone || ""}
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-muted font-mono"
               />
             </div>
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">City</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                City
+              </label>
               <input
                 disabled
-                value={order.city || '—'}
+                value={order.city || "—"}
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-muted"
               />
             </div>
@@ -323,7 +376,9 @@ export default function ReturnDetailForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Order Date</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Order Date
+              </label>
               <input
                 disabled
                 value={formatDate(order.order_date)}
@@ -331,7 +386,9 @@ export default function ReturnDetailForm({
               />
             </div>
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Event Date</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Event Date
+              </label>
               <input
                 disabled
                 value={formatDate(order.event_start_date)}
@@ -342,7 +399,9 @@ export default function ReturnDetailForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Pick Up/Send Date</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Pick Up/Send Date
+              </label>
               <input
                 disabled
                 value={formatDate(order.pickup_date)}
@@ -350,7 +409,9 @@ export default function ReturnDetailForm({
               />
             </div>
             <div>
-              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Return Deadline</label>
+              <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                Return Deadline
+              </label>
               <input
                 disabled
                 value={formatDate(order.return_date)}
@@ -374,13 +435,22 @@ export default function ReturnDetailForm({
               </thead>
               <tbody>
                 {(order.order_products || []).map((p: any, i: number) => (
-                  <tr key={i} className="border-b border-[#EFEBE2] last:border-none">
+                  <tr
+                    key={i}
+                    className="border-b border-[#EFEBE2] last:border-none"
+                  >
                     <td className="py-2 font-mono font-bold">{p.item_sku}</td>
-                    <td className="py-2">{p.items?.name || 'Garment'}</td>
+                    <td className="py-2">{p.items?.name || "Garment"}</td>
                     <td className="py-2 text-center">{p.quantity}</td>
-                    <td className="py-2 text-right">{formatRupiah(Number(p.price))}</td>
-                    <td className="py-2 text-right">{formatRupiah(Number(p.deposit))}</td>
-                    <td className="py-2 text-right font-medium">{formatRupiah(Number(p.subtotal || p.price))}</td>
+                    <td className="py-2 text-right">
+                      {formatRupiah(Number(p.price))}
+                    </td>
+                    <td className="py-2 text-right">
+                      {formatRupiah(Number(p.deposit))}
+                    </td>
+                    <td className="py-2 text-right font-medium">
+                      {formatRupiah(Number(p.subtotal || p.price))}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -392,11 +462,15 @@ export default function ReturnDetailForm({
         <div className="space-y-4">
           {/* Return Request Details Card */}
           <div className="bg-card border border-line rounded-[10px] p-5 space-y-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-            <h3 className="font-serif text-[18px] font-normal mb-1">Return request</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-1">
+              Return request
+            </h3>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Requested On</label>
+                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Requested On
+                </label>
                 <input
                   disabled
                   value={formatDate(initialReturn.requested_at)}
@@ -404,7 +478,9 @@ export default function ReturnDetailForm({
                 />
               </div>
               <div>
-                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Return Method</label>
+                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Return Method
+                </label>
                 <input
                   disabled
                   value={initialReturn.return_method}
@@ -415,24 +491,29 @@ export default function ReturnDetailForm({
 
             <div>
               <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
-                Pickup Address <span className="text-muted font-normal lowercase">— can differ from the order&apos;s delivery address</span>
+                Pickup Address{" "}
+                <span className="text-muted font-normal lowercase">
+                  — can differ from the order&apos;s delivery address
+                </span>
               </label>
               <input
                 disabled
-                value={`${initialReturn.pickup_label || 'Home'} — ${initialReturn.pickup_street_address}, ${initialReturn.pickup_city} (${initialReturn.pickup_postal_code || ''})`}
+                value={`${initialReturn.pickup_label || "Home"} — ${initialReturn.pickup_street_address}, ${initialReturn.pickup_city} (${initialReturn.pickup_postal_code || ""})`}
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-ink"
               />
               <p className="text-[11px] text-muted mt-1 italic">
                 {initialReturn.pickup_street_address === order.street_address
-                  ? 'Same address as the order&apos;s delivery.'
-                  : 'Different address chosen by customer for return pickup.'}
+                  ? "Same address as the order&apos;s delivery."
+                  : "Different address chosen by customer for return pickup."}
               </p>
             </div>
           </div>
 
           {/* Return Shipment Dispatch Card */}
           <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-3.5">
-            <h3 className="font-serif text-[18px] font-normal mb-1">Return shipment</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-1">
+              Return shipment
+            </h3>
 
             {/* Manifest Box */}
             <div className="p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] font-mono text-[11px] text-ink whitespace-pre-wrap leading-relaxed">
@@ -445,8 +526,12 @@ export default function ReturnDetailForm({
                 onClick={handleCopySlip}
                 className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1.5"
               >
-                {copiedSlip ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedSlip ? 'Copied!' : 'Copy slip'}
+                {copiedSlip ? (
+                  <Check className="w-3.5 h-3.5 text-ok" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                {copiedSlip ? "Copied!" : "Copy slip"}
               </button>
 
               <a
@@ -462,7 +547,9 @@ export default function ReturnDetailForm({
 
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">Courier</label>
+                <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Courier
+                </label>
                 <select
                   disabled={isReceived}
                   value={courier}
@@ -478,7 +565,8 @@ export default function ReturnDetailForm({
 
               <div>
                 <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
-                  Return Resi (Paste After Booking) <span className="text-bad">*</span>
+                  Return Resi (Paste After Booking){" "}
+                  <span className="text-bad">*</span>
                 </label>
                 <input
                   disabled={isReceived}
@@ -492,17 +580,18 @@ export default function ReturnDetailForm({
 
             {/* Action Buttons */}
             <div className="pt-2 flex flex-wrap gap-2.5">
-              {!isReceived && initialReturn.return_method.includes('Biteship') && (
-                <button
-                  type="button"
-                  onClick={handleBookBiteship}
-                  disabled={loading}
-                  className="px-4 py-2 bg-[#1A1F16] text-white rounded-lg text-xs font-semibold hover:bg-black transition flex items-center gap-1.5 shadow-sm"
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  {loading ? 'Booking...' : 'Book Biteship Return'}
-                </button>
-              )}
+              {!isReceived &&
+                initialReturn.return_method.includes("Biteship") && (
+                  <button
+                    type="button"
+                    onClick={handleBookBiteship}
+                    disabled={loading}
+                    className="px-4 py-2 bg-[#1A1F16] text-white rounded-lg text-xs font-semibold hover:bg-black transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    {loading ? "Booking..." : "Book Biteship Return"}
+                  </button>
+                )}
 
               {!isReceived && (
                 <button
@@ -529,8 +618,8 @@ export default function ReturnDetailForm({
 
             <p className="text-[11px] text-muted">
               {isReceived
-                ? 'Shipment complete — package received.'
-                : 'Shipment in motion — press Mark received when the package arrives at the studio.'}
+                ? "Shipment complete — package received."
+                : "Shipment in motion — press Mark received when the package arrives at the studio."}
             </p>
           </div>
         </div>
@@ -540,13 +629,16 @@ export default function ReturnDetailForm({
       {/* BOTTOM CARD: QUALITY CHECK & DEPOSIT RELEASE                       */}
       {/* =================================================================== */}
       <div className="bg-card border border-line rounded-[10px] p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)] mb-4 space-y-4">
-        <h3 className="font-serif text-[20px] font-normal">Quality check & deposit release</h3>
+        <h3 className="font-serif text-[20px] font-normal">
+          Quality check & deposit release
+        </h3>
 
         {!isReceived ? (
           <div className="p-4 bg-[#FBF8EF] border border-[#E8DFC2] rounded-xl text-xs text-[#84661E] flex items-center gap-2">
             <Lock className="w-4 h-4 flex-shrink-0" />
             <span>
-              <strong>Locked.</strong> Finish the return shipment first — QC unlocks when the package is marked received.
+              <strong>Locked.</strong> Finish the return shipment first — QC
+              unlocks when the package is marked received.
             </span>
           </div>
         ) : (
@@ -615,16 +707,18 @@ export default function ReturnDetailForm({
                 <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
                   QC Deduction (RP)
                 </label>
-                <input
-                  type="number"
-                  disabled={isCompleted}
+                <RupiahInput
                   value={qcDeduction}
-                  onChange={(e) => setQcDeduction(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full text-xs border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                  onChange={setQcDeduction}
+                  disabled={isCompleted}
+                  className="text-xs rounded-lg"
                 />
                 {lateDays > 0 && (
                   <div className="text-[10px] text-[#A63222] font-medium mt-1 leading-tight">
-                    {lateDays} day(s) late — reference late fee {formatRupiah(lateFeeDailyRate)}/day × {lateDays} = {formatRupiah(referenceLateFeeTotal)} (Settings › Rental rules)
+                    {lateDays} day(s) late — reference late fee{" "}
+                    {formatRupiah(lateFeeDailyRate)}/day × {lateDays} ={" "}
+                    {formatRupiah(referenceLateFeeTotal)} (Settings › Rental
+                    rules)
                   </div>
                 )}
               </div>
@@ -633,12 +727,11 @@ export default function ReturnDetailForm({
                 <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
                   Return Shipping Cost (RP)
                 </label>
-                <input
-                  type="number"
-                  disabled={isCompleted}
+                <RupiahInput
                   value={returnShippingCost}
-                  onChange={(e) => setReturnShippingCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full text-xs border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
+                  onChange={setReturnShippingCost}
+                  disabled={isCompleted}
+                  className="text-xs rounded-lg"
                 />
               </div>
 
@@ -666,13 +759,20 @@ export default function ReturnDetailForm({
                   onChange={(e) => setRefundDestination(e.target.value)}
                   className="w-full text-xs border border-line rounded-lg px-3 py-2 bg-[#FDFCFA]"
                 >
-                  <option value={`Primary — Bank transfer · 1021009982 (BCA a.n ${customerName})`}>
-                    Primary — Bank transfer · 1021009982 (BCA a.n {customerName})
+                  <option
+                    value={`Primary — Bank transfer · 1021009982 (BCA a.n ${customerName})`}
+                  >
+                    Primary — Bank transfer · 1021009982 (BCA a.n {customerName}
+                    )
                   </option>
-                  <option value={`Mandiri · 1420019284729 (a.n ${customerName})`}>
+                  <option
+                    value={`Mandiri · 1420019284729 (a.n ${customerName})`}
+                  >
                     Mandiri · 1420019284729 (a.n {customerName})
                   </option>
-                  <option value="Manual Cash / Other Bank">Manual Cash / Other Bank</option>
+                  <option value="Manual Cash / Other Bank">
+                    Manual Cash / Other Bank
+                  </option>
                 </select>
               </div>
 
@@ -699,13 +799,14 @@ export default function ReturnDetailForm({
                   disabled={loading}
                   className="px-5 py-2.5 bg-[#1A1F16] text-white rounded-lg text-xs font-semibold hover:bg-black transition shadow-sm cursor-pointer"
                 >
-                  {loading ? 'Processing...' : 'Release deposit'}
+                  {loading ? "Processing..." : "Release deposit"}
                 </button>
               </div>
             ) : (
               <div className="p-3 bg-[#EAF3E7] border border-[#CAD3C5] rounded-lg text-xs text-[#2E7D47] font-semibold flex items-center gap-1.5">
                 <Check className="w-4 h-4" />
-                Deposit released and order finalized on {formatDate(initialReturn.refunded_at)}.
+                Deposit released and order finalized on{" "}
+                {formatDate(initialReturn.refunded_at)}.
               </div>
             )}
           </div>
@@ -716,7 +817,10 @@ export default function ReturnDetailForm({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
           <h3 className="font-serif text-[18px] font-normal mb-1">
-            Log Note <span className="text-[12px] text-muted font-sans">— internal team only</span>
+            Log Note{" "}
+            <span className="text-[12px] text-muted font-sans">
+              — internal team only
+            </span>
           </h3>
           <form onSubmit={handleAddNote} className="mt-2 flex-1 flex flex-col">
             <textarea
@@ -738,16 +842,30 @@ export default function ReturnDetailForm({
         </div>
 
         <div className="bg-card border border-line rounded-[10px] p-5 h-56 overflow-y-auto">
-          <h3 className="font-serif text-[18px] font-normal mb-3">Activity log</h3>
+          <h3 className="font-serif text-[18px] font-normal mb-3">
+            Activity log
+          </h3>
           {auditLogs.length === 0 ? (
-            <p className="text-xs text-muted">No activity logged for this return yet.</p>
+            <p className="text-xs text-muted">
+              No activity logged for this return yet.
+            </p>
           ) : (
             <ul className="space-y-2.5 text-xs">
               {auditLogs.map((log: any) => (
-                <li key={log.id} className="border-b border-line pb-1.5 last:border-none">
-                  <span className="font-semibold">{log.admin_name}</span>: {log.action_type}{' '}
-                  {log.new_value && <span className="text-wine-ink font-medium">({log.new_value})</span>}
-                  <span className="text-muted ml-1">· {formatDate(log.created_at)}</span>
+                <li
+                  key={log.id}
+                  className="border-b border-line pb-1.5 last:border-none"
+                >
+                  <span className="font-semibold">{log.admin_name}</span>:{" "}
+                  {log.action_type}{" "}
+                  {log.new_value && (
+                    <span className="text-wine-ink font-medium">
+                      ({log.new_value})
+                    </span>
+                  )}
+                  <span className="text-muted ml-1">
+                    · {formatDate(log.created_at)}
+                  </span>
                 </li>
               ))}
             </ul>

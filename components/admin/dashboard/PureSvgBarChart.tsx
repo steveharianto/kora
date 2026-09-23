@@ -42,10 +42,10 @@ export default function PureSvgBarChart({ data, height = 170 }: BarChartProps) {
                 y1={y}
                 x2={chartWidth - 10}
                 y2={y}
-                stroke="#EAE6DE"
+                stroke="#E8E4DA"
                 strokeDasharray="2 3"
               />
-              <text x={paddingLeft - 6} y={y + 3} textAnchor="end" fill="#8C827A">
+              <text x={paddingLeft - 6} y={y + 3} textAnchor="end" fill="#6B6459">
                 {label}
               </text>
             </g>
@@ -61,30 +61,46 @@ export default function PureSvgBarChart({ data, height = 170 }: BarChartProps) {
           // Only display date labels for intermittent bars to maintain scannability
           const showLabel = data.length <= 10 || index % Math.ceil(data.length / 8) === 0;
 
+          // Full-height invisible hit area — makes short bars easy to hover
+          const hitAreaX = paddingLeft + index * (usableWidth / data.length);
+          const hitAreaWidth = usableWidth / data.length;
+
           return (
             <g key={index} className="group cursor-pointer">
+              {/* Invisible hover hit-area (full column height) */}
+              <rect
+                x={hitAreaX}
+                y={10}
+                width={hitAreaWidth}
+                height={usableHeight}
+                fill="transparent"
+              />
+
+              {/* Visible bar */}
               <rect
                 x={x}
                 y={y}
                 width={barWidth}
                 height={Math.max(barH, 2)}
-                fill="#1A1F16"
+                fill="#4A7C4E"
                 rx={1.5}
-                className="transition-colors group-hover:fill-[#5A6253]"
+                className="transition-colors group-hover:fill-[#2C3527] pointer-events-none"
               />
+
               {showLabel && (
                 <text
                   x={x + barWidth / 2}
                   y={chartHeight - 6}
                   textAnchor="middle"
-                  fill="#8C827A"
+                  fill="#6B6459"
                   fontSize="9.5"
                 >
                   {item.date.replace('-', '/')}
                 </text>
               )}
-              {/* Native SVG Tooltip */}
-              <title>{`${item.date}: ${formatRupiah(item.amount)}`}</title>
+
+              {/* Native SVG Tooltip — richer text */}
+              <title>{`${item.date.replace('-', '/')} — ${formatRupiah(item.amount)}`}</title>
             </g>
           );
         })}

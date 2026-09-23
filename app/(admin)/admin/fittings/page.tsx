@@ -108,7 +108,7 @@ export default async function FittingsPage({
   }
 
   return (
-    <div className="max-w-[1250px] mx-auto pb-24 font-sans text-ink">
+    <div className="mx-auto pb-24 font-sans text-ink">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>

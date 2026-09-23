@@ -105,7 +105,7 @@ export default function CreateReturnRequestPage() {
   };
 
   return (
-    <div className="max-w-[1200px] pb-24 font-sans text-ink">
+    <div className="pb-24 font-sans text-ink">
       <Link
         href="/admin/returns"
         className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2"

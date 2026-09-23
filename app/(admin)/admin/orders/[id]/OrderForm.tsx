@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Printer,
   Copy,
@@ -16,12 +16,18 @@ import {
   Lock,
   Search,
   X,
-  UserPlus
-} from 'lucide-react';
-import { saveOrder, updateOrderStatus, addOrderNote, createCustomerAddress } from '@/app/actions/orders';
-import { createCustomer } from '@/app/actions/customers';
-import { dispatchOrderViaBiteship } from '@/app/actions/biteship';
-import { formatRupiah } from '@/lib/utils';
+  UserPlus,
+} from "lucide-react";
+import {
+  saveOrder,
+  updateOrderStatus,
+  addOrderNote,
+  createCustomerAddress,
+} from "@/app/actions/orders";
+import { createCustomer } from "@/app/actions/customers";
+import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
+import { formatRupiah } from "@/lib/utils";
+import RupiahInput from "@/components/RupiahInput";
 
 export default function OrderForm({
   initialOrder,
@@ -35,20 +41,26 @@ export default function OrderForm({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [noteText, setNoteText] = useState('');
+  const [errorMsg, setErrorMsg] = useState("");
+  const [noteText, setNoteText] = useState("");
   const [copiedResi, setCopiedResi] = useState(false);
 
   const [allCustomers, setAllCustomers] = useState<any[]>(initialCustomers);
 
-  const isSuperAdmin = currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
-  const isDraft = initialOrder.status === 'Draft';
-  const isWebsite = initialOrder.order_method === 'Website';
+  const isSuperAdmin =
+    currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, "") === "superadmin";
+  const isDraft = initialOrder.status === "Draft";
+  const isWebsite = initialOrder.order_method === "Website";
 
-  const [selectedCustomerId, setSelectedCustomerId] = useState(initialOrder.customer_id || '');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(
+    initialOrder.customer_id || "",
+  );
 
   const activeCustomer = useMemo(() => {
-    return allCustomers.find((c: any) => c.id === selectedCustomerId) || initialOrder.customers;
+    return (
+      allCustomers.find((c: any) => c.id === selectedCustomerId) ||
+      initialOrder.customers
+    );
   }, [allCustomers, selectedCustomerId, initialOrder.customers]);
 
   const customerAddresses: any[] = useMemo(() => {
@@ -57,21 +69,22 @@ export default function OrderForm({
 
   const [formData, setFormData] = useState({
     id: initialOrder.id,
-    order_date: initialOrder.order_date || new Date().toISOString().split('T')[0],
-    event_start_date: initialOrder.event_start_date || '',
+    order_date:
+      initialOrder.order_date || new Date().toISOString().split("T")[0],
+    event_start_date: initialOrder.event_start_date || "",
     event_days: initialOrder.event_days || 1,
-    pickup_date: initialOrder.pickup_date || '',
-    return_date: initialOrder.return_date || '',
-    city: initialOrder.city || '',
-    postal_code: initialOrder.postal_code || '',
-    street_address: initialOrder.street_address || '',
+    pickup_date: initialOrder.pickup_date || "",
+    return_date: initialOrder.return_date || "",
+    city: initialOrder.city || "",
+    postal_code: initialOrder.postal_code || "",
+    street_address: initialOrder.street_address || "",
     longitude: initialOrder.longitude ?? null,
     latitude: initialOrder.latitude ?? null,
-    order_method: initialOrder.order_method || 'Manual',
-    status: initialOrder.status || 'Draft',
-    pick_up_method: initialOrder.pick_up_method || 'JNE - REG',
-    packing_slip_id: initialOrder.packing_slip_id || '',
-    payment_method: initialOrder.payment_method || 'QRIS (EDC)',
+    order_method: initialOrder.order_method || "Manual",
+    status: initialOrder.status || "Draft",
+    pick_up_method: initialOrder.pick_up_method || "JNE - REG",
+    packing_slip_id: initialOrder.packing_slip_id || "",
+    payment_method: initialOrder.payment_method || "QRIS (EDC)",
     shipping_fee: Number(initialOrder.shipping_fee) || 0,
     store_credit_applied: Number(initialOrder.store_credit_applied) || 0,
   });
@@ -81,39 +94,39 @@ export default function OrderForm({
       ...prev,
       id: initialOrder.id,
       order_date: initialOrder.order_date || prev.order_date,
-      event_start_date: initialOrder.event_start_date || '',
+      event_start_date: initialOrder.event_start_date || "",
       event_days: initialOrder.event_days || 1,
-      pickup_date: initialOrder.pickup_date || '',
-      return_date: initialOrder.return_date || '',
-      city: initialOrder.city || '',
-      postal_code: initialOrder.postal_code || '',
-      street_address: initialOrder.street_address || '',
+      pickup_date: initialOrder.pickup_date || "",
+      return_date: initialOrder.return_date || "",
+      city: initialOrder.city || "",
+      postal_code: initialOrder.postal_code || "",
+      street_address: initialOrder.street_address || "",
       longitude: initialOrder.longitude ?? null,
       latitude: initialOrder.latitude ?? null,
-      order_method: initialOrder.order_method || 'Manual',
-      status: initialOrder.status || 'Draft',
-      pick_up_method: initialOrder.pick_up_method || 'JNE - REG',
-      packing_slip_id: initialOrder.packing_slip_id || '',
-      payment_method: initialOrder.payment_method || 'QRIS (EDC)',
+      order_method: initialOrder.order_method || "Manual",
+      status: initialOrder.status || "Draft",
+      pick_up_method: initialOrder.pick_up_method || "JNE - REG",
+      packing_slip_id: initialOrder.packing_slip_id || "",
+      payment_method: initialOrder.payment_method || "QRIS (EDC)",
       shipping_fee: Number(initialOrder.shipping_fee) || 0,
       store_credit_applied: Number(initialOrder.store_credit_applied) || 0,
     }));
-    setSelectedCustomerId(initialOrder.customer_id || '');
+    setSelectedCustomerId(initialOrder.customer_id || "");
     setProducts(
       (initialOrder.order_products || []).map((op: any) => ({
         item_sku: op.item_sku,
-        label: op.items?.name || '',
+        label: op.items?.name || "",
         quantity: op.quantity || 1,
         price: Number(op.price) || 0,
         deposit: Number(op.deposit) || 0,
-      }))
+      })),
     );
   }, [initialOrder]);
 
   const isAddressLocked = useMemo(() => {
     return (
       isWebsite ||
-      ['In Shipping', 'Active', 'Completed'].includes(formData.status) ||
+      ["In Shipping", "Active", "Completed"].includes(formData.status) ||
       Boolean(formData.packing_slip_id)
     );
   }, [isWebsite, formData.status, formData.packing_slip_id]);
@@ -122,12 +135,12 @@ export default function OrderForm({
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [geocodingLoading, setGeocodingLoading] = useState(false);
-  const [geocodingError, setGeocodingError] = useState('');
+  const [geocodingError, setGeocodingError] = useState("");
   const [newAddress, setNewAddress] = useState({
-    label: 'Home',
-    street_address: '',
-    city: '',
-    postal_code: '',
+    label: "Home",
+    street_address: "",
+    city: "",
+    postal_code: "",
     latitude: null as number | null,
     longitude: null as number | null,
   });
@@ -136,33 +149,37 @@ export default function OrderForm({
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [customerModalLoading, setCustomerModalLoading] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState({
-    first_name: '',
-    last_name: '',
-    phone: '',
-    gender: 'Female',
-    dob: '',
+    first_name: "",
+    last_name: "",
+    phone: "",
+    gender: "Female",
+    dob: "",
   });
 
   const [products, setProducts] = useState<any[]>(
     (initialOrder.order_products || []).map((op: any) => ({
       item_sku: op.item_sku,
-      label: op.items?.name || '',
+      label: op.items?.name || "",
       quantity: op.quantity || 1,
       price: Number(op.price) || 0,
       deposit: Number(op.deposit) || 0,
-    }))
+    })),
   );
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const isPickupTodayOrPast = Boolean(formData.pickup_date && formData.pickup_date <= todayStr);
-  const isPickupFuture = Boolean(formData.pickup_date && formData.pickup_date > todayStr);
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const isPickupTodayOrPast = Boolean(
+    formData.pickup_date && formData.pickup_date <= todayStr,
+  );
+  const isPickupFuture = Boolean(
+    formData.pickup_date && formData.pickup_date > todayStr,
+  );
 
   const leadTimeDays = useMemo(() => {
     if (!formData.postal_code) return 1;
     const prefix2 = formData.postal_code.slice(0, 2);
     const match = deliveryLeadTimes.find((lead: any) => {
-      if (lead.prefix.includes('-')) {
-        const [start, end] = lead.prefix.replace('xxx', '').split('-');
+      if (lead.prefix.includes("-")) {
+        const [start, end] = lead.prefix.replace("xxx", "").split("-");
         return prefix2 >= start && prefix2 <= end;
       }
       return lead.prefix.startsWith(prefix2);
@@ -172,11 +189,16 @@ export default function OrderForm({
 
   const handleEventDateChange = (val: string) => {
     if (!val) {
-      setFormData((prev) => ({ ...prev, event_start_date: '', pickup_date: '', return_date: '' }));
+      setFormData((prev) => ({
+        ...prev,
+        event_start_date: "",
+        pickup_date: "",
+        return_date: "",
+      }));
       return;
     }
 
-    const [y, m, d] = val.split('-').map(Number);
+    const [y, m, d] = val.split("-").map(Number);
     const eventDate = new Date(y, m - 1, d);
     if (isNaN(eventDate.getTime())) return;
 
@@ -189,13 +211,16 @@ export default function OrderForm({
     setFormData((prev) => ({
       ...prev,
       event_start_date: val,
-      pickup_date: pickupD.toISOString().split('T')[0],
-      return_date: returnD.toISOString().split('T')[0],
+      pickup_date: pickupD.toISOString().split("T")[0],
+      return_date: returnD.toISOString().split("T")[0],
     }));
   };
 
   const handleAddLine = () => {
-    setProducts([...products, { item_sku: '', label: '', quantity: 1, price: 0, deposit: 150000 }]);
+    setProducts([
+      ...products,
+      { item_sku: "", label: "", quantity: 1, price: 0, deposit: 150000 },
+    ]);
   };
 
   const handleProductSelect = (index: number, sku: string) => {
@@ -220,11 +245,17 @@ export default function OrderForm({
   };
 
   const productsSubtotal = useMemo(() => {
-    return products.reduce((sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1), 0);
+    return products.reduce(
+      (sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+      0,
+    );
   }, [products]);
 
   const totalDeposit = useMemo(() => {
-    return products.reduce((sum, p) => sum + (Number(p.deposit) || 0) * (Number(p.quantity) || 1), 0);
+    return products.reduce(
+      (sum, p) => sum + (Number(p.deposit) || 0) * (Number(p.quantity) || 1),
+      0,
+    );
   }, [products]);
 
   const maxAvailableCredit = Number(activeCustomer?.current_credit) || 0;
@@ -232,25 +263,40 @@ export default function OrderForm({
   const grandTotal = useMemo(() => {
     return Math.max(
       0,
-      productsSubtotal + totalDeposit + Number(formData.shipping_fee) - Number(formData.store_credit_applied)
+      productsSubtotal +
+        totalDeposit +
+        Number(formData.shipping_fee) -
+        Number(formData.store_credit_applied),
     );
-  }, [productsSubtotal, totalDeposit, formData.shipping_fee, formData.store_credit_applied]);
+  }, [
+    productsSubtotal,
+    totalDeposit,
+    formData.shipping_fee,
+    formData.store_credit_applied,
+  ]);
 
   const missingFields = useMemo(() => {
     const m = [];
-    if (!selectedCustomerId) m.push('Customer');
-    if (!formData.event_start_date) m.push('Event Start Date');
-    if (!formData.pickup_date) m.push('Pick Up/Send Date');
-    if (!formData.return_date) m.push('Return Date');
-    if (products.length === 0 || !products[0]?.item_sku) m.push('At least one product line');
+    if (!selectedCustomerId) m.push("Customer");
+    if (!formData.event_start_date) m.push("Event Start Date");
+    if (!formData.pickup_date) m.push("Pick Up/Send Date");
+    if (!formData.return_date) m.push("Return Date");
+    if (products.length === 0 || !products[0]?.item_sku)
+      m.push("At least one product line");
     return m;
-  }, [selectedCustomerId, formData.event_start_date, formData.pickup_date, formData.return_date, products]);
+  }, [
+    selectedCustomerId,
+    formData.event_start_date,
+    formData.pickup_date,
+    formData.return_date,
+    products,
+  ]);
 
   const isComplete = missingFields.length === 0;
 
   const handleSave = async () => {
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await saveOrder({
       ...formData,
       customer_id: selectedCustomerId,
@@ -267,7 +313,7 @@ export default function OrderForm({
 
   const handleStatusTransition = async (newStatus: string) => {
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await updateOrderStatus(formData.id, newStatus);
     if (res?.error) {
       setErrorMsg(res.error);
@@ -282,24 +328,29 @@ export default function OrderForm({
     if (isPickupFuture) {
       const confirmEarly = confirm(
         `ATTENTION: PREMATURE BOOKING WARNING\n\n` +
-        `This order has a scheduled send date of ${formData.pickup_date} (in the future).\n\n` +
-        `Booking Biteship now will dispatch an immediate pickup request to the courier today.\n\n` +
-        `Are you sure you want to summon the courier today anyway?`
+          `This order has a scheduled send date of ${formData.pickup_date} (in the future).\n\n` +
+          `Booking Biteship now will dispatch an immediate pickup request to the courier today.\n\n` +
+          `Are you sure you want to summon the courier today anyway?`,
       );
       if (!confirmEarly) return;
     } else {
-      if (!confirm('Book courier pickup via Biteship now? Ensure parcel is packed and sealed.')) return;
+      if (
+        !confirm(
+          "Book courier pickup via Biteship now? Ensure parcel is packed and sealed.",
+        )
+      )
+        return;
     }
 
     setDispatching(true);
-    setErrorMsg('');
+    setErrorMsg("");
     const res = await dispatchOrderViaBiteship(formData.id);
     if (res?.error) {
       setErrorMsg(res.error);
     } else {
       setFormData((prev) => ({
         ...prev,
-        status: 'In Shipping',
+        status: "In Shipping",
         packing_slip_id: res.waybill || prev.packing_slip_id,
       }));
       router.refresh();
@@ -318,20 +369,27 @@ export default function OrderForm({
     e.preventDefault();
     if (!noteText.trim()) return;
     await addOrderNote(formData.id, noteText);
-    setNoteText('');
+    setNoteText("");
     router.refresh();
   };
 
   // WhatsApp Invoice Automation Link Generator
   const whatsAppInvoiceUrl = useMemo(() => {
-    if (!activeCustomer?.phone) return '';
-    let rawPhone = String(activeCustomer.phone).replace(/\D/g, '');
-    if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
-    const custName = `${activeCustomer.first_name || ''} ${activeCustomer.last_name || ''}`.trim() || 'Customer';
+    if (!activeCustomer?.phone) return "";
+    let rawPhone = String(activeCustomer.phone).replace(/\D/g, "");
+    if (rawPhone.startsWith("0")) rawPhone = "62" + rawPhone.slice(1);
+    const custName =
+      `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""}`.trim() ||
+      "Customer";
 
-    const defaultTpl = 'Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].';
-    const rawTemplate = notificationTemplates?.order_posted?.template || defaultTpl;
-    const invoiceUrl = typeof window !== 'undefined' ? `${window.location.origin}/admin/orders/${formData.id}/invoice` : `https://kora.com/orders/${formData.id}/invoice`;
+    const defaultTpl =
+      "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].";
+    const rawTemplate =
+      notificationTemplates?.order_posted?.template || defaultTpl;
+    const invoiceUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/admin/orders/${formData.id}/invoice`
+        : `https://kora.com/orders/${formData.id}/invoice`;
 
     const message = rawTemplate
       .replace(/\[CUSTOMER_NAME\]/g, custName)
@@ -345,13 +403,13 @@ export default function OrderForm({
   const handleSaveQuickCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCustomerForm.first_name || !newCustomerForm.phone) {
-      alert('First name and Phone are required.');
+      alert("First name and Phone are required.");
       return;
     }
     setCustomerModalLoading(true);
 
-    let cleanPhone = newCustomerForm.phone.replace(/\D/g, '');
-    if (cleanPhone.startsWith('0')) cleanPhone = '62' + cleanPhone.slice(1);
+    let cleanPhone = newCustomerForm.phone.replace(/\D/g, "");
+    if (cleanPhone.startsWith("0")) cleanPhone = "62" + cleanPhone.slice(1);
 
     const res = await createCustomer({
       ...newCustomerForm,
@@ -366,30 +424,37 @@ export default function OrderForm({
         first_name: newCustomerForm.first_name,
         last_name: newCustomerForm.last_name,
         phone: cleanPhone,
-        status: 'Not Submitted',
+        status: "Not Submitted",
         current_credit: 0,
         addresses: [],
       };
       setAllCustomers((prev) => [created, ...prev]);
       setSelectedCustomerId(res.customerId);
       setIsCustomerModalOpen(false);
-      setNewCustomerForm({ first_name: '', last_name: '', phone: '', gender: 'Female', dob: '' });
+      setNewCustomerForm({
+        first_name: "",
+        last_name: "",
+        phone: "",
+        gender: "Female",
+        dob: "",
+      });
     }
     setCustomerModalLoading(false);
   };
 
   const handleGeocodeSearch = async () => {
-    const query = `${newAddress.street_address}, ${newAddress.city}, Indonesia`.trim();
+    const query =
+      `${newAddress.street_address}, ${newAddress.city}, Indonesia`.trim();
     if (!query || query.length < 5) {
-      setGeocodingError('Please enter street address and city first.');
+      setGeocodingError("Please enter street address and city first.");
       return;
     }
 
     setGeocodingLoading(true);
-    setGeocodingError('');
+    setGeocodingError("");
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
       );
       const data = await res.json();
       if (data && data.length > 0) {
@@ -400,10 +465,12 @@ export default function OrderForm({
           longitude: parseFloat(first.lon),
         }));
       } else {
-        setGeocodingError('Location pin not found. Check address spelling or enter coordinates manually.');
+        setGeocodingError(
+          "Location pin not found. Check address spelling or enter coordinates manually.",
+        );
       }
     } catch {
-      setGeocodingError('Network error connecting to geocoder.');
+      setGeocodingError("Network error connecting to geocoder.");
     } finally {
       setGeocodingLoading(false);
     }
@@ -412,7 +479,7 @@ export default function OrderForm({
   const handleSaveNewAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId) {
-      alert('Please select a customer first before adding an address.');
+      alert("Please select a customer first before adding an address.");
       return;
     }
 
@@ -439,24 +506,24 @@ export default function OrderForm({
             };
           }
           return c;
-        })
+        }),
       );
 
       setFormData((prev) => ({
         ...prev,
         street_address: added.street_address,
         city: added.city,
-        postal_code: added.postal_code || '',
+        postal_code: added.postal_code || "",
         latitude: added.latitude ?? null,
         longitude: added.longitude ?? null,
       }));
 
       setIsAddressModalOpen(false);
       setNewAddress({
-        label: 'Home',
-        street_address: '',
-        city: '',
-        postal_code: '',
+        label: "Home",
+        street_address: "",
+        city: "",
+        postal_code: "",
         latitude: null,
         longitude: null,
       });
@@ -467,7 +534,10 @@ export default function OrderForm({
 
   return (
     <div>
-      <Link href="/admin/orders" className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2">
+      <Link
+        href="/admin/orders"
+        className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2"
+      >
         ← Back to Orders
       </Link>
 
@@ -477,8 +547,8 @@ export default function OrderForm({
 
       {/* Header & Lifecycle Ribbon */}
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <h1 className="font-serif text-[30px] font-normal tracking-[0.01em]">
-          {formData.id} {isDraft && '- new'}
+        <h1 className="font-serif text-[32px] font-normal tracking-[0.01em]">
+          {formData.id} {isDraft && "- new"}
         </h1>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -489,7 +559,7 @@ export default function OrderForm({
           {isDraft && (
             <button
               type="button"
-              onClick={() => handleStatusTransition('Ordered')}
+              onClick={() => handleStatusTransition("Ordered")}
               disabled={loading || !isComplete}
               className="px-3.5 py-1.5 bg-ink text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
             >
@@ -500,7 +570,7 @@ export default function OrderForm({
           {!isDraft && !isWebsite && isSuperAdmin && (
             <button
               type="button"
-              onClick={() => handleStatusTransition('Draft')}
+              onClick={() => handleStatusTransition("Draft")}
               disabled={loading}
               className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
@@ -508,26 +578,30 @@ export default function OrderForm({
             </button>
           )}
 
-          {formData.status === 'Ordered' && (
+          {formData.status === "Ordered" && (
             <button
               type="button"
               onClick={handleBiteshipBooking}
               disabled={dispatching || loading || !isComplete}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer ${
                 isPickupTodayOrPast
-                  ? 'bg-wine text-white hover:bg-[#181E15]'
-                  : 'bg-[#F4EBE6] text-[#8C2C1D] border border-[#E5CAC3] hover:bg-[#EEDFD8]'
+                  ? "bg-wine text-white hover:bg-[#181E15]"
+                  : "bg-[#F4EBE6] text-[#8C2C1D] border border-[#E5CAC3] hover:bg-[#EEDFD8]"
               }`}
             >
               <Truck className="w-3.5 h-3.5" />
-              {dispatching ? 'Booking Biteship...' : isPickupTodayOrPast ? 'Book Biteship Now' : 'Book Biteship (Early)'}
+              {dispatching
+                ? "Booking Biteship..."
+                : isPickupTodayOrPast
+                  ? "Book Biteship Now"
+                  : "Book Biteship (Early)"}
             </button>
           )}
 
-          {formData.status === 'In Shipping' && (
+          {formData.status === "In Shipping" && (
             <button
               type="button"
-              onClick={() => handleStatusTransition('Active')}
+              onClick={() => handleStatusTransition("Active")}
               disabled={loading}
               className="px-3.5 py-1.5 bg-ok-bg text-ok border border-ok/30 rounded-lg text-xs font-semibold hover:bg-ok-bg/80 cursor-pointer"
             >
@@ -535,10 +609,10 @@ export default function OrderForm({
             </button>
           )}
 
-          {formData.status !== 'Cancelled' && (
+          {formData.status !== "Cancelled" && (
             <button
               type="button"
-              onClick={() => handleStatusTransition('Cancelled')}
+              onClick={() => handleStatusTransition("Cancelled")}
               disabled={loading}
               className="px-3 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg cursor-pointer"
             >
@@ -573,7 +647,7 @@ export default function OrderForm({
             disabled={loading}
             className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
           >
-            {loading ? 'Saving...' : 'Save'}
+            {loading ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -588,7 +662,8 @@ export default function OrderForm({
         <div className="mb-4 p-3 bg-[#F6F4EF] border border-[#CAD3C5] rounded-xl text-xs text-wine-ink flex items-center gap-2">
           <Lock className="w-3.5 h-3.5 text-muted flex-shrink-0" />
           <span>
-            <strong>Website Storefront Order:</strong> Customer, schedule, and fulfillment details are automated and locked against manual edits.
+            <strong>Website Storefront Order:</strong> Customer, schedule, and
+            fulfillment details are automated and locked against manual edits.
           </span>
         </div>
       )}
@@ -597,7 +672,9 @@ export default function OrderForm({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {/* LEFT COLUMN: Customer & Schedule */}
         <div className="bg-card border border-line rounded-[10px] p-5">
-          <h3 className="font-serif text-[18px] font-normal mb-3">Customer & schedule</h3>
+          <h3 className="font-serif text-[18px] font-normal mb-3">
+            Customer & schedule
+          </h3>
 
           <div className="space-y-3.5">
             <div>
@@ -611,35 +688,40 @@ export default function OrderForm({
                     onClick={() => setIsCustomerModalOpen(true)}
                     className="text-[11px] font-semibold text-wine-ink hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    <UserPlus className="w-3 h-3" />
-                    + Create Customer
+                    <UserPlus className="w-3 h-3" />+ Create Customer
                   </button>
                 )}
               </div>
               <select
-                disabled={isWebsite || (!isDraft && !isSuperAdmin) || isAddressLocked}
+                disabled={
+                  isWebsite || (!isDraft && !isSuperAdmin) || isAddressLocked
+                }
                 value={selectedCustomerId}
                 onChange={(e) => {
                   const newCustId = e.target.value;
                   setSelectedCustomerId(newCustId);
-                  const cust = allCustomers.find((c: any) => c.id === newCustId);
+                  const cust = allCustomers.find(
+                    (c: any) => c.id === newCustId,
+                  );
 
                   if (cust?.addresses && cust.addresses.length > 0) {
-                    const defaultAddr = cust.addresses.find((a: any) => a.is_default) || cust.addresses[0];
+                    const defaultAddr =
+                      cust.addresses.find((a: any) => a.is_default) ||
+                      cust.addresses[0];
                     setFormData((prev) => ({
                       ...prev,
-                      street_address: defaultAddr.street_address || '',
-                      city: defaultAddr.city || '',
-                      postal_code: defaultAddr.postal_code || '',
+                      street_address: defaultAddr.street_address || "",
+                      city: defaultAddr.city || "",
+                      postal_code: defaultAddr.postal_code || "",
                       latitude: defaultAddr.latitude ?? null,
                       longitude: defaultAddr.longitude ?? null,
                     }));
                   } else {
                     setFormData((prev) => ({
                       ...prev,
-                      street_address: '',
-                      city: '',
-                      postal_code: '',
+                      street_address: "",
+                      city: "",
+                      postal_code: "",
                       latitude: null,
                       longitude: null,
                     }));
@@ -650,7 +732,7 @@ export default function OrderForm({
                 <option value="">— Select Customer —</option>
                 {allCustomers.map((c: any) => (
                   <option key={c.id} value={c.id}>
-                    {c.first_name} {c.last_name || ''} ({c.phone})
+                    {c.first_name} {c.last_name || ""} ({c.phone})
                   </option>
                 ))}
               </select>
@@ -658,16 +740,18 @@ export default function OrderForm({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Phone</label>
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Phone
+                </label>
                 <input
                   disabled
-                  value={activeCustomer?.phone || ''}
+                  value={activeCustomer?.phone || ""}
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-muted font-mono"
                 />
               </div>
               <div className="flex items-end">
                 <a
-                  href={`https://wa.me/${(activeCustomer?.phone || '').replace(/\D/g, '').replace(/^0/, '62')}`}
+                  href={`https://wa.me/${(activeCustomer?.phone || "").replace(/\D/g, "").replace(/^0/, "62")}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full text-center py-2 px-3 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF] transition"
@@ -686,7 +770,9 @@ export default function OrderForm({
                   type="date"
                   disabled={isWebsite || (!isDraft && !isSuperAdmin)}
                   value={formData.order_date}
-                  onChange={(e) => setFormData({ ...formData, order_date: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, order_date: e.target.value })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -706,13 +792,20 @@ export default function OrderForm({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Event Days</label>
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Event Days
+                </label>
                 <input
                   type="number"
                   min={1}
                   disabled={isWebsite || isAddressLocked}
                   value={formData.event_days}
-                  onChange={(e) => setFormData({ ...formData, event_days: parseInt(e.target.value) || 1 })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      event_days: parseInt(e.target.value) || 1,
+                    })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -724,7 +817,9 @@ export default function OrderForm({
                   type="date"
                   disabled={isWebsite || isAddressLocked}
                   value={formData.pickup_date}
-                  onChange={(e) => setFormData({ ...formData, pickup_date: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, pickup_date: e.target.value })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -738,7 +833,9 @@ export default function OrderForm({
                 type="date"
                 disabled={isWebsite || isAddressLocked}
                 value={formData.return_date}
-                onChange={(e) => setFormData({ ...formData, return_date: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, return_date: e.target.value })
+                }
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
             </div>
@@ -748,7 +845,9 @@ export default function OrderForm({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] tracking-[0.14em] uppercase text-muted font-medium flex items-center gap-1">
                   Delivery Address <span className="text-bad">*</span>
-                  {isAddressLocked && <Lock className="w-3 h-3 text-muted ml-0.5" />}
+                  {isAddressLocked && (
+                    <Lock className="w-3 h-3 text-muted ml-0.5" />
+                  )}
                 </label>
 
                 {!isWebsite && !isAddressLocked && selectedCustomerId && (
@@ -768,16 +867,20 @@ export default function OrderForm({
                   <select
                     disabled={isWebsite || isAddressLocked}
                     value={
-                      customerAddresses.find((a) => a.street_address === formData.street_address)?.id || ''
+                      customerAddresses.find(
+                        (a) => a.street_address === formData.street_address,
+                      )?.id || ""
                     }
                     onChange={(e) => {
-                      const addr = customerAddresses.find((a: any) => String(a.id) === e.target.value);
+                      const addr = customerAddresses.find(
+                        (a: any) => String(a.id) === e.target.value,
+                      );
                       if (addr) {
                         setFormData((prev) => ({
                           ...prev,
-                          street_address: addr.street_address || '',
-                          city: addr.city || '',
-                          postal_code: addr.postal_code || '',
+                          street_address: addr.street_address || "",
+                          city: addr.city || "",
+                          postal_code: addr.postal_code || "",
                           latitude: addr.latitude ?? null,
                           longitude: addr.longitude ?? null,
                         }));
@@ -785,10 +888,13 @@ export default function OrderForm({
                     }}
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   >
-                    <option value="">— Select Saved Address ({customerAddresses.length}) —</option>
+                    <option value="">
+                      — Select Saved Address ({customerAddresses.length}) —
+                    </option>
                     {customerAddresses.map((a: any) => (
                       <option key={a.id} value={a.id}>
-                        {a.label} — {a.street_address}, {a.city} {a.postal_code ? `(${a.postal_code})` : ''}
+                        {a.label} — {a.street_address}, {a.city}{" "}
+                        {a.postal_code ? `(${a.postal_code})` : ""}
                       </option>
                     ))}
                   </select>
@@ -800,7 +906,9 @@ export default function OrderForm({
                 disabled={isWebsite || isAddressLocked}
                 placeholder="Street name, house/building number, unit..."
                 value={formData.street_address}
-                onChange={(e) => setFormData({ ...formData, street_address: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, street_address: e.target.value })
+                }
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
               />
 
@@ -809,14 +917,18 @@ export default function OrderForm({
                   placeholder="City"
                   disabled={isWebsite || isAddressLocked}
                   value={formData.city}
-                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, city: e.target.value })
+                  }
                   className="text-xs border border-line rounded px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
                 <input
                   placeholder="Postal Code"
                   disabled={isWebsite || isAddressLocked}
                   value={formData.postal_code}
-                  onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, postal_code: e.target.value })
+                  }
                   className="text-xs border border-line rounded px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -827,7 +939,9 @@ export default function OrderForm({
         {/* RIGHT COLUMN: Fulfilment & Payment */}
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
           <div>
-            <h3 className="font-serif text-[18px] font-normal mb-3">Fulfilment & payment</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-3">
+              Fulfilment & payment
+            </h3>
 
             <div className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
@@ -838,7 +952,9 @@ export default function OrderForm({
                   <select
                     disabled={isWebsite || (!isDraft && !isSuperAdmin)}
                     value={formData.order_method}
-                    onChange={(e) => setFormData({ ...formData, order_method: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, order_method: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   >
                     <option value="Manual">Manual</option>
@@ -846,7 +962,9 @@ export default function OrderForm({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Status</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Status
+                  </label>
                   <input
                     disabled
                     value={formData.status}
@@ -862,7 +980,9 @@ export default function OrderForm({
                 <select
                   disabled={isWebsite || isAddressLocked}
                   value={formData.pick_up_method}
-                  onChange={(e) => setFormData({ ...formData, pick_up_method: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, pick_up_method: e.target.value })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 >
                   <option value="JNE - REG">JNE - REG</option>
@@ -882,7 +1002,12 @@ export default function OrderForm({
                   disabled={isWebsite}
                   placeholder="— fills on dispatch or Biteship booking"
                   value={formData.packing_slip_id}
-                  onChange={(e) => setFormData({ ...formData, packing_slip_id: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      packing_slip_id: e.target.value,
+                    })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -894,11 +1019,15 @@ export default function OrderForm({
                 <select
                   disabled={isWebsite}
                   value={formData.payment_method}
-                  onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, payment_method: e.target.value })
+                  }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 >
                   <option value="QRIS (EDC)">QRIS (EDC)</option>
-                  <option value="Bank Transfer - BCA">Bank Transfer - BCA</option>
+                  <option value="Bank Transfer - BCA">
+                    Bank Transfer - BCA
+                  </option>
                   <option value="Cash">Cash</option>
                   <option value="Credit Card">Credit Card</option>
                 </select>
@@ -1007,22 +1136,25 @@ export default function OrderForm({
 
       {/* Financial Summary */}
       <div className="bg-card border border-line rounded-[10px] p-5 mb-4">
-        <h3 className="font-serif text-[18px] font-normal mb-3">Financial summary</h3>
+        <h3 className="font-serif text-[18px] font-normal mb-3">
+          Financial summary
+        </h3>
 
         <div className="divide-y divide-line max-w-xl text-[13px]">
           <div className="flex justify-between py-2">
             <span className="text-muted">Products subtotal</span>
-            <span className="font-medium">{formatRupiah(productsSubtotal)}</span>
+            <span className="font-medium">
+              {formatRupiah(productsSubtotal)}
+            </span>
           </div>
 
           <div className="flex justify-between items-center py-2">
             <span className="text-muted">Shipping fee (ongkir)</span>
-            <input
-              type="number"
-              disabled={isWebsite || isAddressLocked}
+            <RupiahInput
               value={formData.shipping_fee}
-              onChange={(e) => setFormData({ ...formData, shipping_fee: parseFloat(e.target.value) || 0 })}
-              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+              onChange={(v) => setFormData({ ...formData, shipping_fee: v })}
+              disabled={isWebsite || isAddressLocked}
+              className="w-32 text-right"
             />
           </div>
 
@@ -1040,19 +1172,15 @@ export default function OrderForm({
                 </div>
               )}
             </div>
-            <input
-              type="number"
-              disabled={isWebsite || isAddressLocked}
-              max={maxAvailableCredit}
-              min={0}
+            <RupiahInput
               value={formData.store_credit_applied}
-              onChange={(e) => {
-                const entered = parseFloat(e.target.value) || 0;
+              onChange={(v) => {
                 // Strictly cap store credit to customer's available balance
-                const clamped = Math.max(0, Math.min(maxAvailableCredit, entered));
+                const clamped = Math.max(0, Math.min(maxAvailableCredit, v));
                 setFormData({ ...formData, store_credit_applied: clamped });
               }}
-              className="w-32 text-right text-xs border border-line rounded px-2 py-1 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+              disabled={isWebsite || isAddressLocked}
+              className="w-32 text-right"
             />
           </div>
 
@@ -1067,7 +1195,10 @@ export default function OrderForm({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
           <h3 className="font-serif text-[18px] font-normal mb-1">
-            Log Note <span className="text-[12px] text-muted font-sans">- internal team only</span>
+            Log Note{" "}
+            <span className="text-[12px] text-muted font-sans">
+              - internal team only
+            </span>
           </h3>
           <form onSubmit={handleAddNote} className="mt-2 flex-1 flex flex-col">
             <textarea
@@ -1089,16 +1220,28 @@ export default function OrderForm({
         </div>
 
         <div className="bg-card border border-line rounded-[10px] p-5 h-56 overflow-y-auto">
-          <h3 className="font-serif text-[18px] font-normal mb-3">Activity log</h3>
+          <h3 className="font-serif text-[18px] font-normal mb-3">
+            Activity log
+          </h3>
           {auditLogs.length === 0 ? (
             <p className="text-xs text-muted">No changes recorded yet.</p>
           ) : (
             <ul className="space-y-2.5 text-xs">
               {auditLogs.map((log: any) => (
-                <li key={log.id} className="border-b border-line pb-1.5 last:border-none">
-                  <span className="font-semibold">{log.admin_name}</span>: {log.action_type}{' '}
-                  {log.new_value && <span className="text-wine-ink font-medium">({log.new_value})</span>}
-                  <span className="text-muted ml-1">· {new Date(log.created_at).toLocaleDateString()}</span>
+                <li
+                  key={log.id}
+                  className="border-b border-line pb-1.5 last:border-none"
+                >
+                  <span className="font-semibold">{log.admin_name}</span>:{" "}
+                  {log.action_type}{" "}
+                  {log.new_value && (
+                    <span className="text-wine-ink font-medium">
+                      ({log.new_value})
+                    </span>
+                  )}
+                  <span className="text-muted ml-1">
+                    · {new Date(log.created_at).toLocaleDateString()}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -1133,15 +1276,27 @@ export default function OrderForm({
                   <input
                     required
                     value={newCustomerForm.first_name}
-                    onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })}
+                    onChange={(e) =>
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        first_name: e.target.value,
+                      })
+                    }
                     className="w-full border border-line rounded-lg px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">Last Name</label>
+                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">
+                    Last Name
+                  </label>
                   <input
                     value={newCustomerForm.last_name}
-                    onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })}
+                    onChange={(e) =>
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        last_name: e.target.value,
+                      })
+                    }
                     className="w-full border border-line rounded-lg px-3 py-2"
                   />
                 </div>
@@ -1155,7 +1310,12 @@ export default function OrderForm({
                   required
                   placeholder="e.g. 628123456789"
                   value={newCustomerForm.phone}
-                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })}
+                  onChange={(e) =>
+                    setNewCustomerForm({
+                      ...newCustomerForm,
+                      phone: e.target.value,
+                    })
+                  }
                   className="w-full border border-line rounded-lg px-3 py-2 font-mono"
                 />
                 <span className="text-[10px] text-muted mt-0.5 block">
@@ -1165,10 +1325,17 @@ export default function OrderForm({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">Gender</label>
+                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">
+                    Gender
+                  </label>
                   <select
                     value={newCustomerForm.gender}
-                    onChange={(e) => setNewCustomerForm({ ...newCustomerForm, gender: e.target.value })}
+                    onChange={(e) =>
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        gender: e.target.value,
+                      })
+                    }
                     className="w-full border border-line rounded-lg px-3 py-2"
                   >
                     <option value="Female">Female</option>
@@ -1177,16 +1344,22 @@ export default function OrderForm({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">Date of Birth</label>
+                  <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">
+                    Date of Birth
+                  </label>
                   <input
                     type="date"
                     max="9999-12-31"
                     value={newCustomerForm.dob}
                     onChange={(e) => {
                       let val = e.target.value;
-                      const parts = val.split('-');
-                      if (parts[0] && parts[0].length > 4) parts[0] = parts[0].slice(0, 4);
-                      setNewCustomerForm({ ...newCustomerForm, dob: parts.join('-') });
+                      const parts = val.split("-");
+                      if (parts[0] && parts[0].length > 4)
+                        parts[0] = parts[0].slice(0, 4);
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        dob: parts.join("-"),
+                      });
                     }}
                     className="w-full border border-line rounded-lg px-3 py-2"
                   />
@@ -1207,7 +1380,7 @@ export default function OrderForm({
                 disabled={customerModalLoading}
                 className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50"
               >
-                {customerModalLoading ? 'Creating...' : 'Create & Select'}
+                {customerModalLoading ? "Creating..." : "Create & Select"}
               </button>
             </div>
           </form>
@@ -1241,7 +1414,9 @@ export default function OrderForm({
                   required
                   placeholder="e.g. Home, Office, Studio"
                   value={newAddress.label}
-                  onChange={(e) => setNewAddress({ ...newAddress, label: e.target.value })}
+                  onChange={(e) =>
+                    setNewAddress({ ...newAddress, label: e.target.value })
+                  }
                   className="w-full border border-line rounded-lg px-3 py-2"
                 />
               </div>
@@ -1255,7 +1430,12 @@ export default function OrderForm({
                   rows={2}
                   placeholder="Street name, house/building number, unit..."
                   value={newAddress.street_address}
-                  onChange={(e) => setNewAddress({ ...newAddress, street_address: e.target.value })}
+                  onChange={(e) =>
+                    setNewAddress({
+                      ...newAddress,
+                      street_address: e.target.value,
+                    })
+                  }
                   className="w-full border border-line rounded-lg p-2.5"
                 />
               </div>
@@ -1269,7 +1449,9 @@ export default function OrderForm({
                     required
                     placeholder="e.g. Jakarta Selatan"
                     value={newAddress.city}
-                    onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })}
+                    onChange={(e) =>
+                      setNewAddress({ ...newAddress, city: e.target.value })
+                    }
                     className="w-full border border-line rounded-lg px-3 py-2"
                   />
                 </div>
@@ -1280,7 +1462,12 @@ export default function OrderForm({
                   <input
                     placeholder="e.g. 12180"
                     value={newAddress.postal_code}
-                    onChange={(e) => setNewAddress({ ...newAddress, postal_code: e.target.value })}
+                    onChange={(e) =>
+                      setNewAddress({
+                        ...newAddress,
+                        postal_code: e.target.value,
+                      })
+                    }
                     className="w-full border border-line rounded-lg px-3 py-2"
                   />
                 </div>
@@ -1300,7 +1487,7 @@ export default function OrderForm({
                 disabled={modalLoading}
                 className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50"
               >
-                {modalLoading ? 'Saving...' : 'Save & Select Address'}
+                {modalLoading ? "Saving..." : "Save & Select Address"}
               </button>
             </div>
           </form>

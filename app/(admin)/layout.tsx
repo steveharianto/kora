@@ -12,6 +12,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isLoginPage = pathname === '/admin';
   const [isPending, startTransition] = useTransition();
   const [adminRole, setAdminRole] = useState<string>('Staff');
+  const [adminName, setAdminName] = useState<string>('');
 
   // Sidebar collapse state — defaults to open, persisted in localStorage
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -30,15 +31,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   useEffect(() => {
-    const match = document.cookie.match(/kora_admin_role=([^;]+)/);
-    if (match) {
-      const role = decodeURIComponent(match[1]).toLowerCase();
-      if (role.includes('super')) {
-        setAdminRole('Super Admin');
-      } else {
-        setAdminRole('Staff');
-      }
+    const roleMatch = document.cookie.match(/kora_admin_role=([^;]+)/);
+    if (roleMatch) {
+      const role = decodeURIComponent(roleMatch[1]).toLowerCase();
+      setAdminRole(role.includes('super') ? 'Super Admin' : 'Staff');
     }
+
+    const nameMatch = document.cookie.match(/kora_admin_name=([^;]+)/);
+    if (nameMatch) setAdminName(decodeURIComponent(nameMatch[1]));
   }, [pathname]);
 
   const handleLogout = () => {
@@ -109,15 +109,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="pt-4 border-t border-[#141811] text-xs text-[#9CA893] flex items-end justify-between">
-          <div>
-            <span className="block font-semibold text-white">Admin Session</span>
+          <div className="min-w-0 mr-3">
+            <span className="block font-semibold text-white truncate" title={adminName || 'Admin'}>
+              {adminName || 'Admin'}
+            </span>
             {adminRole}
           </div>
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="hover:text-[#D9A79C] transition-colors disabled:opacity-50 cursor-pointer"
+            className="hover:text-[#D9A79C] transition-colors disabled:opacity-50 cursor-pointer flex-shrink-0"
           >
             {isPending ? 'Logging out...' : 'Log out'}
           </button>

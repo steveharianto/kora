@@ -1,28 +1,28 @@
-import Link from 'next/link';
-import { getCurrentAdmin } from '@/app/actions/auth';
-import { getDashboardMetrics } from '@/app/actions/dashboard';
-import { formatRupiah } from '@/lib/utils';
-import PureSvgBarChart from '@/components/admin/dashboard/PureSvgBarChart';
-import PureSvgDonut from '@/components/admin/dashboard/PureSvgDonut';
-import DashboardRangeSelector from '@/components/admin/dashboard/DashboardRangeSelector';
+import Link from "next/link";
+import { getCurrentAdmin } from "@/app/actions/auth";
+import { getDashboardMetrics } from "@/app/actions/dashboard";
+import { formatRupiah } from "@/lib/utils";
+import PureSvgBarChart from "@/components/admin/dashboard/PureSvgBarChart";
+import PureSvgDonut from "@/components/admin/dashboard/PureSvgDonut";
+import DashboardRangeSelector from "@/components/admin/dashboard/DashboardRangeSelector";
 
 export default async function AdminDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; start?: string; end?: string }>;
 }) {
   const resolvedParams = await searchParams;
-  const rangeKey = resolvedParams.range || '30d';
+  const rangeKey = resolvedParams.range || "30d";
 
   const [admin, metrics] = await Promise.all([
     getCurrentAdmin(),
-    getDashboardMetrics(rangeKey),
+    getDashboardMetrics(rangeKey, resolvedParams.start, resolvedParams.end),
   ]);
 
-  const adminFirstName = admin?.name?.split(' ')[0] || 'Daphne';
+  const adminFirstName = admin?.name?.split(" ")[0] || "Daphne";
 
   return (
-    <div className="max-w-[1250px] pb-24 font-sans text-ink space-y-6">
+    <div className="pb-24 font-sans text-ink space-y-6">
       {/* =================================================================== */}
       {/* 1. HEADER & GREETING                                                */}
       {/* =================================================================== */}
@@ -49,12 +49,15 @@ export default async function AdminDashboardPage({
         {/* Card 1: Revenue Trend */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h3 className="font-serif text-[18px] font-normal mb-1">Revenue trend</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-1">
+              Revenue trend
+            </h3>
             <p className="text-[11.5px] text-muted mb-4">
               <span className="font-semibold text-wine-ink">
                 ▲ {metrics.revenueDeltaPercent}%
-              </span>{' '}
-              vs {formatRupiah(metrics.previousRevenue)} in the previous period ({metrics.previousRangeLabel})
+              </span>{" "}
+              vs {formatRupiah(metrics.previousRevenue)} in the previous period
+              ({metrics.previousRangeLabel})
             </p>
           </div>
 
@@ -64,26 +67,39 @@ export default async function AdminDashboardPage({
         {/* Card 2: Top Dresses by Revenue */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h3 className="font-serif text-[18px] font-normal mb-1">Top dresses by revenue</h3>
-            <p className="text-[11.5px] text-muted mb-4">{metrics.topDressLeadText}</p>
+            <h3 className="font-serif text-[18px] font-normal mb-1">
+              Top dresses by revenue
+            </h3>
+            <p className="text-[11.5px] text-muted mb-4">
+              {metrics.topDressLeadText}
+            </p>
           </div>
 
           <div className="space-y-3 font-tabular-nums text-xs">
             {metrics.topDresses.length === 0 ? (
-              <p className="text-muted text-center py-8">No dress rental data recorded.</p>
+              <p className="text-muted text-center py-8">
+                No dress rental data recorded.
+              </p>
             ) : (
               metrics.topDresses.map((dress, idx) => {
                 const maxRevenue = metrics.topDresses[0]?.revenue || 1;
-                const barWidthPercent = Math.max(8, Math.round((dress.revenue / maxRevenue) * 100));
+                const barWidthPercent = Math.max(
+                  8,
+                  Math.round((dress.revenue / maxRevenue) * 100),
+                );
 
                 return (
-                  <div key={idx} className="flex items-center justify-between gap-3">
-                    <span className="w-32 truncate text-ink font-medium" title={dress.name}>
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-3 cursor-help"
+                    title={`${dress.name} — ${formatRupiah(dress.revenue)} (${dress.sharePercent}% of dress revenue)`}
+                  >
+                    <span className="w-32 truncate text-ink font-medium">
                       {dress.name}
                     </span>
-                    <div className="flex-1 bg-[#EFEBE2] h-4 rounded-sm overflow-hidden flex items-center">
+                    <div className="flex-1 bg-[#F1EEE7] h-4 rounded-sm overflow-hidden flex items-center">
                       <div
-                        className="bg-[#1A1F16] h-full rounded-sm"
+                        className="bg-[#4A7C4E] h-full rounded-sm"
                         style={{ width: `${barWidthPercent}%` }}
                       />
                     </div>
@@ -101,32 +117,39 @@ export default async function AdminDashboardPage({
       {/* =================================================================== */}
       {/* 3. MIDDLE GRID: DONUT PROPORTION CARDS                              */}
       {/* =================================================================== */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {/* Card 1: Orders by Status */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-3">
           <div>
-            <h4 className="font-serif text-[16px] font-normal">Orders by status</h4>
+            <h4 className="font-serif text-[16px] font-normal">
+              Orders by status
+            </h4>
             <p className="text-[11px] text-muted">
-              {metrics.orderStatusBreakdown.totalOrders} order(s) —{' '}
+              {metrics.orderStatusBreakdown.totalOrders} order(s) —{" "}
               <span className="text-wine-ink font-semibold">
                 ▲ {metrics.orderStatusBreakdown.orderDeltaPercent}%
-              </span>{' '}
+              </span>{" "}
               vs prev
             </p>
           </div>
-          <PureSvgDonut segments={metrics.orderStatusBreakdown.segments} size={95} />
+          <PureSvgDonut
+            segments={metrics.orderStatusBreakdown.segments}
+            size={95}
+          />
         </div>
 
         {/* Card 2: Channel Split */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-3">
           <div>
-            <h4 className="font-serif text-[16px] font-normal">Channel split</h4>
+            <h4 className="font-serif text-[16px] font-normal">
+              Channel split
+            </h4>
             <p className="text-[11px] text-muted">
-              Website {metrics.channelSplit.websitePercent}% —{' '}
+              Website {metrics.channelSplit.websitePercent}% —{" "}
               <span className="text-muted font-semibold">
-                {metrics.channelSplit.websiteDeltaPt >= 0 ? '▲' : '▼'}{' '}
+                {metrics.channelSplit.websiteDeltaPt >= 0 ? "▲" : "▼"}{" "}
                 {Math.abs(metrics.channelSplit.websiteDeltaPt)}pt
-              </span>{' '}
+              </span>{" "}
               vs prev
             </p>
           </div>
@@ -136,12 +159,17 @@ export default async function AdminDashboardPage({
         {/* Card 3: New vs Returning */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-3">
           <div>
-            <h4 className="font-serif text-[16px] font-normal">New vs returning</h4>
+            <h4 className="font-serif text-[16px] font-normal">
+              New vs returning
+            </h4>
             <p className="text-[11px] text-muted">
               {metrics.customerRetention.newPercent}% new customers
             </p>
           </div>
-          <PureSvgDonut segments={metrics.customerRetention.segments} size={95} />
+          <PureSvgDonut
+            segments={metrics.customerRetention.segments}
+            size={95}
+          />
         </div>
       </div>
 
@@ -152,10 +180,14 @@ export default async function AdminDashboardPage({
         {/* Column 1: Pack & Dispatch Today */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h4 className="font-serif text-[16px] font-normal mb-3">Pack & dispatch today</h4>
+            <h4 className="font-serif text-[16px] font-normal mb-3">
+              Pack & dispatch today
+            </h4>
             <div className="space-y-3 text-xs">
               {metrics.triage.dispatchToday.length === 0 ? (
-                <p className="text-muted text-xs">No parcels due for dispatch today.</p>
+                <p className="text-muted text-xs">
+                  No parcels due for dispatch today.
+                </p>
               ) : (
                 metrics.triage.dispatchToday.map((item) => (
                   <Link
@@ -187,10 +219,14 @@ export default async function AdminDashboardPage({
         {/* Column 2: Returns Due & Overdue */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h4 className="font-serif text-[16px] font-normal mb-3">Returns due & overdue</h4>
+            <h4 className="font-serif text-[16px] font-normal mb-3">
+              Returns due & overdue
+            </h4>
             <div className="space-y-3 text-xs">
               {metrics.triage.returnsDue.length === 0 ? (
-                <p className="text-muted text-xs">No pending returns requiring action.</p>
+                <p className="text-muted text-xs">
+                  No pending returns requiring action.
+                </p>
               ) : (
                 metrics.triage.returnsDue.map((item) => (
                   <Link
@@ -206,8 +242,8 @@ export default async function AdminDashboardPage({
                       <span
                         className={`text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
                           item.isOverdue
-                            ? 'bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]'
-                            : 'bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]'
+                            ? "bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]"
+                            : "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]"
                         }`}
                       >
                         {item.agingText}
@@ -231,7 +267,9 @@ export default async function AdminDashboardPage({
         {/* Column 3: KTP Pending Review */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h4 className="font-serif text-[16px] font-normal mb-3">KTP pending review</h4>
+            <h4 className="font-serif text-[16px] font-normal mb-3">
+              KTP pending review
+            </h4>
             <div className="space-y-3 text-xs">
               {metrics.triage.ktpPending.length === 0 ? (
                 <p className="text-muted text-xs">All customer IDs verified.</p>
@@ -264,10 +302,14 @@ export default async function AdminDashboardPage({
         {/* Column 4: Fittings Today & Tomorrow */}
         <div className="bg-card border border-line rounded-[10px] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
-            <h4 className="font-serif text-[16px] font-normal mb-3">Fittings today & tomorrow</h4>
+            <h4 className="font-serif text-[16px] font-normal mb-3">
+              Fittings today & tomorrow
+            </h4>
             <div className="space-y-3 text-xs">
               {metrics.triage.fittingsUpcoming.length === 0 ? (
-                <p className="text-muted text-xs">No showroom fittings booked.</p>
+                <p className="text-muted text-xs">
+                  No showroom fittings booked.
+                </p>
               ) : (
                 metrics.triage.fittingsUpcoming.map((fit) => (
                   <Link

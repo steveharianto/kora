@@ -10,6 +10,25 @@ function formatDate(dateStr?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
+function StatusPill({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    Draft: 'bg-[#EFEBE2] text-muted border-transparent',
+    Ordered: 'bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]',
+    'In Shipping': 'bg-[#EEF4FB] text-[#2B6CB0] border-[#C3D9F2]',
+    Active: 'bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]',
+    Completed: 'bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]',
+    Cancelled: 'bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]',
+  };
+  const cls = styles[status] || 'bg-[#EFEBE2] text-muted border-transparent';
+  return (
+    <span
+      className={`inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border whitespace-nowrap ${cls}`}
+    >
+      {status}
+    </span>
+  );
+}
+
 export default async function OrdersPage({
   searchParams,
 }: {
@@ -151,6 +170,10 @@ export default async function OrdersPage({
         valA = a.customerName.toLowerCase();
         valB = b.customerName.toLowerCase();
         break;
+      case 'status':
+        valA = (a.status || '').toLowerCase();
+        valB = (b.status || '').toLowerCase();
+        break;
       case 'city':
         valA = (a.city || '').toLowerCase();
         valB = (b.city || '').toLowerCase();
@@ -276,7 +299,7 @@ export default async function OrdersPage({
   const exportHref = `/admin/orders/export${exportParams.toString() ? `?${exportParams.toString()}` : ''}`;
 
   return (
-    <div className="max-w-[1250px] mx-auto pb-24 font-sans text-ink">
+    <div className="mx-auto pb-24 font-sans text-ink">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>
@@ -333,12 +356,13 @@ export default async function OrdersPage({
 
             <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)] mb-2">
               <div className="w-full overflow-x-auto">
-                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
+                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[1020px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">Order ID</th>
                       <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">Status</th>
                       <th className="px-3 py-2.5">City</th>
                       <th className="px-3 py-2.5">Product</th>
                       <th className="px-3 py-2.5">Pick Up/Send</th>
@@ -352,7 +376,7 @@ export default async function OrdersPage({
                   <tbody>
                     {packTodayOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-3 py-6 text-center text-muted">
+                        <td colSpan={12} className="px-3 py-6 text-center text-muted">
                           No pending packages scheduled for dispatch today.
                         </td>
                       </tr>
@@ -366,6 +390,9 @@ export default async function OrdersPage({
                             </Link>
                           </td>
                           <td className="px-3 py-3">{o.customerName}</td>
+                          <td className="px-3 py-3">
+                            <StatusPill status={o.status} />
+                          </td>
                           <td className="px-3 py-3 text-muted">{o.city || '—'}</td>
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
                           <td className="px-3 py-3 font-medium text-wine-ink">{formatDate(o.pickup_date)}</td>
@@ -396,12 +423,13 @@ export default async function OrdersPage({
 
             <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)] mb-2">
               <div className="w-full overflow-x-auto">
-                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
+                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[1020px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">Order ID</th>
                       <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">Status</th>
                       <th className="px-3 py-2.5">City</th>
                       <th className="px-3 py-2.5">Product</th>
                       <th className="px-3 py-2.5">Pick Up/Send</th>
@@ -415,7 +443,7 @@ export default async function OrdersPage({
                   <tbody>
                     {prepareTomorrowOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-3 py-6 text-center text-muted">
+                        <td colSpan={12} className="px-3 py-6 text-center text-muted">
                           No packages queued for tomorrow.
                         </td>
                       </tr>
@@ -429,6 +457,9 @@ export default async function OrdersPage({
                             </Link>
                           </td>
                           <td className="px-3 py-3">{o.customerName}</td>
+                          <td className="px-3 py-3">
+                            <StatusPill status={o.status} />
+                          </td>
                           <td className="px-3 py-3 text-muted">{o.city || '—'}</td>
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
                           <td className="px-3 py-3 font-medium">{formatDate(o.pickup_date)}</td>
@@ -459,12 +490,13 @@ export default async function OrdersPage({
 
             <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)] mb-2">
               <div className="w-full overflow-x-auto">
-                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
+                <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[1020px]">
                   <thead>
                     <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted text-left font-medium">
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">Order ID</th>
                       <th className="px-3 py-2.5">Customer</th>
+                      <th className="px-3 py-2.5">Status</th>
                       <th className="px-3 py-2.5">City</th>
                       <th className="px-3 py-2.5">Product</th>
                       <th className="px-3 py-2.5">Pick Up/Send</th>
@@ -478,7 +510,7 @@ export default async function OrdersPage({
                   <tbody>
                     {heldKtpOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-3 py-6 text-center text-muted">
+                        <td colSpan={12} className="px-3 py-6 text-center text-muted">
                           No orders currently blocked by KTP verification.
                         </td>
                       </tr>
@@ -496,6 +528,9 @@ export default async function OrdersPage({
                             <span className="bg-[#F8EED9] text-[#977028] text-[9px] font-bold px-1.5 py-0.5 rounded">
                               KTP
                             </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <StatusPill status={o.status} />
                           </td>
                           <td className="px-3 py-3 text-muted">{o.city || '—'}</td>
                           <td className="px-3 py-3 font-mono text-xs">{o.productSku}</td>
@@ -626,12 +661,13 @@ export default async function OrdersPage({
           {/* Table */}
           <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)] mb-4">
             <div className="w-full overflow-x-auto">
-              <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
+              <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[1020px]">
                 <thead>
                   <tr className="border-b border-line text-[10.5px] tracking-[0.14em] uppercase text-muted font-medium">
                     {renderSortHeader('date', 'Date')}
                     {renderSortHeader('id', 'Order ID')}
                     {renderSortHeader('customer', 'Customer')}
+                    {renderSortHeader('status', 'Status')}
                     {renderSortHeader('city', 'City')}
                     {renderSortHeader('product', 'Product')}
                     {renderSortHeader('pickup', 'Pick Up/Send')}
@@ -644,7 +680,7 @@ export default async function OrdersPage({
                 <tbody>
                   {paginatedOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-3 py-12 text-center text-muted">
+                      <td colSpan={11} className="px-3 py-12 text-center text-muted">
                         No orders match the selected filters.
                       </td>
                     </tr>
@@ -664,6 +700,9 @@ export default async function OrdersPage({
                               KTP
                             </span>
                           )}
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <StatusPill status={o.status} />
                         </td>
                         <td className="px-3 py-3.5 text-muted">{o.city || '—'}</td>
                         <td className="px-3 py-3.5 font-mono text-xs">{o.productSku}</td>

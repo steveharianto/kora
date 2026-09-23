@@ -34,7 +34,7 @@ export default function ReportsClient({
   const audRows = 'rows' in auditData && Array.isArray(auditData.rows) ? auditData.rows : [];
 
   return (
-    <div className="max-w-[1250px] mx-auto pb-24 font-sans text-ink space-y-6">
+    <div className="mx-auto pb-24 font-sans text-ink space-y-6">
       <div>
         <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1 font-medium">Insight</div>
         <h1 className="font-serif text-[32px] font-normal tracking-[0.01em] text-ink">Reports</h1>

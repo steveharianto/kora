@@ -61,7 +61,7 @@ export default async function ReturnDetailPage({
   });
 
   return (
-    <div className="max-w-[1250px] pb-24 font-sans text-ink">
+    <div className="pb-24 font-sans text-ink">
       <ReturnDetailForm
         initialReturn={returnRes.data}
         shippingSettings={settingsMap.shipping || {}}

@@ -88,7 +88,7 @@ export default async function OrderDetailPage({
   const notificationTemplates = notificationSettingsRes.data?.value || {};
 
   return (
-    <div className="max-w-[1250px] pb-24 font-sans text-ink">
+    <div className="pb-24 font-sans text-ink">
       <OrderForm
         initialOrder={orderRes.data}
         allCustomers={customersRes.data || []}

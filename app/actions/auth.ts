@@ -55,7 +55,7 @@ export async function loginAdmin(formData: { email: string; password: string }) 
     role: admin.role,
   };
 
-  // 5. Set session cookie (httpOnly for security) and role cookie (readable by client UI)
+  // 5. Set session cookie (httpOnly for security), plus display-only role & name cookies (readable by client UI)
   const cookieStore = await cookies();
   cookieStore.set('kora_admin_session', JSON.stringify(sessionData), {
     httpOnly: true,
@@ -73,6 +73,14 @@ export async function loginAdmin(formData: { email: string; password: string }) 
     maxAge: 60 * 60 * 24 * 7,
   });
 
+  cookieStore.set('kora_admin_name', admin.name, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7,
+  });
+
   return { success: true };
 }
 
@@ -80,6 +88,7 @@ export async function logoutAdmin() {
   const cookieStore = await cookies();
   cookieStore.delete('kora_admin_session');
   cookieStore.delete('kora_admin_role');
+  cookieStore.delete('kora_admin_name');
   redirect('/admin');
 }
 

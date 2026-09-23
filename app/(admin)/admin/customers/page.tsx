@@ -1,22 +1,22 @@
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
-import { formatRupiah } from '@/lib/utils';
-import AddCustomerModal from './AddCustomerModal';
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { formatRupiah } from "@/lib/utils";
+import AddCustomerModal from "./AddCustomerModal";
 
 function formatDisplayDate(dateStr?: string | null) {
-  if (!dateStr) return '—';
+  if (!dateStr) return "—";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  if (isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
 
 function StatusPill({ status }: { status: string }) {
-  const norm = (status || '').toUpperCase();
+  const norm = (status || "").toUpperCase();
 
-  if (norm === 'VERIFIED') {
+  if (norm === "VERIFIED") {
     return (
       <span className="inline-block text-[10px] font-bold tracking-wider uppercase rounded-full px-2.5 py-0.5 bg-[#EAF3E7] text-[#2E7D47]">
         VERIFIED
@@ -24,7 +24,7 @@ function StatusPill({ status }: { status: string }) {
     );
   }
 
-  if (norm === 'KTP PENDING') {
+  if (norm === "KTP PENDING") {
     return (
       <span className="inline-block text-[10px] font-bold tracking-wider uppercase rounded-full px-2.5 py-0.5 bg-[#F8EED9] text-[#977028]">
         KTP PENDING
@@ -52,19 +52,20 @@ export default async function CustomersPage({
   }>;
 }) {
   const resolvedParams = await searchParams;
-  const searchQuery = (resolvedParams.search || '').trim().toLowerCase();
-  const fromDate = resolvedParams.from || '';
-  const toDate = resolvedParams.to || '';
-  const statusFilter = resolvedParams.status || 'all';
-  const viewFilter = resolvedParams.view || 'all';
-  const currentPage = Math.max(1, parseInt(resolvedParams.page || '1', 10));
+  const searchQuery = (resolvedParams.search || "").trim().toLowerCase();
+  const fromDate = resolvedParams.from || "";
+  const toDate = resolvedParams.to || "";
+  const statusFilter = resolvedParams.status || "all";
+  const viewFilter = resolvedParams.view || "all";
+  const currentPage = Math.max(1, parseInt(resolvedParams.page || "1", 10));
   const PAGE_SIZE = 8;
 
   const supabase = await createClient();
 
   const { data: rawCustomers, error } = await supabase
-    .from('customers')
-    .select(`
+    .from("customers")
+    .select(
+      `
       id,
       first_name,
       last_name,
@@ -83,25 +84,27 @@ export default async function CustomersPage({
         total,
         status
       )
-    `)
-    .order('date_joined', { ascending: false });
+    `,
+    )
+    .order("date_joined", { ascending: false });
 
   if (error) {
-    console.error('Error fetching customers:', error);
+    console.error("Error fetching customers:", error);
   }
 
   const allCustomers = (rawCustomers || []).map((c: any) => {
-    const defaultAddr = c.addresses?.find((a: any) => a.is_default) || c.addresses?.[0];
-    const city = defaultAddr?.city || '—';
+    const defaultAddr =
+      c.addresses?.find((a: any) => a.is_default) || c.addresses?.[0];
+    const city = defaultAddr?.city || "—";
     const ordersCount = c.orders?.length || 0;
     const lifetimeValue = (c.orders || []).reduce(
       (sum: number, o: any) => sum + (parseFloat(o.total) || 0),
-      0
+      0,
     );
 
     return {
       ...c,
-      fullName: `${c.first_name} ${c.last_name || ''}`.trim(),
+      fullName: `${c.first_name} ${c.last_name || ""}`.trim(),
       city,
       ordersCount,
       lifetimeValue,
@@ -116,27 +119,29 @@ export default async function CustomersPage({
       (c) =>
         c.fullName.toLowerCase().includes(searchQuery) ||
         c.phone.toLowerCase().includes(searchQuery) ||
-        c.city.toLowerCase().includes(searchQuery)
+        c.city.toLowerCase().includes(searchQuery),
     );
   }
 
-  if (statusFilter && statusFilter !== 'all') {
+  if (statusFilter && statusFilter !== "all") {
     filtered = filtered.filter(
-      (c) => (c.status || '').toLowerCase() === statusFilter.toLowerCase()
+      (c) => (c.status || "").toLowerCase() === statusFilter.toLowerCase(),
     );
   }
 
   if (fromDate) {
-    filtered = filtered.filter((c) => c.date_joined && c.date_joined >= fromDate);
+    filtered = filtered.filter(
+      (c) => c.date_joined && c.date_joined >= fromDate,
+    );
   }
 
   if (toDate) {
     filtered = filtered.filter((c) => c.date_joined && c.date_joined <= toDate);
   }
 
-  if (viewFilter === 'with-orders') {
+  if (viewFilter === "with-orders") {
     filtered = filtered.filter((c) => c.ordersCount > 0);
-  } else if (viewFilter === 'with-credit') {
+  } else if (viewFilter === "with-credit") {
     filtered = filtered.filter((c) => (c.current_credit || 0) > 0);
   }
 
@@ -159,17 +164,17 @@ export default async function CustomersPage({
     };
 
     Object.entries(current).forEach(([k, v]) => {
-      if (v && v !== 'all' && v !== 1) {
+      if (v && v !== "all" && v !== 1) {
         params.set(k, String(v));
       }
     });
 
     const str = params.toString();
-    return str ? `?${str}` : '/admin/customers';
+    return str ? `?${str}` : "/admin/customers";
   };
 
   return (
-    <div className="max-w-[1200px]">
+    <div className="">
       {/* Page Title & Add Action */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>
@@ -184,7 +189,10 @@ export default async function CustomersPage({
       </div>
 
       {/* Filter Toolbar */}
-      <form method="GET" className="flex flex-wrap items-center gap-3 mb-4 text-[13px]">
+      <form
+        method="GET"
+        className="flex flex-wrap items-center gap-3 mb-4 text-[13px]"
+      >
         {/* Search input */}
         <input
           type="text"
@@ -249,7 +257,11 @@ export default async function CustomersPage({
           Filter
         </button>
 
-        {(searchQuery || fromDate || toDate || statusFilter !== 'all' || viewFilter !== 'all') && (
+        {(searchQuery ||
+          fromDate ||
+          toDate ||
+          statusFilter !== "all" ||
+          viewFilter !== "all") && (
           <Link
             href="/admin/customers"
             className="text-xs text-muted hover:text-bad underline ml-1"
@@ -262,21 +274,25 @@ export default async function CustomersPage({
       {/* Pagination Counter */}
       <div className="flex justify-end items-center gap-2 mb-2.5 text-xs text-muted">
         <span>
-          {totalResults === 0 ? '0 of 0' : `${startIndex + 1}-${endIndex} of ${totalResults}`}
+          {totalResults === 0
+            ? "0 of 0"
+            : `${startIndex + 1}-${endIndex} of ${totalResults}`}
         </span>
         <div className="flex items-center gap-1 ml-1">
           <Link
             href={buildQueryString({ page: Math.max(1, currentPage - 1) })}
             className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] transition ${
-              currentPage <= 1 ? 'pointer-events-none opacity-40' : ''
+              currentPage <= 1 ? "pointer-events-none opacity-40" : ""
             }`}
           >
             ‹
           </Link>
           <Link
-            href={buildQueryString({ page: Math.min(totalPages, currentPage + 1) })}
+            href={buildQueryString({
+              page: Math.min(totalPages, currentPage + 1),
+            })}
             className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] transition ${
-              currentPage >= totalPages ? 'pointer-events-none opacity-40' : ''
+              currentPage >= totalPages ? "pointer-events-none opacity-40" : ""
             }`}
           >
             ›
@@ -298,27 +314,36 @@ export default async function CustomersPage({
                 <th className="px-3 py-3">Lifetime Value ▾</th>
                 <th className="px-3 py-3">Store Credit ▾</th>
                 <th className="px-3 py-3">Status ▾</th>
-                <th className="px-3 py-3 w-[70px]"></th>
               </tr>
             </thead>
             <tbody>
               {paginatedCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-12 text-center text-muted">
+                  <td colSpan={8} className="px-3 py-12 text-center text-muted">
                     No customers found matching the selected filters.
                   </td>
                 </tr>
               ) : (
                 paginatedCustomers.map((cust) => (
-                  <tr key={cust.id} className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none group">
+                  <tr
+                    key={cust.id}
+                    className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
+                  >
                     <td className="px-3 py-3.5 align-middle font-medium text-ink">
-                      {cust.fullName}
+                      <Link
+                        href={`/admin/customers/${cust.id}`}
+                        className="hover:underline text-wine-ink hover:text-black"
+                      >
+                        {cust.fullName}
+                      </Link>
                     </td>
                     <td className="px-3 py-3.5 align-middle text-muted">
                       {cust.city}
                     </td>
                     <td className="px-3 py-3.5 align-middle text-muted font-tabular-nums">
-                      {cust.phone.startsWith('+') ? cust.phone : `+${cust.phone}`}
+                      {cust.phone.startsWith("+")
+                        ? cust.phone
+                        : `+${cust.phone}`}
                     </td>
                     <td className="px-3 py-3.5 align-middle text-muted font-tabular-nums">
                       {formatDisplayDate(cust.date_joined)}
@@ -327,7 +352,9 @@ export default async function CustomersPage({
                       {cust.ordersCount}
                     </td>
                     <td className="px-3 py-3.5 align-middle font-tabular-nums text-ink">
-                      {cust.lifetimeValue > 0 ? formatRupiah(cust.lifetimeValue) : '—'}
+                      {cust.lifetimeValue > 0
+                        ? formatRupiah(cust.lifetimeValue)
+                        : "—"}
                     </td>
                     <td className="px-3 py-3.5 align-middle font-tabular-nums">
                       {cust.current_credit && cust.current_credit > 0 ? (
@@ -340,14 +367,6 @@ export default async function CustomersPage({
                     </td>
                     <td className="px-3 py-3.5 align-middle">
                       <StatusPill status={cust.status} />
-                    </td>
-                    <td className="px-3 py-3.5 align-middle text-right">
-                      <Link
-                        href={`/admin/customers/${cust.id}`}
-                        className="inline-block text-[12.5px] font-medium border border-line bg-card text-ink rounded-lg px-3 py-1 hover:border-[#C9C2B4] transition"
-                      >
-                        View
-                      </Link>
                     </td>
                   </tr>
                 ))

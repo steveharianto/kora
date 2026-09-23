@@ -53,7 +53,7 @@ export default async function FittingDetailPage({
   const notificationTemplates = settingsRes.data?.value || {};
 
   return (
-    <div className="max-w-[1250px] pb-24 font-sans text-ink">
+    <div className="pb-24 font-sans text-ink">
       <FittingDetailForm
         initialFitting={fittingRes.data}
         allItems={allItemsRes.data || []}

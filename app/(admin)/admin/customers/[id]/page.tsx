@@ -24,7 +24,7 @@ export default async function CustomerDetailPage({
   }
 
   return (
-    <div className="max-w-[1200px] pb-20">
+    <div className="pb-20">
       <Link
         href="/admin/customers"
         className="text-[12.5px] text-muted hover:text-wine-ink inline-block mb-2.5 transition"

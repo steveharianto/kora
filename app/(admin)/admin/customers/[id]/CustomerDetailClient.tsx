@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   updateCustomer,
   deleteCustomer,
@@ -9,9 +9,10 @@ import {
   deleteAddress,
   setDefaultAddress,
   reviewKtp,
-} from '@/app/actions/customers';
-import { formatRupiah } from '@/lib/utils';
-import AddressMapPicker from '@/components/AddressMapPicker';
+} from "@/app/actions/customers";
+import { formatRupiah } from "@/lib/utils";
+import AddressMapPicker from "@/components/AddressMapPicker";
+import RupiahInput from "@/components/RupiahInput";
 
 export default function CustomerDetailClient({
   customer,
@@ -22,28 +23,28 @@ export default function CustomerDetailClient({
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState("");
 
   // Profile Form State
   const [profile, setProfile] = useState({
-    first_name: customer.first_name || '',
-    last_name: customer.last_name || '',
-    phone: customer.phone || '',
-    gender: customer.gender || '',
-    dob: customer.dob || '',
-    status: customer.status || 'Not Submitted',
+    first_name: customer.first_name || "",
+    last_name: customer.last_name || "",
+    phone: customer.phone || "",
+    gender: customer.gender || "",
+    dob: customer.dob || "",
+    status: customer.status || "Not Submitted",
     current_credit: customer.current_credit || 0,
   });
 
   // Keep state in sync with server prop refreshes
   useEffect(() => {
     setProfile({
-      first_name: customer.first_name || '',
-      last_name: customer.last_name || '',
-      phone: customer.phone || '',
-      gender: customer.gender || '',
-      dob: customer.dob || '',
-      status: customer.status || 'Not Submitted',
+      first_name: customer.first_name || "",
+      last_name: customer.last_name || "",
+      phone: customer.phone || "",
+      gender: customer.gender || "",
+      dob: customer.dob || "",
+      status: customer.status || "Not Submitted",
       current_credit: customer.current_credit || 0,
     });
   }, [customer]);
@@ -52,29 +53,29 @@ export default function CustomerDetailClient({
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<any>(null);
   const [addressForm, setAddressForm] = useState({
-    label: 'Home',
-    street_address: '',
-    city: '',
-    postal_code: '',
+    label: "Home",
+    street_address: "",
+    city: "",
+    postal_code: "",
     latitude: null as number | null,
     longitude: null as number | null,
     is_default: false,
   });
 
   // KTP Notes
-  const [ktpNotes, setKtpNotes] = useState('');
+  const [ktpNotes, setKtpNotes] = useState("");
 
   // Save Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
 
     const res = await updateCustomer(customer.id, profile);
     if (res.error) {
       setErrorMsg(res.error);
     } else {
-      alert('Customer profile updated.');
+      alert("Customer profile updated.");
       router.refresh();
     }
 
@@ -86,10 +87,10 @@ export default function CustomerDetailClient({
     if (addr) {
       setEditingAddress(addr);
       setAddressForm({
-        label: addr.label || 'Home',
-        street_address: addr.street_address || '',
-        city: addr.city || '',
-        postal_code: addr.postal_code || '',
+        label: addr.label || "Home",
+        street_address: addr.street_address || "",
+        city: addr.city || "",
+        postal_code: addr.postal_code || "",
         latitude: addr.latitude ?? null,
         longitude: addr.longitude ?? null,
         is_default: addr.is_default || false,
@@ -97,10 +98,10 @@ export default function CustomerDetailClient({
     } else {
       setEditingAddress(null);
       setAddressForm({
-        label: 'Home',
-        street_address: '',
-        city: '',
-        postal_code: '',
+        label: "Home",
+        street_address: "",
+        city: "",
+        postal_code: "",
         latitude: null,
         longitude: null,
         is_default: addresses.length === 0,
@@ -113,7 +114,7 @@ export default function CustomerDetailClient({
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorMsg('');
+    setErrorMsg("");
 
     const payload = {
       ...addressForm,
@@ -131,7 +132,7 @@ export default function CustomerDetailClient({
   };
 
   const handleDeleteAddress = async (id: number) => {
-    if (!confirm('Hapus alamat ini?')) return;
+    if (!confirm("Hapus alamat ini?")) return;
     setLoading(true);
     await deleteAddress(id, customer.id);
     router.refresh();
@@ -145,17 +146,18 @@ export default function CustomerDetailClient({
     setLoading(false);
   };
 
-  const handleKtpReview = async (newStatus: 'Verified' | 'Not Submitted') => {
+  const handleKtpReview = async (newStatus: "Verified" | "Not Submitted") => {
     setLoading(true);
     await reviewKtp(customer.id, newStatus, ktpNotes);
-    setKtpNotes('');
+    setKtpNotes("");
     setProfile((prev) => ({ ...prev, status: newStatus }));
     router.refresh();
     setLoading(false);
   };
 
   const handleDeleteCustomer = async () => {
-    if (!confirm('Hapus customer ini? Tindakan ini tidak dapat dibatalkan.')) return;
+    if (!confirm("Hapus customer ini? Tindakan ini tidak dapat dibatalkan."))
+      return;
     setLoading(true);
     const res = await deleteCustomer(customer.id);
     if (res.error) {
@@ -163,7 +165,7 @@ export default function CustomerDetailClient({
       setLoading(false);
       return;
     }
-    router.push('/admin/customers');
+    router.push("/admin/customers");
   };
 
   return (
@@ -171,19 +173,24 @@ export default function CustomerDetailClient({
       {/* Header & Badges */}
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">Directory · Customer</div>
-          <h1 className="font-serif text-[29px] font-normal tracking-[0.01em]">
-            {customer.first_name} {customer.last_name || ''}
+          <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">
+            Directory · Customer
+          </div>
+          <h1 className="font-serif text-[32px] font-normal tracking-[0.01em]">
+            {customer.first_name} {customer.last_name || ""}
           </h1>
           <p className="text-muted text-[13px] mt-1">
-            Joined {new Date(customer.date_joined).toLocaleDateString()} · ID: {customer.id}
+            Joined {new Date(customer.date_joined).toLocaleDateString()} · ID:{" "}
+            {customer.id}
           </p>
         </div>
 
         <div className="flex gap-2 flex-wrap items-center">
           <span
             className={`text-[10px] font-bold tracking-widest uppercase rounded px-2.5 py-1 ${
-              customer.status === 'Verified' ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'
+              customer.status === "Verified"
+                ? "bg-ok-bg text-ok"
+                : "bg-warn-bg text-warn"
             }`}
           >
             {customer.status}
@@ -211,24 +218,34 @@ export default function CustomerDetailClient({
         <div className="space-y-4">
           {/* 1. Customer Information Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-3">Customer Information</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-3">
+              Customer Information
+            </h3>
 
             <form onSubmit={handleSaveProfile} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">First Name</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    First Name
+                  </label>
                   <input
                     required
                     value={profile.first_name}
-                    onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, first_name: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Last Name</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Last Name
+                  </label>
                   <input
                     value={profile.last_name}
-                    onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, last_name: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
@@ -236,19 +253,27 @@ export default function CustomerDetailClient({
 
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Phone</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Phone
+                  </label>
                   <input
                     required
                     value={profile.phone}
-                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, phone: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Gender</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Gender
+                  </label>
                   <select
                     value={profile.gender}
-                    onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, gender: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   >
                     <option value="">— Select —</option>
@@ -261,19 +286,27 @@ export default function CustomerDetailClient({
 
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Date of Birth</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Date of Birth
+                  </label>
                   <input
                     type="date"
                     value={profile.dob}
-                    onChange={(e) => setProfile({ ...profile, dob: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, dob: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Status</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Status
+                  </label>
                   <select
                     value={profile.status}
-                    onChange={(e) => setProfile({ ...profile, status: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, status: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   >
                     <option value="Verified">Verified</option>
@@ -285,12 +318,14 @@ export default function CustomerDetailClient({
               </div>
 
               <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Store Credit (Rp)</label>
-                <input
-                  type="number"
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Store Credit (Rp)
+                </label>
+                <RupiahInput
                   value={profile.current_credit}
-                  onChange={(e) => setProfile({ ...profile, current_credit: parseFloat(e.target.value) || 0 })}
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  onChange={(v) =>
+                    setProfile({ ...profile, current_credit: v })
+                  }
                 />
               </div>
 
@@ -300,7 +335,7 @@ export default function CustomerDetailClient({
                   disabled={loading}
                   className="font-medium border border-wine bg-wine text-white rounded-lg px-3.5 py-1.5 text-xs hover:bg-[#181E15] transition cursor-pointer disabled:opacity-50"
                 >
-                  {loading ? 'Saving...' : 'Save Profile'}
+                  {loading ? "Saving..." : "Save Profile"}
                 </button>
               </div>
             </form>
@@ -309,7 +344,9 @@ export default function CustomerDetailClient({
           {/* 2. Addresses Management Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-serif text-[18px] font-normal">Customer Addresses</h3>
+              <h3 className="font-serif text-[18px] font-normal">
+                Customer Addresses
+              </h3>
               <button
                 type="button"
                 onClick={() => openAddressModal()}
@@ -320,20 +357,24 @@ export default function CustomerDetailClient({
             </div>
 
             {addresses.length === 0 ? (
-              <p className="text-sm text-muted py-3">Belum ada alamat yang tersimpan.</p>
+              <p className="text-sm text-muted py-3">
+                Belum ada alamat yang tersimpan.
+              </p>
             ) : (
               <div className="space-y-3">
                 {addresses.map((addr: any) => (
                   <div
                     key={addr.id}
                     className={`p-3.5 rounded-lg border text-[13px] transition ${
-                      addr.is_default ? 'bg-[#F9FAF8] border-[#CAD3C5]' : 'bg-[#FDFCFA] border-line'
+                      addr.is_default
+                        ? "bg-[#F9FAF8] border-[#CAD3C5]"
+                        : "bg-[#FDFCFA] border-line"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-ink uppercase text-[11px] tracking-wider bg-[#EFEBE2] px-2 py-0.5 rounded">
-                          {addr.label || 'Home'}
+                          {addr.label || "Home"}
                         </span>
                         {addr.is_default && (
                           <span className="bg-ok-bg text-ok text-[10px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
@@ -368,14 +409,18 @@ export default function CustomerDetailClient({
                       </div>
                     </div>
 
-                    <p className="text-ink font-medium leading-snug">{addr.street_address}</p>
+                    <p className="text-ink font-medium leading-snug">
+                      {addr.street_address}
+                    </p>
                     <p className="text-muted text-xs mt-0.5">
-                      {addr.city}, {addr.postal_code || 'No Postal Code'}
+                      {addr.city}, {addr.postal_code || "No Postal Code"}
                     </p>
 
                     {addr.latitude !== null && addr.longitude !== null && (
                       <div className="text-[11px] text-muted mt-2 flex items-center gap-1.5">
-                        <span>📍 {addr.latitude}, {addr.longitude}</span>
+                        <span>
+                          📍 {addr.latitude}, {addr.longitude}
+                        </span>
                         <a
                           href={`https://www.google.com/maps?q=${addr.latitude},${addr.longitude}`}
                           target="_blank"
@@ -397,12 +442,18 @@ export default function CustomerDetailClient({
         <div className="space-y-4">
           {/* KTP Verification Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-3">KTP Verification</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-3">
+              KTP Verification
+            </h3>
 
             <div className="p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] mb-4">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-xs text-muted">Current Verification Status:</span>
-                <span className="font-bold text-xs uppercase">{customer.status}</span>
+                <span className="text-xs text-muted">
+                  Current Verification Status:
+                </span>
+                <span className="font-bold text-xs uppercase">
+                  {customer.status}
+                </span>
               </div>
               <textarea
                 rows={2}
@@ -414,14 +465,14 @@ export default function CustomerDetailClient({
               <div className="flex justify-end gap-2 mt-2">
                 <button
                   type="button"
-                  onClick={() => handleKtpReview('Not Submitted')}
+                  onClick={() => handleKtpReview("Not Submitted")}
                   className="px-3 py-1 bg-white border border-line text-xs rounded-md hover:bg-bad-bg hover:text-bad cursor-pointer"
                 >
                   Reject / Reset
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleKtpReview('Verified')}
+                  onClick={() => handleKtpReview("Verified")}
                   className="px-3 py-1 bg-wine text-white text-xs rounded-md hover:bg-[#181E15] cursor-pointer"
                 >
                   Approve KTP
@@ -431,15 +482,25 @@ export default function CustomerDetailClient({
 
             {/* KTP Logs */}
             <div className="text-xs">
-              <h4 className="font-semibold text-muted uppercase text-[10px] tracking-wider mb-2">Review History</h4>
+              <h4 className="font-semibold text-muted uppercase text-[10px] tracking-wider mb-2">
+                Review History
+              </h4>
               {ktpLogs.length === 0 ? (
-                <p className="text-muted text-xs">No verification events logged.</p>
+                <p className="text-muted text-xs">
+                  No verification events logged.
+                </p>
               ) : (
                 <ul className="space-y-2">
                   {ktpLogs.map((log: any) => (
-                    <li key={log.id} className="border-b border-line pb-1.5 text-xs">
-                      <span className="font-medium">{log.status}</span> — {log.description || 'No notes'}{' '}
-                      <span className="text-muted">({new Date(log.created_at).toLocaleDateString()})</span>
+                    <li
+                      key={log.id}
+                      className="border-b border-line pb-1.5 text-xs"
+                    >
+                      <span className="font-medium">{log.status}</span> —{" "}
+                      {log.description || "No notes"}{" "}
+                      <span className="text-muted">
+                        ({new Date(log.created_at).toLocaleDateString()})
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -449,17 +510,26 @@ export default function CustomerDetailClient({
 
           {/* Orders History Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-3">Order History</h3>
+            <h3 className="font-serif text-[18px] font-normal mb-3">
+              Order History
+            </h3>
             {orders.length === 0 ? (
-              <p className="text-sm text-muted">Belum ada order untuk customer ini.</p>
+              <p className="text-sm text-muted">
+                Belum ada order untuk customer ini.
+              </p>
             ) : (
               <div className="space-y-2">
                 {orders.map((o: any) => (
-                  <div key={o.id} className="p-3 bg-[#FDFCFA] border border-line rounded-lg flex justify-between text-xs">
+                  <div
+                    key={o.id}
+                    className="p-3 bg-[#FDFCFA] border border-line rounded-lg flex justify-between text-xs"
+                  >
                     <div>
                       <span className="font-bold text-ink mr-2">{o.id}</span>
                       <span className="text-muted">{o.order_date}</span>
-                      <div className="mt-0.5 text-muted">Total: {formatRupiah(o.total || 0)}</div>
+                      <div className="mt-0.5 text-muted">
+                        Total: {formatRupiah(o.total || 0)}
+                      </div>
                     </div>
                     <div className="text-right">
                       <span className="bg-[#EFEBE2] text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase">
@@ -479,10 +549,11 @@ export default function CustomerDetailClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-card border border-line rounded-xl w-full max-w-xl p-6 shadow-xl relative my-8 animate-in fade-in zoom-in-95">
             <h2 className="font-serif text-[22px] font-normal mb-1">
-              {editingAddress ? 'Edit Alamat' : 'Tambah Alamat Baru'}
+              {editingAddress ? "Edit Alamat" : "Tambah Alamat Baru"}
             </h2>
             <p className="text-[13px] text-muted mb-4">
-              Cari alamat atau geser pin pada peta untuk melengkapi koordinat pengiriman Biteship.
+              Cari alamat atau geser pin pada peta untuk melengkapi koordinat
+              pengiriman Biteship.
             </p>
 
             <form onSubmit={handleSaveAddress} className="space-y-3.5">
@@ -502,11 +573,15 @@ export default function CustomerDetailClient({
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Label Alamat</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Label Alamat
+                  </label>
                   <input
                     value={addressForm.label}
                     placeholder="Rumah, Kantor, Studio..."
-                    onChange={(e) => setAddressForm({ ...addressForm, label: e.target.value })}
+                    onChange={(e) =>
+                      setAddressForm({ ...addressForm, label: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
@@ -517,7 +592,9 @@ export default function CustomerDetailClient({
                   <input
                     required
                     value={addressForm.city}
-                    onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                    onChange={(e) =>
+                      setAddressForm({ ...addressForm, city: e.target.value })
+                    }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
@@ -531,7 +608,12 @@ export default function CustomerDetailClient({
                   required
                   rows={2}
                   value={addressForm.street_address}
-                  onChange={(e) => setAddressForm({ ...addressForm, street_address: e.target.value })}
+                  onChange={(e) =>
+                    setAddressForm({
+                      ...addressForm,
+                      street_address: e.target.value,
+                    })
+                  }
                   placeholder="Nama jalan, nomor rumah, RT/RW, patokan..."
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                 />
@@ -539,38 +621,53 @@ export default function CustomerDetailClient({
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Kode Pos</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Kode Pos
+                  </label>
                   <input
                     value={addressForm.postal_code}
-                    onChange={(e) => setAddressForm({ ...addressForm, postal_code: e.target.value })}
-                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Latitude</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={addressForm.latitude ?? ''}
                     onChange={(e) =>
                       setAddressForm({
                         ...addressForm,
-                        latitude: e.target.value ? parseFloat(e.target.value) : null,
+                        postal_code: e.target.value,
                       })
                     }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">Longitude</label>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Latitude
+                  </label>
                   <input
                     type="number"
                     step="any"
-                    value={addressForm.longitude ?? ''}
+                    value={addressForm.latitude ?? ""}
                     onChange={(e) =>
                       setAddressForm({
                         ...addressForm,
-                        longitude: e.target.value ? parseFloat(e.target.value) : null,
+                        latitude: e.target.value
+                          ? parseFloat(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Longitude
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={addressForm.longitude ?? ""}
+                    onChange={(e) =>
+                      setAddressForm({
+                        ...addressForm,
+                        longitude: e.target.value
+                          ? parseFloat(e.target.value)
+                          : null,
                       })
                     }
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
@@ -583,10 +680,18 @@ export default function CustomerDetailClient({
                   type="checkbox"
                   id="is_default_check"
                   checked={addressForm.is_default}
-                  onChange={(e) => setAddressForm({ ...addressForm, is_default: e.target.checked })}
+                  onChange={(e) =>
+                    setAddressForm({
+                      ...addressForm,
+                      is_default: e.target.checked,
+                    })
+                  }
                   className="rounded border-line text-wine focus:ring-wine"
                 />
-                <label htmlFor="is_default_check" className="text-xs text-ink cursor-pointer">
+                <label
+                  htmlFor="is_default_check"
+                  className="text-xs text-ink cursor-pointer"
+                >
                   Jadikan alamat utama (Default address)
                 </label>
               </div>
@@ -604,7 +709,7 @@ export default function CustomerDetailClient({
                   disabled={loading}
                   className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50 cursor-pointer"
                 >
-                  {loading ? 'Menyimpan...' : 'Simpan Alamat'}
+                  {loading ? "Menyimpan..." : "Simpan Alamat"}
                 </button>
               </div>
             </form>

@@ -28,7 +28,7 @@ export default async function SettingsPage({
   });
 
   return (
-    <div className="max-w-[1200px] pb-24">
+    <div className="pb-24">
       <div className="mb-5">
         <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1 font-medium">
           System

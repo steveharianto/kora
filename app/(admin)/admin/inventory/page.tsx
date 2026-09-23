@@ -38,7 +38,8 @@ export default async function InventoryPage({
 
   const { data: items, error } = await supabase
     .from("items")
-    .select(`
+    .select(
+      `
       sku,
       name,
       size,
@@ -51,7 +52,8 @@ export default async function InventoryPage({
       brand:brands(name),
       type:types(name),
       images:item_images(id)
-    `)
+    `,
+    )
     .eq("is_archived", false)
     .order("created_at", { ascending: false });
 
@@ -76,13 +78,13 @@ export default async function InventoryPage({
   if (currentTab === "pending" && isSuperAdmin) displayItems = pendingItems;
 
   return (
-    <div className="max-w-[1200px]">
+    <div className="">
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">
             Catalog
           </div>
-          <h1 className="font-serif text-[29px] font-normal tracking-[0.01em]">
+          <h1 className="font-serif text-[32px] font-normal tracking-[0.01em]">
             Inventory
           </h1>
         </div>
@@ -169,14 +171,13 @@ export default async function InventoryPage({
                 <th className="text-[10.5px] tracking-[0.16em] uppercase text-muted text-left font-medium px-3 py-2.5 border-b border-line whitespace-nowrap">
                   Status
                 </th>
-                <th className="px-3 py-2.5 border-b border-line w-[70px]"></th>
               </tr>
             </thead>
             <tbody>
               {displayItems?.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={9}
                     className="px-3 py-[11px] text-muted text-center"
                   >
                     No items found.
@@ -184,12 +185,14 @@ export default async function InventoryPage({
                 </tr>
               ) : (
                 displayItems?.map((item) => (
-                  <tr
-                    key={item.sku}
-                    className="hover:bg-[#FBFAF6] group relative"
-                  >
+                  <tr key={item.sku} className="hover:bg-[#FBFAF6]">
                     <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top font-bold">
-                      {item.sku}
+                      <Link
+                        href={`/admin/inventory/${item.sku}`}
+                        className="hover:underline text-wine-ink hover:text-black"
+                      >
+                        {item.sku}
+                      </Link>
                       {item.pending_action && (
                         <span className="ml-2 bg-warn-bg text-warn-ink text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
                           {item.pending_action} Req
@@ -232,14 +235,6 @@ export default async function InventoryPage({
                     </td>
                     <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
                       <StatusPill status={item.status} />
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top text-right">
-                      <Link
-                        href={`/admin/inventory/${item.sku}`}
-                        className="inline-block text-[12.5px] font-medium border border-line bg-card text-ink rounded-lg px-2.5 py-1 hover:border-[#C9C2B4] transition opacity-0 group-hover:opacity-100"
-                      >
-                        View
-                      </Link>
                     </td>
                   </tr>
                 ))
