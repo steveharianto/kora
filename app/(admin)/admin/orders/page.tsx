@@ -312,13 +312,6 @@ export default async function OrdersPage({
         </div>
 
         <div className="flex items-center gap-2.5">
-          <a
-            href={exportHref}
-            download
-            className="px-4 py-2 border border-line bg-card rounded-lg text-[13px] font-medium hover:bg-[#F6F4EF] transition inline-block"
-          >
-            Export CSV
-          </a>
           <CreateOrderButton />
         </div>
       </div>

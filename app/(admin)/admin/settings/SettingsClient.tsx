@@ -8,6 +8,7 @@ import {
   createAdminUser,
   updateAdminRole,
   deleteAdminUser,
+  changeOwnPassword,
 } from "@/app/actions/settings";
 import { formatRupiah } from "@/lib/utils";
 import { Lock } from "lucide-react";
@@ -30,6 +31,7 @@ const TABS = [
   { key: "shipping", label: "Shipping" },
   { key: "website-content", label: "Website content" },
   { key: "users-roles", label: "Users & roles" },
+  { key: "change-password", label: "Change password" },
   { key: "business-info", label: "Business info" },
 ];
 
@@ -204,6 +206,18 @@ export default function SettingsClient({
     },
   );
 
+  // 9. Change Password State
+  const [pwForm, setPwForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [pwFeedback, setPwFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [pwLoading, setPwLoading] = useState(false);
+
   const handleSave = async (key: string, payload: any) => {
     if (!isSuperAdmin) {
       alert(
@@ -281,6 +295,27 @@ export default function SettingsClient({
     setLoading(false);
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwLoading(true);
+    setPwFeedback(null);
+    const res = await changeOwnPassword(pwForm);
+    if (res?.error) {
+      setPwFeedback({ type: "error", message: res.error });
+    } else {
+      setPwFeedback({
+        type: "success",
+        message: "Password updated successfully.",
+      });
+      setPwForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+    }
+    setPwLoading(false);
+  };
+
   return (
     <div>
       {/* Tab Navigation */}
@@ -301,7 +336,7 @@ export default function SettingsClient({
       </div>
 
       {/* Staff Read-Only Callout Notice */}
-      {!isSuperAdmin && (
+      {!isSuperAdmin && activeTab !== "change-password" && (
         <div className="mb-5 p-3.5 bg-[#FBF8EF] border border-[#E8DFC2] text-[#84661E] rounded-xl text-xs flex items-center gap-2.5">
           <Lock className="w-4 h-4 flex-shrink-0" />
           <span>
@@ -888,7 +923,105 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 8. BUSINESS INFO */}
+      {/* 8. CHANGE PASSWORD */}
+      {activeTab === "change-password" && (
+        <div>
+          <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-xl space-y-3.5">
+            <div>
+              <h3 className="font-serif text-[18px] font-normal mb-1">
+                Change your password
+              </h3>
+              <p className="text-muted text-[12.5px]">
+                Signed in as{" "}
+                <span className="text-ink font-medium">
+                  {currentAdmin?.name}
+                </span>{" "}
+                ({currentAdmin?.email}). Your password is stored hashed — no
+                one, including other admins, can see it.
+              </p>
+            </div>
+
+            {pwFeedback && (
+              <div
+                className={`p-3 rounded-lg text-xs font-medium border ${
+                  pwFeedback.type === "success"
+                    ? "bg-[#F2F6EF] border-[#CAD3C5] text-wine-ink"
+                    : "bg-bad-bg border-[#D9A79C] text-bad"
+                }`}
+              >
+                {pwFeedback.message}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-3.5">
+              <div>
+                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
+                  Current Password <span className="text-bad">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={pwForm.currentPassword}
+                  onChange={(e) =>
+                    setPwForm({ ...pwForm, currentPassword: e.target.value })
+                  }
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
+                  New Password <span className="text-bad">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={pwForm.newPassword}
+                  onChange={(e) =>
+                    setPwForm({ ...pwForm, newPassword: e.target.value })
+                  }
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                />
+                <span className="text-[10px] text-muted mt-1 block">
+                  Minimum 8 characters.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
+                  Confirm New Password <span className="text-bad">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={pwForm.confirmPassword}
+                  onChange={(e) =>
+                    setPwForm({ ...pwForm, confirmPassword: e.target.value })
+                  }
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={pwLoading}
+                  className="font-medium bg-wine text-white rounded-lg px-4 py-2 text-sm hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
+                >
+                  {pwLoading ? "Updating..." : "Update password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 9. BUSINESS INFO */}
       {activeTab === "business-info" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-xl space-y-3.5">

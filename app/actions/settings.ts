@@ -205,3 +205,67 @@ export async function deleteAdminUser(adminId: string) {
   revalidatePath('/admin/settings');
   return { success: true };
 }
+
+// -----------------------------------------------------------------------------
+// Change Own Password (self-service, no superadmin gate)
+// -----------------------------------------------------------------------------
+export async function changeOwnPassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  const supabase = await createClient();
+  const admin = await getCurrentAdmin();
+  if (!admin) return { error: 'Unauthorized: Session not found.' };
+
+  const { currentPassword, newPassword, confirmPassword } = payload;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return { error: 'All three fields are required.' };
+  }
+  if (newPassword.length < 8) {
+    return { error: 'New password must be at least 8 characters.' };
+  }
+  if (newPassword !== confirmPassword) {
+    return { error: 'New password and confirmation do not match.' };
+  }
+  if (currentPassword === newPassword) {
+    return { error: 'New password must be different from the current one.' };
+  }
+
+  // Fetch current hash
+  const { data: record, error: fetchErr } = await supabase
+    .from('admins')
+    .select('password')
+    .eq('id', admin.id)
+    .single();
+
+  if (fetchErr || !record) {
+    return { error: fetchErr?.message || 'Admin record not found.' };
+  }
+
+  const isValid = await bcrypt.compare(currentPassword, record.password);
+  if (!isValid) {
+    return { error: 'Current password is incorrect.' };
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+
+  const { error: updateErr } = await supabase
+    .from('admins')
+    .update({ password: hashed })
+    .eq('id', admin.id);
+
+  if (updateErr) return { error: updateErr.message };
+
+  await supabase.from('admin_audit_logs').insert({
+    admin_id: admin.id,
+    admin_name: admin.name,
+    entity_type: 'admin',
+    entity_id: admin.id,
+    action_type: 'CHANGE_OWN_PASSWORD',
+    field_name: 'password',
+  });
+
+  return { success: true };
+}

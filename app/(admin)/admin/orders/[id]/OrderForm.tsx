@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -29,6 +29,102 @@ import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 
+// ---------------------------------------------------------------------------
+// Inline searchable SKU selector for product line items
+// ---------------------------------------------------------------------------
+function ProductSkuSelect({
+  value,
+  selectedLabel,
+  disabled,
+  allItems,
+  onSelect,
+}: {
+  value: string;
+  selectedLabel: string;
+  disabled: boolean;
+  allItems: any[];
+  onSelect: (sku: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allItems.slice(0, 40);
+    return allItems
+      .filter(
+        (i: any) =>
+          i.sku.toLowerCase().includes(q) ||
+          (i.name || "").toLowerCase().includes(q),
+      )
+      .slice(0, 40);
+  }, [allItems, query]);
+
+  const displayValue = isOpen
+    ? query
+    : value
+      ? `${value}${selectedLabel ? ` — ${selectedLabel}` : ""}`
+      : "";
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        disabled={disabled}
+        value={displayValue}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => {
+          if (!disabled) {
+            setIsOpen(true);
+            setQuery("");
+          }
+        }}
+        placeholder="Search SKU or name..."
+        className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
+      />
+      {isOpen && !disabled && (
+        <div className="absolute z-30 w-full mt-1 bg-white border border-line rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2.5 text-[11px] text-muted text-center">
+              No items found.
+            </div>
+          ) : (
+            filtered.map((i: any) => (
+              <button
+                key={i.sku}
+                type="button"
+                onClick={() => {
+                  onSelect(i.sku);
+                  setIsOpen(false);
+                  setQuery("");
+                }}
+                className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-[#F6F4EF] border-b border-line last:border-none"
+              >
+                <div className="font-mono font-bold text-ink">{i.sku}</div>
+                <div className="text-muted text-[10.5px] truncate">
+                  {i.name}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OrderForm({
   initialOrder,
   allCustomers: initialCustomers,
@@ -56,6 +152,25 @@ export default function OrderForm({
     initialOrder.customer_id || "",
   );
 
+  // Searchable customer combobox state
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        customerDropdownRef.current &&
+        !customerDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsCustomerDropdownOpen(false);
+        setCustomerSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   const activeCustomer = useMemo(() => {
     return (
       allCustomers.find((c: any) => c.id === selectedCustomerId) ||
@@ -66,6 +181,17 @@ export default function OrderForm({
   const customerAddresses: any[] = useMemo(() => {
     return activeCustomer?.addresses || [];
   }, [activeCustomer]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return allCustomers.slice(0, 50);
+    return allCustomers
+      .filter((c: any) => {
+        const name = `${c.first_name || ""} ${c.last_name || ""}`.toLowerCase();
+        return name.includes(q) || (c.phone || "").toLowerCase().includes(q);
+      })
+      .slice(0, 50);
+  }, [allCustomers, customerSearch]);
 
   const [formData, setFormData] = useState({
     id: initialOrder.id,
@@ -243,6 +369,42 @@ export default function OrderForm({
   const handleRemoveLine = (index: number) => {
     setProducts(products.filter((_, i) => i !== index));
   };
+
+  const handleCustomerSelect = (custId: string) => {
+    setSelectedCustomerId(custId);
+    const cust = allCustomers.find((c: any) => c.id === custId);
+
+    if (cust?.addresses && cust.addresses.length > 0) {
+      const defaultAddr =
+        cust.addresses.find((a: any) => a.is_default) || cust.addresses[0];
+      setFormData((prev) => ({
+        ...prev,
+        street_address: defaultAddr.street_address || "",
+        city: defaultAddr.city || "",
+        postal_code: defaultAddr.postal_code || "",
+        latitude: defaultAddr.latitude ?? null,
+        longitude: defaultAddr.longitude ?? null,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        street_address: "",
+        city: "",
+        postal_code: "",
+        latitude: null,
+        longitude: null,
+      }));
+    }
+
+    setIsCustomerDropdownOpen(false);
+    setCustomerSearch("");
+  };
+
+  const displayCustomerValue = isCustomerDropdownOpen
+    ? customerSearch
+    : activeCustomer
+      ? `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""} (${activeCustomer.phone || ""})`.trim()
+      : "";
 
   const productsSubtotal = useMemo(() => {
     return products.reduce(
@@ -431,6 +593,8 @@ export default function OrderForm({
       setAllCustomers((prev) => [created, ...prev]);
       setSelectedCustomerId(res.customerId);
       setIsCustomerModalOpen(false);
+      setIsCustomerDropdownOpen(false);
+      setCustomerSearch("");
       setNewCustomerForm({
         first_name: "",
         last_name: "",
@@ -692,50 +856,63 @@ export default function OrderForm({
                   </button>
                 )}
               </div>
-              <select
-                disabled={
-                  isWebsite || (!isDraft && !isSuperAdmin) || isAddressLocked
-                }
-                value={selectedCustomerId}
-                onChange={(e) => {
-                  const newCustId = e.target.value;
-                  setSelectedCustomerId(newCustId);
-                  const cust = allCustomers.find(
-                    (c: any) => c.id === newCustId,
-                  );
 
-                  if (cust?.addresses && cust.addresses.length > 0) {
-                    const defaultAddr =
-                      cust.addresses.find((a: any) => a.is_default) ||
-                      cust.addresses[0];
-                    setFormData((prev) => ({
-                      ...prev,
-                      street_address: defaultAddr.street_address || "",
-                      city: defaultAddr.city || "",
-                      postal_code: defaultAddr.postal_code || "",
-                      latitude: defaultAddr.latitude ?? null,
-                      longitude: defaultAddr.longitude ?? null,
-                    }));
-                  } else {
-                    setFormData((prev) => ({
-                      ...prev,
-                      street_address: "",
-                      city: "",
-                      postal_code: "",
-                      latitude: null,
-                      longitude: null,
-                    }));
+              <div ref={customerDropdownRef} className="relative">
+                <input
+                  type="text"
+                  disabled={
+                    isWebsite || (!isDraft && !isSuperAdmin) || isAddressLocked
                   }
-                }}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine disabled:bg-[#F6F4EF]"
-              >
-                <option value="">— Select Customer —</option>
-                {allCustomers.map((c: any) => (
-                  <option key={c.id} value={c.id}>
-                    {c.first_name} {c.last_name || ""} ({c.phone})
-                  </option>
-                ))}
-              </select>
+                  value={displayCustomerValue}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  onFocus={() => {
+                    if (!isWebsite && !isAddressLocked) {
+                      setIsCustomerDropdownOpen(true);
+                      setCustomerSearch("");
+                    }
+                  }}
+                  placeholder="Search customer name or phone..."
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
+                />
+
+                {isCustomerDropdownOpen && !isWebsite && !isAddressLocked && (
+                  <div className="absolute z-30 w-full mt-1 bg-white border border-line rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomerModalOpen(true);
+                        setIsCustomerDropdownOpen(false);
+                        setCustomerSearch("");
+                      }}
+                      className="w-full text-left px-3 py-2.5 text-xs font-semibold text-wine-ink hover:bg-[#F6F4EF] border-b border-line flex items-center gap-1.5"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />+ Add Customer
+                    </button>
+
+                    {filteredCustomers.length === 0 ? (
+                      <div className="px-3 py-3 text-xs text-muted text-center">
+                        No customers match your search.
+                      </div>
+                    ) : (
+                      filteredCustomers.map((c: any) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => handleCustomerSelect(c.id)}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-[#F6F4EF] border-b border-line last:border-none"
+                        >
+                          <div className="font-medium text-ink">
+                            {c.first_name} {c.last_name || ""}
+                          </div>
+                          <div className="text-muted text-[11px] font-mono">
+                            {c.phone}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1043,8 +1220,9 @@ export default function OrderForm({
           Product <span className="text-bad">*</span>
         </h3>
 
-        <div className="space-y-2 mb-3">
-          <div className="grid grid-cols-12 gap-2 text-[10.5px] uppercase tracking-wider text-muted font-medium pb-1 border-b border-line">
+        <div className="space-y-2.5 mb-3">
+          {/* Column headers */}
+          <div className="hidden sm:grid grid-cols-12 gap-2.5 px-0.5 text-[10px] uppercase tracking-[0.14em] text-muted font-medium pb-2 border-b border-line items-center">
             <div className="col-span-3">Product SKU</div>
             <div className="col-span-4">Product Label</div>
             <div className="col-span-1 text-center">Qty</div>
@@ -1053,31 +1231,31 @@ export default function OrderForm({
             <div className="col-span-1"></div>
           </div>
 
+          {/* Line item rows */}
           {products.map((p, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+            <div key={idx} className="grid grid-cols-12 gap-2.5 items-center">
+              {/* SKU — searchable */}
               <div className="col-span-3">
-                <select
-                  disabled={isWebsite || isAddressLocked}
+                <ProductSkuSelect
                   value={p.item_sku}
-                  onChange={(e) => handleProductSelect(idx, e.target.value)}
-                  className="w-full text-xs border border-line rounded px-2 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                >
-                  <option value="">— Select SKU —</option>
-                  {allItems.map((i: any) => (
-                    <option key={i.sku} value={i.sku}>
-                      {i.sku} - {i.name}
-                    </option>
-                  ))}
-                </select>
+                  selectedLabel={p.label}
+                  disabled={isWebsite || isAddressLocked}
+                  allItems={allItems}
+                  onSelect={(sku) => handleProductSelect(idx, sku)}
+                />
               </div>
+
+              {/* Label (read-only) */}
               <div className="col-span-4">
                 <input
                   value={p.label}
                   readOnly
-                  placeholder="Select a product SKU"
-                  className="w-full text-xs border border-line rounded px-2 py-1.5 bg-[#F6F4EF] text-muted"
+                  placeholder="Auto-fills from SKU"
+                  className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted truncate"
                 />
               </div>
+
+              {/* Quantity */}
               <div className="col-span-1">
                 <input
                   type="number"
@@ -1089,31 +1267,38 @@ export default function OrderForm({
                     next[idx].quantity = parseInt(e.target.value) || 1;
                     setProducts(next);
                   }}
-                  className="w-full text-center text-xs border border-line rounded py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                  className="w-full text-center text-xs border border-line rounded-lg py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
                 />
               </div>
+
+              {/* Price (locked) */}
               <div className="col-span-2">
                 <input
                   type="text"
                   disabled
                   value={formatRupiah(p.price)}
-                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#F6F4EF] text-muted font-medium"
+                  className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
+
+              {/* Deposit (locked) */}
               <div className="col-span-1">
                 <input
                   type="text"
                   disabled
                   value={formatRupiah(p.deposit)}
-                  className="w-full text-right text-xs border border-line rounded px-2 py-1.5 bg-[#F6F4EF] text-muted font-medium"
+                  className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
-              <div className="col-span-1 text-right">
+
+              {/* Remove row */}
+              <div className="col-span-1 flex justify-end">
                 {!isWebsite && !isAddressLocked && (
                   <button
                     type="button"
                     onClick={() => handleRemoveLine(idx)}
-                    className="text-muted hover:text-bad px-1 text-base leading-none cursor-pointer"
+                    aria-label="Remove line"
+                    className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-bad hover:bg-bad-bg/40 transition cursor-pointer text-base leading-none"
                   >
                     ×
                   </button>
