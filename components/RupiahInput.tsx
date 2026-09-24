@@ -8,17 +8,18 @@ interface RupiahInputProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
-  /** Optional prefix shown inside the field, e.g. "Rp" */
   prefix?: string;
+  required?: boolean;
 }
 
 export default function RupiahInput({
   value,
   onChange,
   disabled,
-  placeholder = "0",
+  placeholder = '0',
   className,
   prefix,
+  required,
 }: RupiahInputProps) {
   const formatted = value ? value.toLocaleString("id-ID") : "";
 
@@ -48,6 +49,7 @@ export default function RupiahInput({
         type="text"
         inputMode="numeric"
         autoComplete="off"
+        required={required}
         disabled={disabled}
         value={formatted}
         onChange={handleChange}
