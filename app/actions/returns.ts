@@ -474,8 +474,8 @@ export async function releaseDepositAndCompleteReturn(
     .update({ status: "Completed" })
     .eq("id", ret.order_id);
 
-  const skus = (ret.orders?.order_products || [])
-    .map((p: any) => p.item_sku)
+  const skus: string[] = (ret.orders?.order_products || [])
+    .map((p: any) => p.item_sku as string)
     .filter(Boolean);
   if (skus.length > 0) {
     const perItem = payload.per_item_qc || [];
