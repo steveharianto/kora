@@ -1,26 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #221E19;
-  --color-muted: #7A7269;
-  --color-canvas: #F6F4EF;
-  --color-card: #FFFFFF;
-  --color-line: #E5E0D6;
-  --color-wine: #2C3527;
-  --color-wine-soft: #EBEFE6;
-  --color-wine-ink: #1A1F16;
-  --color-ok: #2F6B4F;
-  --color-ok-bg: #E9F0EB;
-  --color-warn: #8A6420;
-  --color-warn-bg: #F7EEDB;
-  --color-bad: #8C3226;
-  --color-bad-bg: #F8E9E6;
-  --color-info: #3A5A78;
-  --color-info-bg: #EAEFF4;
+    --color-ink: #221e19;
+    --color-muted: #7a7269;
+    --color-canvas: #f6f4ef;
+    --color-card: #ffffff;
+    --color-line: #e5e0d6;
+    --color-wine: #2c3527;
+    --color-wine-soft: #ebefe6;
+    --color-wine-ink: #1a1f16;
+    --color-ok: #2f6b4f;
+    --color-ok-bg: #e9f0eb;
+    --color-warn: #8a6420;
+    --color-warn-bg: #f7eedb;
+    --color-bad: #8c3226;
+    --color-bad-bg: #f8e9e6;
+    --color-info: #3a5a78;
+    --color-info-bg: #eaeff4;
+
+    /* ── Storefront neutral scale (Figma N0–N900) ── */
+    --color-n0: #ffffff;
+    --color-n10: #fbfbfb;
+    --color-n20: #f8f8f8;
+    --color-n30: #f0f0f0;
+    --color-n40: #e7e7e7;
+    --color-n50: #d0d0d0;
+    --color-n60: #c5c5c5;
+    --color-n70: #bcbcbc;
+    --color-n80: #b0b0b0;
+    --color-n90: #a5a5a5;
+    --color-n100: #9a9a9a;
+    --color-n200: #8f8f8f;
+    --color-n300: #848484;
+    --color-n400: #7a7a7a;
+    --color-n500: #6f6f6f;
+    --color-n600: #666666;
+    --color-n700: #595959;
+    --color-n800: #4d4d4d;
+    --color-n900: #444444;
+
+    /* ── Storefront brand accents ── */
+    --color-sage: #64765b;
+    --color-sand: #e1dfce;
+    --color-cream: #ecebe4;
+
+    /* ── Storefront semantic layer (what components actually use) ── */
+    --color-store-bg: #ecebe4; /* page canvas        */
+    --color-store-surface: #ffffff; /* cards, modals      */
+    --color-store-surface-2: #f8f8f8; /* subtle panels      */
+    --color-store-fg: #444444; /* primary text       */
+    --color-store-fg-muted: #6f6f6f; /* secondary text     */
+    --color-store-fg-subtle: #8f8f8f; /* captions, meta     */
+    --color-store-border: #e7e7e7; /* hairlines          */
+    --color-store-border-strong: #d0d0d0;
+    --color-store-accent: #64765b; /* CTA, active states */
+    --color-store-accent-fg: #ffffff; /* text on accent     */
+    --color-store-hover: #e1dfce; /* hover wash         */
 }
 
 body {
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-  font-feature-settings: "tnum";
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-feature-settings: "tnum";
 }
