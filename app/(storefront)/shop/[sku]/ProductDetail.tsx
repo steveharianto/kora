@@ -4,6 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import AvailabilityModal from "./AvailabilityModal";
 import FittingModal from "./FittingModal";
+import {
+  readRentalCart,
+  writeRentalCart,
+  readFittingCart,
+  writeFittingCart,
+  isAfterHoursSlot,
+} from "@/lib/storefront/cart";
 
 interface Item {
   sku: string;
@@ -69,36 +76,78 @@ export default function ProductDetail({
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
-
-  const addToRentalCart = (payload: any) => {
+  const addToRentalCart = (payload: {
+    sku: string;
+    rentalStart: string;
+    rentalEnd: string;
+    postalCode: string;
+    accessories: string[];
+  }) => {
     try {
-      const raw = localStorage.getItem("kora_rental_cart");
-      const arr = raw ? JSON.parse(raw) : [];
-      arr.push(payload);
-      localStorage.setItem("kora_rental_cart", JSON.stringify(arr));
+      const next = readRentalCart();
+      next.push({
+        sku: payload.sku,
+        name: item.name,
+        price: item.rentalPrice,
+        image: item.images[0] || null,
+        rentalStart: payload.rentalStart,
+        rentalEnd: payload.rentalEnd,
+        postalCode: payload.postalCode,
+        accessories: payload.accessories,
+      });
+      writeRentalCart(next);
       setToast("Added to rental cart");
     } catch {
       setToast("Could not save to cart");
     }
   };
 
-  const addToFittingCart = (payload: { date: string; slot: string; sku: string }) => {
+  const addToFittingCart = (payload: {
+    date: string;
+    slot: string;
+    sku: string;
+  }) => {
     try {
-      const raw = localStorage.getItem("kora_fitting_cart");
-      const arr: any[] = raw ? JSON.parse(raw) : [];
-      const existing = arr.find((s) => s.date === payload.date && s.slot === payload.slot);
+      const sessions = readFittingCart();
+      const existing = sessions.find(
+        (s) => s.date === payload.date && s.slot === payload.slot,
+      );
+
+      const isAfterHours = isAfterHoursSlot(payload.date, payload.slot);
+      const fee = isAfterHours ? 100000 : 0; // TODO: read from app_settings.fittings.session_rules.after_hours_fee
+
       if (existing) {
-        if (!existing.skus.includes(payload.sku)) existing.skus.push(payload.sku);
+        if (!existing.items.find((i) => i.sku === payload.sku)) {
+          existing.items.push({
+            sku: item.sku,
+            name: item.name,
+            price: item.rentalPrice,
+            image: item.images[0] || null,
+          });
+        }
       } else {
-        arr.push({ date: payload.date, slot: payload.slot, skus: [payload.sku] });
+        sessions.push({
+          date: payload.date,
+          slot: payload.slot,
+          fee,
+          isAfterHours,
+          items: [
+            {
+              sku: item.sku,
+              name: item.name,
+              price: item.rentalPrice,
+              image: item.images[0] || null,
+            },
+          ],
+        });
       }
-      localStorage.setItem("kora_fitting_cart", JSON.stringify(arr));
+
+      writeFittingCart(sessions);
       setToast("Added to fitting cart");
     } catch {
       setToast("Could not save to fitting cart");
     }
   };
-
   const formatRupiah = (n: number) => `Rp. ${n.toLocaleString("id-ID")}`;
 
   const prefillLabel = fittingPrefill
@@ -127,7 +176,11 @@ export default function ProductDetail({
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   </button>
                 ))}
               </div>
@@ -200,38 +253,53 @@ export default function ProductDetail({
             {/* Tabs */}
             <div className="border-b border-store-border mb-6">
               <div className="flex gap-8 text-[13px] tracking-[0.02em]">
-                {(["description", "size", "tnc", "fitting"] as TabKey[]).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setActiveTab(k)}
-                    className={`pb-3 border-b transition-colors cursor-pointer ${
-                      activeTab === k
-                        ? "border-store-fg text-store-fg"
-                        : "border-transparent text-store-fg-muted hover:text-store-fg"
-                    }`}
-                  >
-                    {k === "description" && "Description"}
-                    {k === "size" && "Size"}
-                    {k === "tnc" && "TnC"}
-                    {k === "fitting" && "Fitting"}
-                  </button>
-                ))}
+                {(["description", "size", "tnc", "fitting"] as TabKey[]).map(
+                  (k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setActiveTab(k)}
+                      className={`pb-3 border-b transition-colors cursor-pointer ${
+                        activeTab === k
+                          ? "border-store-fg text-store-fg"
+                          : "border-transparent text-store-fg-muted hover:text-store-fg"
+                      }`}
+                    >
+                      {k === "description" && "Description"}
+                      {k === "size" && "Size"}
+                      {k === "tnc" && "TnC"}
+                      {k === "fitting" && "Fitting"}
+                    </button>
+                  ),
+                )}
               </div>
             </div>
 
             <div className="text-[13.5px] leading-relaxed text-store-fg-muted">
               {activeTab === "description" && (
                 <p className="whitespace-pre-line">
-                  {item.description || "No description available for this piece yet."}
+                  {item.description ||
+                    "No description available for this piece yet."}
                 </p>
               )}
 
               {activeTab === "size" && (
                 <div className="space-y-6">
-                  <MeasurementBlock label="Outer" data={item.measurements.outer} size={item.size} />
-                  <MeasurementBlock label="Inner" data={item.measurements.inner} size={null} />
-                  <MeasurementBlock label="Skirt" data={item.measurements.skirt} size={null} />
+                  <MeasurementBlock
+                    label="Outer"
+                    data={item.measurements.outer}
+                    size={item.size}
+                  />
+                  <MeasurementBlock
+                    label="Inner"
+                    data={item.measurements.inner}
+                    size={null}
+                  />
+                  <MeasurementBlock
+                    label="Skirt"
+                    data={item.measurements.skirt}
+                    size={null}
+                  />
                   {/* TODO: move to app_settings.website_content */}
                   <p className="pt-2 text-[13px] text-store-fg-muted">
                     Model&apos;s measurements: Height 170 cm.
@@ -243,10 +311,21 @@ export default function ProductDetail({
                 <div className="space-y-3.5">
                   {/* TODO: pull from app_settings.website_content */}
                   <ul className="list-disc pl-5 space-y-2 text-[13.5px]">
-                    <li>3-day rental window — arrives Day 1, returns by Day 4.</li>
-                    <li>Refundable deposit — held per item, returned within 2 × 24 hours after your dress passes our quality check.</li>
-                    <li>Arrives clean, leave the rest to us — wear it as-is; we handle cleaning after every rental.</li>
-                    <li>Late returns are charged per day and deducted from your deposit.</li>
+                    <li>
+                      3-day rental window — arrives Day 1, returns by Day 4.
+                    </li>
+                    <li>
+                      Refundable deposit — held per item, returned within 2 × 24
+                      hours after your dress passes our quality check.
+                    </li>
+                    <li>
+                      Arrives clean, leave the rest to us — wear it as-is; we
+                      handle cleaning after every rental.
+                    </li>
+                    <li>
+                      Late returns are charged per day and deducted from your
+                      deposit.
+                    </li>
                   </ul>
                   <Link
                     href="/how-to-rent"
@@ -266,13 +345,17 @@ export default function ProductDetail({
                     <p>— Saturday: 10 AM – 1 PM</p>
                   </div>
                   <div>
-                    <p className="text-store-fg mb-1">After Working Hours (+100k)</p>
+                    <p className="text-store-fg mb-1">
+                      After Working Hours (+100k)
+                    </p>
                     <p>— Monday – Friday: 5 PM – 6 PM</p>
                     <p>— Saturday: 1 PM – 3 PM</p>
                   </div>
                   <p className="text-[12.5px] text-store-fg-muted pt-1">
-                    *Warning: A fitting lets you try the dress on but it doesn&apos;t reserve it.
-                    The dress is only yours once payment is made. If someone books your dates first, it&apos;s theirs.
+                    *Warning: A fitting lets you try the dress on but it
+                    doesn&apos;t reserve it. The dress is only yours once
+                    payment is made. If someone books your dates first,
+                    it&apos;s theirs.
                   </p>
                 </div>
               )}
@@ -288,7 +371,11 @@ export default function ProductDetail({
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-10">
               {relatedItems.map((r) => (
-                <Link key={r.sku} href={`/shop/${r.sku.toLowerCase()}`} className="group block">
+                <Link
+                  key={r.sku}
+                  href={`/shop/${r.sku.toLowerCase()}`}
+                  className="group block"
+                >
                   <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
                     {r.coverImage ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -359,7 +446,9 @@ function MeasurementBlock({
 }) {
   if (!data || Object.keys(data).length === 0) return null;
 
-  const rows = SIZE_LABELS.filter(([k]) => data[k] !== undefined && data[k] !== "");
+  const rows = SIZE_LABELS.filter(
+    ([k]) => data[k] !== undefined && data[k] !== "",
+  );
   if (rows.length === 0 && !size) return null;
 
   return (
@@ -386,7 +475,9 @@ function MeasurementBlock({
 function formatPrefillLine(dateStr: string, slot: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  const weekday = dt.toLocaleDateString("en-GB", { weekday: "long" }).toUpperCase();
+  const weekday = dt
+    .toLocaleDateString("en-GB", { weekday: "long" })
+    .toUpperCase();
   const dd = String(d).padStart(2, "0");
   const month = dt.toLocaleDateString("en-GB", { month: "long" }).toUpperCase();
   const hh = slot.split(":")[0];
