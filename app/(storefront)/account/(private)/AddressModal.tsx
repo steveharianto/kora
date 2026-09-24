@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { saveCustomerAddress } from "@/app/actions/customerProfile";
 import AddressMapPicker from "@/components/AddressMapPicker";
-
-interface AddressFormData {
+/* Shape used internally by the form — all strings are non-null so inputs
+   are controlled cleanly. */
+interface AddressFormState {
   id?: number;
   label: string;
   street_address: string;
@@ -16,7 +17,20 @@ interface AddressFormData {
   is_default: boolean;
 }
 
-const EMPTY: AddressFormData = {
+/* Shape accepted from the caller — mirrors the DB row where text fields
+   can be null. Normalized into AddressFormState when the modal opens. */
+interface AddressModalInitial {
+  id?: number;
+  label?: string | null;
+  street_address?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  is_default?: boolean;
+}
+
+const EMPTY: AddressFormState = {
   label: "Home",
   street_address: "",
   city: "",
@@ -29,12 +43,17 @@ const EMPTY: AddressFormData = {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  initial: AddressFormData | null;
+  initial: AddressModalInitial | null;
   onSaved: () => void;
 }
 
-export default function AddressModal({ isOpen, onClose, initial, onSaved }: Props) {
-  const [form, setForm] = useState<AddressFormData>(EMPTY);
+export default function AddressModal({
+  isOpen,
+  onClose,
+  initial,
+  onSaved,
+}: Props) {
+  const [form, setForm] = useState<AddressFormState>(EMPTY);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -99,7 +118,11 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-[80]" onClick={onClose} aria-hidden />
+      <div
+        className="fixed inset-0 bg-black/30 z-[80]"
+        onClick={onClose}
+        aria-hidden
+      />
       <div className="fixed inset-0 z-[90] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
         <div className="bg-store-bg w-full max-w-[760px] my-8 relative">
           <button
@@ -115,10 +138,14 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
             {initial ? "Edit Address" : "Add New Address"}
           </h2>
           <p className="text-center text-[12.5px] text-store-fg-muted mb-8 max-w-[520px] mx-auto px-4">
-            Search for an address or drag the pin on the map to set your delivery coordinates.
+            Search for an address or drag the pin on the map to set your
+            delivery coordinates.
           </p>
 
-          <form onSubmit={handleSubmit} className="px-6 sm:px-12 pb-12 space-y-5">
+          <form
+            onSubmit={handleSubmit}
+            className="px-6 sm:px-12 pb-12 space-y-5"
+          >
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-[12px]">
                 {error}
@@ -181,7 +208,9 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
                 required
                 rows={2}
                 value={form.street_address}
-                onChange={(e) => setForm({ ...form, street_address: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, street_address: e.target.value })
+                }
                 placeholder="Street name, house/building number, RT/RW, landmarks..."
                 className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent resize-none"
               />
@@ -195,7 +224,9 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
                 </label>
                 <input
                   value={form.postal_code}
-                  onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, postal_code: e.target.value })
+                  }
                   className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono"
                 />
               </div>
@@ -210,7 +241,9 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      latitude: e.target.value ? parseFloat(e.target.value) : null,
+                      latitude: e.target.value
+                        ? parseFloat(e.target.value)
+                        : null,
                     })
                   }
                   className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono"
@@ -227,7 +260,9 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      longitude: e.target.value ? parseFloat(e.target.value) : null,
+                      longitude: e.target.value
+                        ? parseFloat(e.target.value)
+                        : null,
                     })
                   }
                   className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono"
@@ -240,7 +275,9 @@ export default function AddressModal({ isOpen, onClose, initial, onSaved }: Prop
               <input
                 type="checkbox"
                 checked={form.is_default}
-                onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
+                onChange={(e) =>
+                  setForm({ ...form, is_default: e.target.checked })
+                }
                 className="sr-only"
               />
               <span

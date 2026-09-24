@@ -46,7 +46,9 @@ export async function getSkuAvailabilityMap(
 
   const { data: item } = await supabase
     .from("items")
-    .select("sku, status, is_archived, buffer_override, types(default_buffer_days)")
+    .select(
+      "sku, status, is_archived, buffer_override, types(default_buffer_days)",
+    )
     .ilike("sku", sku)
     .maybeSingle();
 
@@ -93,15 +95,17 @@ export async function getSkuAvailabilityMap(
 /* ── Weekly fitting-slot grid ──────────────────────────────────────── */
 
 export interface WeekSlot {
-  slot: string;        // "10:00"
-  end: string;         // "11:00"
+  slot: string; // "10:00"
+  end: string; // "11:00"
   available: boolean;
   isAfterHours: boolean;
   fee: number;
 }
 export type WeekGrid = Record<string, WeekSlot[]>; // keyed YYYY-MM-DD
-
-export async function getWeekSlots(weekStart: string): Promise<WeekGrid> {
+export async function getWeekSlots(
+  weekStart: string,
+  excludeFittingId?: string,
+): Promise<WeekGrid> {
   const supabase = await createClient();
 
   const { data: settings } = await supabase
@@ -110,18 +114,21 @@ export async function getWeekSlots(weekStart: string): Promise<WeekGrid> {
     .eq("key", "fittings")
     .single();
 
-  const afterHoursFee = Number(settings?.value?.session_rules?.after_hours_fee) || 100000;
+  const afterHoursFee =
+    Number(settings?.value?.session_rules?.after_hours_fee) || 100000;
 
   const weekEnd = addDays(weekStart, 6);
   const { data: booked } = await supabase
     .from("fittings")
-    .select("date, slot, status")
+    .select("id, date, slot, status")
     .gte("date", weekStart)
     .lte("date", weekEnd)
     .not("status", "in", '("Cancelled", "Conflict Evicted", "No Show")');
 
   const bookedSet = new Set(
-    (booked || []).map((b: any) => `${b.date}|${(b.slot || "").slice(0, 5)}`),
+    (booked || [])
+      .filter((b: any) => !excludeFittingId || b.id !== excludeFittingId)
+      .map((b: any) => `${b.date}|${(b.slot || "").slice(0, 5)}`),
   );
 
   const grid: WeekGrid = {};
