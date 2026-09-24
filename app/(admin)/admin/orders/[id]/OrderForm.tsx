@@ -10,13 +10,13 @@ import {
   ExternalLink,
   MessageCircle,
   Truck,
-  Clock,
-  MapPin,
   Plus,
   Lock,
-  Search,
   X,
   UserPlus,
+  AlertCircle,
+  CheckCircle2,
+  Send,
 } from "lucide-react";
 import {
   saveOrder,
@@ -28,10 +28,19 @@ import { createCustomer } from "@/app/actions/customers";
 import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
+import AddressMapPicker from "@/components/AddressMapPicker";
 
-// ---------------------------------------------------------------------------
-// Inline searchable SKU selector for product line items
-// ---------------------------------------------------------------------------
+// Locale-safe date formatter — matches server and client output byte-for-byte.
+function formatLogDate(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function ProductSkuSelect({
   value,
   selectedLabel,
@@ -50,14 +59,14 @@ function ProductSkuSelect({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setIsOpen(false);
         setQuery("");
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, []);
 
   const filtered = useMemo(() => {
@@ -131,15 +140,16 @@ export default function OrderForm({
   allItems,
   deliveryLeadTimes,
   notificationTemplates,
+  bookingWindowDays = 3,
   auditLogs,
   currentAdmin,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [dispatching, setDispatching] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [noteText, setNoteText] = useState("");
   const [copiedResi, setCopiedResi] = useState(false);
+  const waybillInputRef = useRef<HTMLInputElement>(null);
 
   const [allCustomers, setAllCustomers] = useState<any[]>(initialCustomers);
 
@@ -148,17 +158,48 @@ export default function OrderForm({
   const isDraft = initialOrder.status === "Draft";
   const isWebsite = initialOrder.order_method === "Website";
 
+  // Detect whether the WA-on-post notification was already dispatched
+  const waPosted = useMemo(
+    () =>
+      (auditLogs || []).some(
+        (l: any) =>
+          l.action_type === "WA_DISPATCHED" && l.field_name === "order_posted",
+      ),
+    [auditLogs],
+  );
+
   const [selectedCustomerId, setSelectedCustomerId] = useState(
     initialOrder.customer_id || "",
   );
-
-  // Searchable customer combobox state
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
 
+  const [bookingStep, setBookingStep] = useState<
+    "closed" | "preview" | "booking" | "success" | "error"
+  >("closed");
+  const [bookingNote, setBookingNote] = useState(
+    `KORA Rental ${initialOrder.id} - Handle with care`,
+  );
+  const [bookingResult, setBookingResult] = useState<{
+    waybill: string;
+    trackingUrl: string | null;
+    courierCompany: string;
+    courierType: string;
+    price: number | null;
+  } | null>(null);
+  const [bookingError, setBookingError] = useState<string>("");
+  const [copiedWaybill, setCopiedWaybill] = useState(false);
+
+  // SSR-safe origin gate: empty on server → empty on first client render → match.
+  // Populated in useEffect after hydration, so origin-dependent links appear post-mount.
+  const [mountedOrigin, setMountedOrigin] = useState("");
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    setMountedOrigin(window.location.origin);
+  }, []);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
       if (
         customerDropdownRef.current &&
         !customerDropdownRef.current.contains(e.target as Node)
@@ -167,20 +208,21 @@ export default function OrderForm({
         setCustomerSearch("");
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const activeCustomer = useMemo(() => {
-    return (
+  const activeCustomer = useMemo(
+    () =>
       allCustomers.find((c: any) => c.id === selectedCustomerId) ||
-      initialOrder.customers
-    );
-  }, [allCustomers, selectedCustomerId, initialOrder.customers]);
+      initialOrder.customers,
+    [allCustomers, selectedCustomerId, initialOrder.customers],
+  );
 
-  const customerAddresses: any[] = useMemo(() => {
-    return activeCustomer?.addresses || [];
-  }, [activeCustomer]);
+  const customerAddresses: any[] = useMemo(
+    () => activeCustomer?.addresses || [],
+    [activeCustomer],
+  );
 
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
@@ -216,10 +258,10 @@ export default function OrderForm({
   });
 
   useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
+    setFormData((p) => ({
+      ...p,
       id: initialOrder.id,
-      order_date: initialOrder.order_date || prev.order_date,
+      order_date: initialOrder.order_date || p.order_date,
       event_start_date: initialOrder.event_start_date || "",
       event_days: initialOrder.event_days || 1,
       pickup_date: initialOrder.pickup_date || "",
@@ -247,21 +289,47 @@ export default function OrderForm({
         deposit: Number(op.deposit) || 0,
       })),
     );
+    setBookingNote(`KORA Rental ${initialOrder.id} - Handle with care`);
   }, [initialOrder]);
 
-  const isAddressLocked = useMemo(() => {
-    return (
+  const isAddressLocked = useMemo(
+    () =>
       isWebsite ||
       ["In Shipping", "Active", "Completed"].includes(formData.status) ||
-      Boolean(formData.packing_slip_id)
-    );
-  }, [isWebsite, formData.status, formData.packing_slip_id]);
+      Boolean(formData.packing_slip_id),
+    [isWebsite, formData.status, formData.packing_slip_id],
+  );
 
-  // Modal: Add New Address
+  // Booking window — mirrors server-side guard
+  const daysUntilPickup = useMemo(() => {
+    if (!formData.pickup_date) return null;
+    const [py, pm, pd] = formData.pickup_date.split("-").map(Number);
+    const pickup = new Date(py, pm - 1, pd);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    pickup.setHours(0, 0, 0, 0);
+    return Math.round((pickup.getTime() - today.getTime()) / 86400000);
+  }, [formData.pickup_date]);
+
+  const canBookAtAll =
+    daysUntilPickup !== null && daysUntilPickup <= bookingWindowDays;
+  const canBookNow = daysUntilPickup !== null && daysUntilPickup <= 0;
+
+  const bookingWindowOpensOn = useMemo(() => {
+    if (!formData.pickup_date) return null;
+    const [py, pm, pd] = formData.pickup_date.split("-").map(Number);
+    const d = new Date(py, pm - 1, pd);
+    d.setDate(d.getDate() - bookingWindowDays);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  }, [formData.pickup_date, bookingWindowDays]);
+
+  const alreadyDispatched = Boolean(
+    formData.packing_slip_id &&
+    ["In Shipping", "Active", "Completed"].includes(formData.status),
+  );
+
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
-  const [geocodingLoading, setGeocodingLoading] = useState(false);
-  const [geocodingError, setGeocodingError] = useState("");
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     street_address: "",
@@ -269,9 +337,9 @@ export default function OrderForm({
     postal_code: "",
     latitude: null as number | null,
     longitude: null as number | null,
+    is_default: false,
   });
 
-  // Modal: Create Customer from Order
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [customerModalLoading, setCustomerModalLoading] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState({
@@ -292,21 +360,13 @@ export default function OrderForm({
     })),
   );
 
-  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
-  const isPickupTodayOrPast = Boolean(
-    formData.pickup_date && formData.pickup_date <= todayStr,
-  );
-  const isPickupFuture = Boolean(
-    formData.pickup_date && formData.pickup_date > todayStr,
-  );
-
   const leadTimeDays = useMemo(() => {
     if (!formData.postal_code) return 1;
     const prefix2 = formData.postal_code.slice(0, 2);
     const match = deliveryLeadTimes.find((lead: any) => {
       if (lead.prefix.includes("-")) {
-        const [start, end] = lead.prefix.replace("xxx", "").split("-");
-        return prefix2 >= start && prefix2 <= end;
+        const [s, e] = lead.prefix.replace("xxx", "").split("-");
+        return prefix2 >= s && prefix2 <= e;
       }
       return lead.prefix.startsWith(prefix2);
     });
@@ -315,39 +375,34 @@ export default function OrderForm({
 
   const handleEventDateChange = (val: string) => {
     if (!val) {
-      setFormData((prev) => ({
-        ...prev,
+      setFormData((p) => ({
+        ...p,
         event_start_date: "",
         pickup_date: "",
         return_date: "",
       }));
       return;
     }
-
     const [y, m, d] = val.split("-").map(Number);
     const eventDate = new Date(y, m - 1, d);
     if (isNaN(eventDate.getTime())) return;
-
     const pickupD = new Date(eventDate);
     pickupD.setDate(pickupD.getDate() - leadTimeDays);
-
     const returnD = new Date(eventDate);
     returnD.setDate(returnD.getDate() + (Number(formData.event_days) || 1) + 1);
-
-    setFormData((prev) => ({
-      ...prev,
+    setFormData((p) => ({
+      ...p,
       event_start_date: val,
       pickup_date: pickupD.toISOString().split("T")[0],
       return_date: returnD.toISOString().split("T")[0],
     }));
   };
 
-  const handleAddLine = () => {
+  const handleAddLine = () =>
     setProducts([
       ...products,
       { item_sku: "", label: "", quantity: 1, price: 0, deposit: 150000 },
     ]);
-  };
 
   const handleProductSelect = (index: number, sku: string) => {
     const item = allItems.find((i: any) => i.sku === sku);
@@ -366,28 +421,26 @@ export default function OrderForm({
     setProducts(next);
   };
 
-  const handleRemoveLine = (index: number) => {
+  const handleRemoveLine = (index: number) =>
     setProducts(products.filter((_, i) => i !== index));
-  };
 
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
     const cust = allCustomers.find((c: any) => c.id === custId);
-
     if (cust?.addresses && cust.addresses.length > 0) {
-      const defaultAddr =
-        cust.addresses.find((a: any) => a.is_default) || cust.addresses[0];
-      setFormData((prev) => ({
-        ...prev,
-        street_address: defaultAddr.street_address || "",
-        city: defaultAddr.city || "",
-        postal_code: defaultAddr.postal_code || "",
-        latitude: defaultAddr.latitude ?? null,
-        longitude: defaultAddr.longitude ?? null,
+      const a =
+        cust.addresses.find((x: any) => x.is_default) || cust.addresses[0];
+      setFormData((p) => ({
+        ...p,
+        street_address: a.street_address || "",
+        city: a.city || "",
+        postal_code: a.postal_code || "",
+        latitude: a.latitude ?? null,
+        longitude: a.longitude ?? null,
       }));
     } else {
-      setFormData((prev) => ({
-        ...prev,
+      setFormData((p) => ({
+        ...p,
         street_address: "",
         city: "",
         postal_code: "",
@@ -395,7 +448,6 @@ export default function OrderForm({
         longitude: null,
       }));
     }
-
     setIsCustomerDropdownOpen(false);
     setCustomerSearch("");
   };
@@ -406,39 +458,43 @@ export default function OrderForm({
       ? `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""} (${activeCustomer.phone || ""})`.trim()
       : "";
 
-  const productsSubtotal = useMemo(() => {
-    return products.reduce(
-      (sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1),
-      0,
-    );
-  }, [products]);
-
-  const totalDeposit = useMemo(() => {
-    return products.reduce(
-      (sum, p) => sum + (Number(p.deposit) || 0) * (Number(p.quantity) || 1),
-      0,
-    );
-  }, [products]);
-
+  const productsSubtotal = useMemo(
+    () =>
+      products.reduce(
+        (s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+        0,
+      ),
+    [products],
+  );
+  const totalDeposit = useMemo(
+    () =>
+      products.reduce(
+        (s, p) => s + (Number(p.deposit) || 0) * (Number(p.quantity) || 1),
+        0,
+      ),
+    [products],
+  );
   const maxAvailableCredit = Number(activeCustomer?.current_credit) || 0;
 
-  const grandTotal = useMemo(() => {
-    return Math.max(
-      0,
-      productsSubtotal +
-        totalDeposit +
-        Number(formData.shipping_fee) -
-        Number(formData.store_credit_applied),
-    );
-  }, [
-    productsSubtotal,
-    totalDeposit,
-    formData.shipping_fee,
-    formData.store_credit_applied,
-  ]);
+  const grandTotal = useMemo(
+    () =>
+      Math.max(
+        0,
+        productsSubtotal +
+          totalDeposit +
+          Number(formData.shipping_fee) -
+          Number(formData.store_credit_applied),
+      ),
+    [
+      productsSubtotal,
+      totalDeposit,
+      formData.shipping_fee,
+      formData.store_credit_applied,
+    ],
+  );
 
   const missingFields = useMemo(() => {
-    const m = [];
+    const m: string[] = [];
     if (!selectedCustomerId) m.push("Customer");
     if (!formData.event_start_date) m.push("Event Start Date");
     if (!formData.pickup_date) m.push("Pick Up/Send Date");
@@ -446,13 +502,7 @@ export default function OrderForm({
     if (products.length === 0 || !products[0]?.item_sku)
       m.push("At least one product line");
     return m;
-  }, [
-    selectedCustomerId,
-    formData.event_start_date,
-    formData.pickup_date,
-    formData.return_date,
-    products,
-  ]);
+  }, [selectedCustomerId, formData, products]);
 
   const isComplete = missingFields.length === 0;
 
@@ -464,12 +514,8 @@ export default function OrderForm({
       customer_id: selectedCustomerId,
       products,
     });
-
-    if (res?.error) {
-      setErrorMsg(res.error);
-    } else {
-      router.refresh();
-    }
+    if (res?.error) setErrorMsg(res.error);
+    else router.refresh();
     setLoading(false);
   };
 
@@ -477,47 +523,55 @@ export default function OrderForm({
     setLoading(true);
     setErrorMsg("");
     const res = await updateOrderStatus(formData.id, newStatus);
-    if (res?.error) {
-      setErrorMsg(res.error);
-    } else {
-      setFormData((prev) => ({ ...prev, status: newStatus }));
+    if (res?.error) setErrorMsg(res.error);
+    else {
+      setFormData((p) => ({ ...p, status: newStatus }));
       router.refresh();
     }
     setLoading(false);
   };
 
-  const handleBiteshipBooking = async () => {
-    if (isPickupFuture) {
-      const confirmEarly = confirm(
-        `ATTENTION: PREMATURE BOOKING WARNING\n\n` +
-          `This order has a scheduled send date of ${formData.pickup_date} (in the future).\n\n` +
-          `Booking Biteship now will dispatch an immediate pickup request to the courier today.\n\n` +
-          `Are you sure you want to summon the courier today anyway?`,
-      );
-      if (!confirmEarly) return;
-    } else {
-      if (
-        !confirm(
-          "Book courier pickup via Biteship now? Ensure parcel is packed and sealed.",
-        )
-      )
-        return;
-    }
+  const handleOpenBookingModal = () => {
+    setBookingStep("preview");
+    setBookingError("");
+    setBookingResult(null);
+  };
 
-    setDispatching(true);
-    setErrorMsg("");
-    const res = await dispatchOrderViaBiteship(formData.id);
+  const handleCloseBookingModal = () => {
+    if (bookingStep === "booking") return;
+    setBookingStep("closed");
+  };
+
+  const handleConfirmBooking = async () => {
+    setBookingStep("booking");
+    setBookingError("");
+    const res = await dispatchOrderViaBiteship(formData.id, {
+      note: bookingNote,
+    });
     if (res?.error) {
-      setErrorMsg(res.error);
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        status: "In Shipping",
-        packing_slip_id: res.waybill || prev.packing_slip_id,
-      }));
-      router.refresh();
+      setBookingError(res.error);
+      setBookingStep("error");
+      return;
     }
-    setDispatching(false);
+    setBookingResult({
+      waybill: res.waybill!,
+      trackingUrl: res.trackingUrl || null,
+      courierCompany: res.courierCompany || "",
+      courierType: res.courierType || "",
+      price: res.price ?? null,
+    });
+    setFormData((p) => ({
+      ...p,
+      status: "In Shipping",
+      packing_slip_id: res.waybill || p.packing_slip_id,
+    }));
+    setBookingStep("success");
+    router.refresh();
+  };
+
+  const handleBookManually = () => {
+    setBookingStep("closed");
+    setTimeout(() => waybillInputRef.current?.focus(), 100);
   };
 
   const handleCopyResi = () => {
@@ -525,6 +579,13 @@ export default function OrderForm({
     navigator.clipboard.writeText(formData.packing_slip_id);
     setCopiedResi(true);
     setTimeout(() => setCopiedResi(false), 2000);
+  };
+
+  const handleCopyWaybill = () => {
+    if (!bookingResult?.waybill) return;
+    navigator.clipboard.writeText(bookingResult.waybill);
+    setCopiedWaybill(true);
+    setTimeout(() => setCopiedWaybill(false), 2000);
   };
 
   const handleAddNote = async (e: React.FormEvent) => {
@@ -535,32 +596,37 @@ export default function OrderForm({
     router.refresh();
   };
 
-  // WhatsApp Invoice Automation Link Generator
   const whatsAppInvoiceUrl = useMemo(() => {
+    if (!mountedOrigin) return "";
     if (!activeCustomer?.phone) return "";
-    let rawPhone = String(activeCustomer.phone).replace(/\D/g, "");
-    if (rawPhone.startsWith("0")) rawPhone = "62" + rawPhone.slice(1);
-    const custName =
+
+    let p = String(activeCustomer.phone).replace(/\D/g, "");
+    if (p.startsWith("0")) p = "62" + p.slice(1);
+
+    const name =
       `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""}`.trim() ||
       "Customer";
 
     const defaultTpl =
       "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].";
-    const rawTemplate =
-      notificationTemplates?.order_posted?.template || defaultTpl;
-    const invoiceUrl =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/admin/orders/${formData.id}/invoice`
-        : `https://kora.com/orders/${formData.id}/invoice`;
+    const tpl = notificationTemplates?.order_posted?.template || defaultTpl;
 
-    const message = rawTemplate
-      .replace(/\[CUSTOMER_NAME\]/g, custName)
+    const url = `${mountedOrigin}/admin/orders/${formData.id}/invoice`;
+
+    const message = tpl
+      .replace(/\[CUSTOMER_NAME\]/g, name)
       .replace(/\[ORDER_ID\]/g, formData.id)
-      .replace(/\[INVOICE_LINK\]/g, invoiceUrl)
+      .replace(/\[INVOICE_LINK\]/g, url)
       .replace(/\[TOTAL\]/g, formatRupiah(grandTotal));
 
-    return `https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`;
-  }, [activeCustomer, formData.id, notificationTemplates, grandTotal]);
+    return `https://wa.me/${p}?text=${encodeURIComponent(message)}`;
+  }, [
+    mountedOrigin,
+    activeCustomer,
+    formData.id,
+    notificationTemplates,
+    grandTotal,
+  ]);
 
   const handleSaveQuickCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -569,23 +635,16 @@ export default function OrderForm({
       return;
     }
     setCustomerModalLoading(true);
-
-    let cleanPhone = newCustomerForm.phone.replace(/\D/g, "");
-    if (cleanPhone.startsWith("0")) cleanPhone = "62" + cleanPhone.slice(1);
-
-    const res = await createCustomer({
-      ...newCustomerForm,
-      phone: cleanPhone,
-    });
-
-    if (res.error) {
-      alert(res.error);
-    } else if (res.customerId) {
+    let clean = newCustomerForm.phone.replace(/\D/g, "");
+    if (clean.startsWith("0")) clean = "62" + clean.slice(1);
+    const res = await createCustomer({ ...newCustomerForm, phone: clean });
+    if (res.error) alert(res.error);
+    else if (res.customerId) {
       const created = {
         id: res.customerId,
         first_name: newCustomerForm.first_name,
         last_name: newCustomerForm.last_name,
-        phone: cleanPhone,
+        phone: clean,
         status: "Not Submitted",
         current_credit: 0,
         addresses: [],
@@ -606,75 +665,47 @@ export default function OrderForm({
     setCustomerModalLoading(false);
   };
 
-  const handleGeocodeSearch = async () => {
-    const query =
-      `${newAddress.street_address}, ${newAddress.city}, Indonesia`.trim();
-    if (!query || query.length < 5) {
-      setGeocodingError("Please enter street address and city first.");
-      return;
-    }
-
-    setGeocodingLoading(true);
-    setGeocodingError("");
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-      );
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const first = data[0];
-        setNewAddress((prev) => ({
-          ...prev,
-          latitude: parseFloat(first.lat),
-          longitude: parseFloat(first.lon),
-        }));
-      } else {
-        setGeocodingError(
-          "Location pin not found. Check address spelling or enter coordinates manually.",
-        );
-      }
-    } catch {
-      setGeocodingError("Network error connecting to geocoder.");
-    } finally {
-      setGeocodingLoading(false);
-    }
-  };
-
   const handleSaveNewAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId) {
       alert("Please select a customer first before adding an address.");
       return;
     }
-
+    if (!newAddress.street_address || !newAddress.city) {
+      alert("Street address and City are required.");
+      return;
+    }
     setModalLoading(true);
     const res = await createCustomerAddress({
       customer_id: selectedCustomerId,
-      ...newAddress,
+      label: newAddress.label,
+      street_address: newAddress.street_address,
+      city: newAddress.city,
+      postal_code: newAddress.postal_code,
+      latitude: newAddress.latitude,
+      longitude: newAddress.longitude,
+      is_default: newAddress.is_default,
     });
-
     if (res.error) {
       alert(res.error);
       setModalLoading(false);
       return;
     }
-
     if (res.address) {
       const added = res.address;
       setAllCustomers((prev) =>
         prev.map((c) => {
-          if (c.id === selectedCustomerId) {
-            return {
-              ...c,
-              addresses: [added, ...(c.addresses || [])],
-            };
-          }
-          return c;
+          if (c.id !== selectedCustomerId) return c;
+          const existing = c.addresses || [];
+          const updated = newAddress.is_default
+            ? existing.map((a: any) => ({ ...a, is_default: false }))
+            : existing;
+          return { ...c, addresses: [added, ...updated] };
         }),
       );
 
-      setFormData((prev) => ({
-        ...prev,
+      setFormData((p) => ({
+        ...p,
         street_address: added.street_address,
         city: added.city,
         postal_code: added.postal_code || "",
@@ -690,11 +721,16 @@ export default function OrderForm({
         postal_code: "",
         latitude: null,
         longitude: null,
+        is_default: false,
       });
     }
-
     setModalLoading(false);
   };
+
+  const hasWaybill = Boolean(
+    formData.packing_slip_id &&
+    ["In Shipping", "Active", "Completed"].includes(formData.status),
+  );
 
   return (
     <div>
@@ -709,7 +745,6 @@ export default function OrderForm({
         Operations · Orders
       </div>
 
-      {/* Header & Lifecycle Ribbon */}
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <h1 className="font-serif text-[32px] font-normal tracking-[0.01em]">
           {formData.id} {isDraft && "- new"}
@@ -719,6 +754,15 @@ export default function OrderForm({
           <span className="text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded bg-[#EFEBE2] text-muted mr-1">
             {formData.status}
           </span>
+
+          {waPosted && (
+            <span
+              className="text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded border bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5] flex items-center gap-1"
+              title="Order-posted WA notification dispatched"
+            >
+              <Send className="w-3 h-3" /> WA Sent
+            </span>
+          )}
 
           {isDraft && (
             <button
@@ -745,20 +789,33 @@ export default function OrderForm({
           {formData.status === "Ordered" && (
             <button
               type="button"
-              onClick={handleBiteshipBooking}
-              disabled={dispatching || loading || !isComplete}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                isPickupTodayOrPast
+              onClick={handleOpenBookingModal}
+              disabled={
+                loading || !isComplete || !canBookAtAll || alreadyDispatched
+              }
+              title={
+                alreadyDispatched
+                  ? `Already dispatched (${formData.packing_slip_id})`
+                  : !canBookAtAll && bookingWindowOpensOn
+                    ? `Bookable from ${bookingWindowOpensOn} (${bookingWindowDays} days before pickup)`
+                    : undefined
+              }
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                canBookAtAll && !alreadyDispatched
                   ? "bg-wine text-white hover:bg-[#181E15]"
-                  : "bg-[#F4EBE6] text-[#8C2C1D] border border-[#E5CAC3] hover:bg-[#EEDFD8]"
+                  : "bg-[#EFEBE2] text-muted"
               }`}
             >
               <Truck className="w-3.5 h-3.5" />
-              {dispatching
-                ? "Booking Biteship..."
-                : isPickupTodayOrPast
-                  ? "Book Biteship Now"
-                  : "Book Biteship (Early)"}
+              {alreadyDispatched
+                ? "Already Booked"
+                : !canBookAtAll
+                  ? bookingWindowOpensOn
+                    ? `Book from ${bookingWindowOpensOn}`
+                    : "Book Biteship"
+                  : canBookNow
+                    ? "Book Biteship Now"
+                    : "Book Biteship"}
             </button>
           )}
 
@@ -832,14 +889,13 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* 2-Column Main Form */}
+      {/* Customer & Schedule + Fulfilment columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        {/* LEFT COLUMN: Customer & Schedule */}
+        {/* LEFT COLUMN — customer + schedule */}
         <div className="bg-card border border-line rounded-[10px] p-5">
           <h3 className="font-serif text-[18px] font-normal mb-3">
             Customer & schedule
           </h3>
-
           <div className="space-y-3.5">
             <div>
               <div className="flex justify-between items-center mb-1">
@@ -856,7 +912,6 @@ export default function OrderForm({
                   </button>
                 )}
               </div>
-
               <div ref={customerDropdownRef} className="relative">
                 <input
                   type="text"
@@ -874,7 +929,6 @@ export default function OrderForm({
                   placeholder="Search customer name or phone..."
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
                 />
-
                 {isCustomerDropdownOpen && !isWebsite && !isAddressLocked && (
                   <div className="absolute z-30 w-full mt-1 bg-white border border-line rounded-lg shadow-lg max-h-64 overflow-y-auto">
                     <button
@@ -888,7 +942,6 @@ export default function OrderForm({
                     >
                       <UserPlus className="w-3.5 h-3.5" />+ Add Customer
                     </button>
-
                     {filteredCustomers.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-muted text-center">
                         No customers match your search.
@@ -1017,7 +1070,6 @@ export default function OrderForm({
               />
             </div>
 
-            {/* Delivery Address */}
             <div className="pt-2 border-t border-line">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] tracking-[0.14em] uppercase text-muted font-medium flex items-center gap-1">
@@ -1026,15 +1078,13 @@ export default function OrderForm({
                     <Lock className="w-3 h-3 text-muted ml-0.5" />
                   )}
                 </label>
-
                 {!isWebsite && !isAddressLocked && selectedCustomerId && (
                   <button
                     type="button"
                     onClick={() => setIsAddressModalOpen(true)}
                     className="text-[11px] font-semibold text-wine-ink hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" />
-                    Add New Address
+                    <Plus className="w-3 h-3" /> Add New Address
                   </button>
                 )}
               </div>
@@ -1072,6 +1122,7 @@ export default function OrderForm({
                       <option key={a.id} value={a.id}>
                         {a.label} — {a.street_address}, {a.city}{" "}
                         {a.postal_code ? `(${a.postal_code})` : ""}
+                        {a.is_default ? " · Default" : ""}
                       </option>
                     ))}
                   </select>
@@ -1113,13 +1164,12 @@ export default function OrderForm({
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Fulfilment & Payment */}
+        {/* RIGHT COLUMN — Fulfilment & payment */}
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
           <div>
             <h3 className="font-serif text-[18px] font-normal mb-3">
               Fulfilment & payment
             </h3>
-
             <div className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1171,23 +1221,85 @@ export default function OrderForm({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
-                  Packing Slip ID / Waybill
-                </label>
-                <input
-                  disabled={isWebsite}
-                  placeholder="— fills on dispatch or Biteship booking"
-                  value={formData.packing_slip_id}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      packing_slip_id: e.target.value,
-                    })
-                  }
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
+              {hasWaybill ? (
+                <div className="border border-[#CAD3C5] bg-[#F2F6EF] rounded-lg p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider uppercase text-[#2E7D47]">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Booked & In Shipping
+                    </div>
+                    <span className="text-[10px] font-mono font-semibold text-ink uppercase">
+                      {formData.pick_up_method || "Courier"}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-[10px] tracking-wider uppercase text-muted mb-0.5">
+                      Waybill / Resi
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[13px] font-bold text-ink flex-1 truncate">
+                        {formData.packing_slip_id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyResi}
+                        className="flex-shrink-0 p-1.5 border border-line bg-white rounded-md hover:bg-[#F6F4EF] transition cursor-pointer"
+                        title="Copy waybill"
+                      >
+                        {copiedResi ? (
+                          <Check className="w-3.5 h-3.5 text-ok" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-muted" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    <Link
+                      href={`/admin/orders/${formData.id}/label`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1A1F16] text-white rounded-lg text-xs font-medium hover:bg-black transition"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Print Label
+                    </Link>
+                    {initialOrder.return_label_url && (
+                      <a
+                        href={initialOrder.return_label_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-line bg-white rounded-lg text-xs font-medium hover:bg-[#F6F4EF] transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Track Package
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Packing Slip ID / Waybill
+                  </label>
+                  <input
+                    ref={waybillInputRef}
+                    disabled={isWebsite}
+                    placeholder="— fills on dispatch or Biteship booking"
+                    value={formData.packing_slip_id}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        packing_slip_id: e.target.value,
+                      })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                  />
+                  <p className="text-[10.5px] text-muted mt-1">
+                    Or use the Book Biteship button above to auto-fill via
+                    courier.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
@@ -1214,14 +1326,12 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* Product Line Items (Price & Deposit LOCKED) */}
+      {/* Product line items */}
       <div className="bg-card border border-line rounded-[10px] p-5 mb-4">
         <h3 className="font-serif text-[18px] font-normal mb-3">
           Product <span className="text-bad">*</span>
         </h3>
-
         <div className="space-y-2.5 mb-3">
-          {/* Column headers */}
           <div className="hidden sm:grid grid-cols-12 gap-2.5 px-0.5 text-[10px] uppercase tracking-[0.14em] text-muted font-medium pb-2 border-b border-line items-center">
             <div className="col-span-3">Product SKU</div>
             <div className="col-span-4">Product Label</div>
@@ -1231,10 +1341,8 @@ export default function OrderForm({
             <div className="col-span-1"></div>
           </div>
 
-          {/* Line item rows */}
           {products.map((p, idx) => (
             <div key={idx} className="grid grid-cols-12 gap-2.5 items-center">
-              {/* SKU — searchable */}
               <div className="col-span-3">
                 <ProductSkuSelect
                   value={p.item_sku}
@@ -1244,8 +1352,6 @@ export default function OrderForm({
                   onSelect={(sku) => handleProductSelect(idx, sku)}
                 />
               </div>
-
-              {/* Label (read-only) */}
               <div className="col-span-4">
                 <input
                   value={p.label}
@@ -1254,8 +1360,6 @@ export default function OrderForm({
                   className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted truncate"
                 />
               </div>
-
-              {/* Quantity */}
               <div className="col-span-1">
                 <input
                   type="number"
@@ -1270,8 +1374,6 @@ export default function OrderForm({
                   className="w-full text-center text-xs border border-line rounded-lg py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
                 />
               </div>
-
-              {/* Price (locked) */}
               <div className="col-span-2">
                 <input
                   type="text"
@@ -1280,8 +1382,6 @@ export default function OrderForm({
                   className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
-
-              {/* Deposit (locked) */}
               <div className="col-span-1">
                 <input
                   type="text"
@@ -1290,8 +1390,6 @@ export default function OrderForm({
                   className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
-
-              {/* Remove row */}
               <div className="col-span-1 flex justify-end">
                 {!isWebsite && !isAddressLocked && (
                   <button
@@ -1307,7 +1405,6 @@ export default function OrderForm({
             </div>
           ))}
         </div>
-
         {!isWebsite && !isAddressLocked && (
           <button
             type="button"
@@ -1319,12 +1416,11 @@ export default function OrderForm({
         )}
       </div>
 
-      {/* Financial Summary */}
+      {/* Financial summary */}
       <div className="bg-card border border-line rounded-[10px] p-5 mb-4">
         <h3 className="font-serif text-[18px] font-normal mb-3">
           Financial summary
         </h3>
-
         <div className="divide-y divide-line max-w-xl text-[13px]">
           <div className="flex justify-between py-2">
             <span className="text-muted">Products subtotal</span>
@@ -1332,7 +1428,6 @@ export default function OrderForm({
               {formatRupiah(productsSubtotal)}
             </span>
           </div>
-
           <div className="flex justify-between items-center py-2">
             <span className="text-muted">Shipping fee (ongkir)</span>
             <RupiahInput
@@ -1342,12 +1437,10 @@ export default function OrderForm({
               className="w-32 text-right"
             />
           </div>
-
           <div className="flex justify-between py-2">
             <span className="text-muted">Refundable deposit</span>
             <span className="font-medium">{formatRupiah(totalDeposit)}</span>
           </div>
-
           <div className="flex justify-between items-center py-2">
             <div>
               <span className="text-muted">Store credit applied</span>
@@ -1360,7 +1453,6 @@ export default function OrderForm({
             <RupiahInput
               value={formData.store_credit_applied}
               onChange={(v) => {
-                // Strictly cap store credit to customer's available balance
                 const clamped = Math.max(0, Math.min(maxAvailableCredit, v));
                 setFormData({ ...formData, store_credit_applied: clamped });
               }}
@@ -1368,7 +1460,6 @@ export default function OrderForm({
               className="w-32 text-right"
             />
           </div>
-
           <div className="flex justify-between py-3 text-base font-serif font-bold text-ink">
             <span>Total</span>
             <span>{formatRupiah(grandTotal)}</span>
@@ -1376,7 +1467,7 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* Team Notes & Activity Log */}
+      {/* Notes + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
           <h3 className="font-serif text-[18px] font-normal mb-1">
@@ -1425,7 +1516,7 @@ export default function OrderForm({
                     </span>
                   )}
                   <span className="text-muted ml-1">
-                    · {new Date(log.created_at).toLocaleDateString()}
+                    · {formatLogDate(log.created_at)}
                   </span>
                 </li>
               ))}
@@ -1434,7 +1525,276 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* MODAL: CREATE CUSTOMER QUICKLY */}
+      {/* BOOKING MODAL */}
+      {bookingStep !== "closed" && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseBookingModal();
+          }}
+        >
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl border border-line max-h-[90vh] overflow-y-auto">
+            {bookingStep === "preview" && (
+              <>
+                <div className="flex justify-between items-center p-5 border-b border-line">
+                  <div>
+                    <h3 className="font-serif text-[20px]">
+                      Confirm Courier Booking
+                    </h3>
+                    <p className="text-[12px] text-muted mt-0.5">
+                      Review the details before dispatching to the courier.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseBookingModal}
+                    className="text-muted hover:text-ink p-1 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-5 space-y-4 text-xs">
+                  <div>
+                    <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                      From
+                    </div>
+                    <div className="text-[13px] font-medium text-ink">
+                      KORA Showroom
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                      To
+                    </div>
+                    <div className="text-[13px] font-medium text-ink">
+                      {activeCustomer?.first_name} {activeCustomer?.last_name}
+                    </div>
+                    <div className="text-muted mt-0.5">
+                      {formData.street_address}, {formData.city}{" "}
+                      {formData.postal_code}
+                    </div>
+                    <div className="text-muted font-mono mt-0.5">
+                      {activeCustomer?.phone}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                        Courier
+                      </div>
+                      <div className="text-[13px] font-medium text-ink">
+                        {formData.pick_up_method}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                        Scheduled Pickup
+                      </div>
+                      <div className="text-[13px] font-medium text-ink">
+                        {formData.pickup_date || "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-1">
+                    <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1.5">
+                      Items ({products.length})
+                    </div>
+                    <div className="border border-line rounded-lg divide-y divide-line">
+                      {products.map((p, i) => (
+                        <div
+                          key={i}
+                          className="px-3 py-2 flex justify-between text-[12px]"
+                        >
+                          <span className="font-mono font-bold text-ink">
+                            {p.item_sku}
+                          </span>
+                          <span className="text-muted truncate ml-3 flex-1">
+                            {p.label}
+                          </span>
+                          <span className="text-muted font-mono ml-3">
+                            ×{p.quantity}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-1">
+                    <label className="block text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                      Note to Courier
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={bookingNote}
+                      onChange={(e) => setBookingNote(e.target.value)}
+                      className="w-full text-xs border border-line rounded-lg p-2.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 p-5 border-t border-line bg-[#FDFCFA] rounded-b-xl">
+                  <button
+                    type="button"
+                    onClick={handleCloseBookingModal}
+                    className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-white transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmBooking}
+                    className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    Confirm Booking
+                  </button>
+                </div>
+              </>
+            )}
+
+            {bookingStep === "booking" && (
+              <div className="p-8 text-center space-y-3">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#EBEFE6] mx-auto">
+                  <Truck className="w-6 h-6 text-wine animate-pulse" />
+                </div>
+                <h3 className="font-serif text-[20px]">Booking courier…</h3>
+                <p className="text-xs text-muted">
+                  Contacting Biteship. Do not close this window.
+                </p>
+              </div>
+            )}
+
+            {bookingStep === "success" && bookingResult && (
+              <>
+                <div className="p-5 border-b border-line">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-full bg-[#EAF3E7] flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-[#2E7D47]" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-[20px]">
+                        Booked successfully
+                      </h3>
+                      <p className="text-[12px] text-muted mt-0.5">
+                        {bookingResult.courierCompany
+                          ? `${bookingResult.courierCompany.toUpperCase()} · ${bookingResult.courierType}`
+                          : "Courier booked"}
+                        {bookingResult.price
+                          ? ` · ${formatRupiah(bookingResult.price)}`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4 text-xs">
+                  <div>
+                    <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
+                      Waybill / Resi
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[15px] font-bold text-ink flex-1 truncate">
+                        {bookingResult.waybill}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyWaybill}
+                        className="flex-shrink-0 p-2 border border-line bg-white rounded-md hover:bg-[#F6F4EF] transition cursor-pointer"
+                        title="Copy waybill"
+                      >
+                        {copiedWaybill ? (
+                          <Check className="w-4 h-4 text-ok" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Link
+                      href={`/admin/orders/${formData.id}/label`}
+                      target="_blank"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#1A1F16] text-white rounded-lg text-xs font-medium hover:bg-black transition"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Print Label
+                    </Link>
+                    {bookingResult.trackingUrl && (
+                      <a
+                        href={bookingResult.trackingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-line bg-white rounded-lg text-xs font-medium hover:bg-[#F6F4EF] transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Track Package
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end p-5 border-t border-line bg-[#FDFCFA] rounded-b-xl">
+                  <button
+                    type="button"
+                    onClick={handleCloseBookingModal}
+                    className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
+
+            {bookingStep === "error" && (
+              <>
+                <div className="p-5 border-b border-line">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-full bg-bad-bg flex items-center justify-center flex-shrink-0">
+                      <AlertCircle className="w-5 h-5 text-bad" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-[20px]">Booking failed</h3>
+                      <p className="text-[12px] text-muted mt-0.5">
+                        The courier could not be booked automatically.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5 space-y-3 text-xs">
+                  <div className="p-3 bg-bad-bg border border-[#D9A79C] text-bad rounded-lg text-[12px] leading-relaxed">
+                    {bookingError}
+                  </div>
+                  <p className="text-muted text-[11.5px] leading-relaxed">
+                    You can retry the automatic booking, or obtain a waybill
+                    from the Biteship dashboard and paste it manually below.
+                  </p>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2 p-5 border-t border-line bg-[#FDFCFA] rounded-b-xl">
+                  <button
+                    type="button"
+                    onClick={handleCloseBookingModal}
+                    className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-white transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBookManually}
+                    className="px-4 py-2 border border-line bg-white rounded-lg text-xs font-medium hover:bg-[#F6F4EF] transition cursor-pointer"
+                  >
+                    Book Manually Instead
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmBooking}
+                    className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE CUSTOMER */}
       {isCustomerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
@@ -1451,7 +1811,6 @@ export default function OrderForm({
                 <X className="w-5 h-5" />
               </button>
             </div>
-
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1486,7 +1845,6 @@ export default function OrderForm({
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">
                   Phone (WhatsApp) <span className="text-bad">*</span>
@@ -1503,11 +1861,7 @@ export default function OrderForm({
                   }
                   className="w-full border border-line rounded-lg px-3 py-2 font-mono"
                 />
-                <span className="text-[10px] text-muted mt-0.5 block">
-                  Must start with country code (e.g. 628... or 614...)
-                </span>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] tracking-wider uppercase text-muted mb-1">
@@ -1551,7 +1905,6 @@ export default function OrderForm({
                 </div>
               </div>
             </div>
-
             <div className="flex justify-end gap-2 mt-5">
               <button
                 type="button"
@@ -1572,48 +1925,69 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* MODAL: ADD ADDRESS */}
+      {/* MODAL: ADD ADDRESS — now with AddressMapPicker, matching the customer page */}
       {isAddressModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form
-            onSubmit={handleSaveNewAddress}
-            className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-line max-h-[90vh] overflow-y-auto"
-          >
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-serif text-[20px]">Add Customer Address</h3>
-              <button
-                type="button"
-                onClick={() => setIsAddressModalOpen(false)}
-                className="text-muted hover:text-ink p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-card border border-line rounded-xl w-full max-w-xl p-6 shadow-xl relative my-8 animate-in fade-in zoom-in-95">
+            <h2 className="font-serif text-[22px] font-normal mb-1">
+              Tambah Alamat Baru
+            </h2>
+            <p className="text-[13px] text-muted mb-4">
+              Cari alamat atau geser pin pada peta untuk melengkapi koordinat
+              pengiriman Biteship.
+            </p>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block uppercase tracking-wider text-muted font-medium mb-1">
-                  Address Label
-                </label>
-                <input
-                  required
-                  placeholder="e.g. Home, Office, Studio"
-                  value={newAddress.label}
-                  onChange={(e) =>
-                    setNewAddress({ ...newAddress, label: e.target.value })
-                  }
-                  className="w-full border border-line rounded-lg px-3 py-2"
-                />
+            <form onSubmit={handleSaveNewAddress} className="space-y-3.5">
+              <AddressMapPicker
+                initialData={newAddress}
+                onChange={(loc) => {
+                  setNewAddress((prev) => ({
+                    ...prev,
+                    street_address: loc.street_address || prev.street_address,
+                    city: loc.city || prev.city,
+                    postal_code: loc.postal_code || prev.postal_code,
+                    latitude: loc.latitude,
+                    longitude: loc.longitude,
+                  }));
+                }}
+              />
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Label Alamat
+                  </label>
+                  <input
+                    value={newAddress.label}
+                    placeholder="Rumah, Kantor, Studio..."
+                    onChange={(e) =>
+                      setNewAddress({ ...newAddress, label: e.target.value })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Kota <span className="text-bad">*</span>
+                  </label>
+                  <input
+                    required
+                    value={newAddress.city}
+                    onChange={(e) =>
+                      setNewAddress({ ...newAddress, city: e.target.value })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block uppercase tracking-wider text-muted font-medium mb-1">
-                  Street Address <span className="text-bad">*</span>
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                  Alamat Lengkap <span className="text-bad">*</span>
                 </label>
                 <textarea
                   required
                   rows={2}
-                  placeholder="Street name, house/building number, unit..."
                   value={newAddress.street_address}
                   onChange={(e) =>
                     setNewAddress({
@@ -1621,31 +1995,17 @@ export default function OrderForm({
                       street_address: e.target.value,
                     })
                   }
-                  className="w-full border border-line rounded-lg p-2.5"
+                  placeholder="Nama jalan, nomor rumah, RT/RW, patokan..."
+                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block uppercase tracking-wider text-muted font-medium mb-1">
-                    City <span className="text-bad">*</span>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Kode Pos
                   </label>
                   <input
-                    required
-                    placeholder="e.g. Jakarta Selatan"
-                    value={newAddress.city}
-                    onChange={(e) =>
-                      setNewAddress({ ...newAddress, city: e.target.value })
-                    }
-                    className="w-full border border-line rounded-lg px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block uppercase tracking-wider text-muted font-medium mb-1">
-                    Postal Code
-                  </label>
-                  <input
-                    placeholder="e.g. 12180"
                     value={newAddress.postal_code}
                     onChange={(e) =>
                       setNewAddress({
@@ -1653,29 +2013,88 @@ export default function OrderForm({
                         postal_code: e.target.value,
                       })
                     }
-                    className="w-full border border-line rounded-lg px-3 py-2"
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Latitude
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={newAddress.latitude ?? ""}
+                    onChange={(e) =>
+                      setNewAddress({
+                        ...newAddress,
+                        latitude: e.target.value
+                          ? parseFloat(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                    Longitude
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={newAddress.longitude ?? ""}
+                    onChange={(e) =>
+                      setNewAddress({
+                        ...newAddress,
+                        longitude: e.target.value
+                          ? parseFloat(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none"
                   />
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                type="button"
-                onClick={() => setIsAddressModalOpen(false)}
-                className="px-3.5 py-1.5 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF]"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={modalLoading}
-                className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50"
-              >
-                {modalLoading ? "Saving..." : "Save & Select Address"}
-              </button>
-            </div>
-          </form>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="order_addr_default"
+                  checked={newAddress.is_default}
+                  onChange={(e) =>
+                    setNewAddress({
+                      ...newAddress,
+                      is_default: e.target.checked,
+                    })
+                  }
+                  className="rounded border-line text-wine focus:ring-wine"
+                />
+                <label
+                  htmlFor="order_addr_default"
+                  className="text-xs text-ink cursor-pointer"
+                >
+                  Jadikan alamat utama (Default address)
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setIsAddressModalOpen(false)}
+                  className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalLoading}
+                  className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] disabled:opacity-50 cursor-pointer"
+                >
+                  {modalLoading ? "Menyimpan..." : "Simpan Alamat"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

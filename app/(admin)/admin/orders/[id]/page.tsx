@@ -12,41 +12,25 @@ export default async function OrderDetailPage({
   const supabase = await createClient();
   const currentAdmin = await getCurrentAdmin();
 
-  // Fetch Order with relations, customer addresses, lookup items, and system settings
-  const [orderRes, customersRes, itemsRes, shippingSettingsRes, notificationSettingsRes, auditRes] = await Promise.all([
+  const [
+    orderRes,
+    customersRes,
+    itemsRes,
+    shippingSettingsRes,
+    notificationSettingsRes,
+    auditRes,
+  ] = await Promise.all([
     supabase
       .from('orders')
       .select(`
         *,
         customers (
-          id,
-          first_name,
-          last_name,
-          phone,
-          status,
-          current_credit,
-          addresses (
-            id,
-            label,
-            city,
-            postal_code,
-            street_address,
-            latitude,
-            longitude,
-            is_default
-          )
+          id, first_name, last_name, phone, status, current_credit,
+          addresses (id, label, city, postal_code, street_address, latitude, longitude, is_default)
         ),
         order_products (
-          id,
-          item_sku,
-          quantity,
-          price,
-          deposit,
-          subtotal,
-          items (
-            name,
-            rental_price
-          )
+          id, item_sku, quantity, price, deposit, subtotal,
+          items (name, rental_price)
         )
       `)
       .eq('id', id)
@@ -55,37 +39,26 @@ export default async function OrderDetailPage({
     supabase
       .from('customers')
       .select(`
-        id,
-        first_name,
-        last_name,
-        phone,
-        status,
-        current_credit,
-        addresses (
-          id,
-          label,
-          city,
-          postal_code,
-          street_address,
-          latitude,
-          longitude,
-          is_default
-        )
+        id, first_name, last_name, phone, status, current_credit,
+        addresses (id, label, city, postal_code, street_address, latitude, longitude, is_default)
       `)
       .order('first_name'),
 
     supabase.from('items').select('sku, name, rental_price').order('sku'),
     supabase.from('app_settings').select('value').eq('key', 'shipping').single(),
     supabase.from('app_settings').select('value').eq('key', 'notifications').single(),
-    supabase.from('admin_audit_logs').select('*').eq('entity_id', id).order('created_at', { ascending: false }),
+    supabase
+      .from('admin_audit_logs')
+      .select('*')
+      .eq('entity_id', id)
+      .order('created_at', { ascending: false }),
   ]);
 
-  if (orderRes.error || !orderRes.data) {
-    notFound();
-  }
+  if (orderRes.error || !orderRes.data) notFound();
 
   const deliveryLeadTimes = shippingSettingsRes.data?.value?.delivery_lead_times || [];
   const notificationTemplates = notificationSettingsRes.data?.value || {};
+  const bookingWindowDays = Number(shippingSettingsRes.data?.value?.booking_window_days ?? 3);
 
   return (
     <div className="pb-24 font-sans text-ink">
@@ -95,6 +68,7 @@ export default async function OrderDetailPage({
         allItems={itemsRes.data || []}
         deliveryLeadTimes={deliveryLeadTimes}
         notificationTemplates={notificationTemplates}
+        bookingWindowDays={bookingWindowDays}
         auditLogs={auditRes.data || []}
         currentAdmin={currentAdmin}
       />

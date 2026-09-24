@@ -10,28 +10,9 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
 
   let query = supabase
     .from('orders')
-    .select(`
-      id,
-      order_date,
-      total_price,
-      total_deposit,
-      shipping_fee,
-      store_credit_applied,
-      total,
-      order_method,
-      payment_method,
-      status,
-      customers (
-        first_name,
-        last_name
-      ),
-      order_products (
-        item_sku
-      )
-    `)
+    .select(`id, order_date, total_price, total_deposit, shipping_fee, store_credit_applied, total, order_method, payment_method, status, customers(first_name, last_name), order_products(item_sku)`)
     .not('status', 'in', '("Cancelled", "Draft")')
     .order('order_date', { ascending: false });
-
   if (startDate) query = query.gte('order_date', startDate);
   if (endDate) query = query.lte('order_date', endDate);
 
@@ -42,32 +23,24 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
     .from('fittings')
     .select('id, date, after_hours_fee, fee_payment_method')
     .eq('fee_payment_status', 'Paid');
-
   if (startDate) fittingsQuery = fittingsQuery.gte('date', startDate);
   if (endDate) fittingsQuery = fittingsQuery.lte('date', endDate);
-
   const { data: fittings } = await fittingsQuery;
 
   let returnsQuery = supabase
     .from('returns')
     .select('refund_amount')
     .eq('refund_status', 'Refunded');
-
   if (startDate) returnsQuery = returnsQuery.gte('refunded_at', startDate);
   if (endDate) returnsQuery = returnsQuery.lte('refunded_at', endDate);
-
   const { data: completedReturns } = await returnsQuery;
-  const totalRefundedDeposits = (completedReturns || []).reduce(
-    (sum, r) => sum + (Number(r.refund_amount) || 0),
-    0
-  );
+  const totalRefundedDeposits = (completedReturns || []).reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
 
-  const grossRental = (orders || []).reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-  const depositsHeld = (orders || []).reduce((sum, o) => sum + (Number(o.total_deposit) || 0), 0);
-  const shippingFees = (orders || []).reduce((sum, o) => sum + (Number(o.shipping_fee) || 0), 0);
-  const creditApplied = (orders || []).reduce((sum, o) => sum + (Number(o.store_credit_applied) || 0), 0);
-  const fittingsIncome = (fittings || []).reduce((sum, f) => sum + (Number(f.after_hours_fee) || 0), 0);
-
+  const grossRental = (orders || []).reduce((s, o) => s + (Number(o.total_price) || 0), 0);
+  const depositsHeld = (orders || []).reduce((s, o) => s + (Number(o.total_deposit) || 0), 0);
+  const shippingFees = (orders || []).reduce((s, o) => s + (Number(o.shipping_fee) || 0), 0);
+  const creditApplied = (orders || []).reduce((s, o) => s + (Number(o.store_credit_applied) || 0), 0);
+  const fittingsIncome = (fittings || []).reduce((s, f) => s + (Number(f.after_hours_fee) || 0), 0);
   const netCashflow =
     grossRental + (depositsHeld - totalRefundedDeposits) + shippingFees + fittingsIncome - creditApplied;
 
@@ -110,53 +83,30 @@ export async function getInventoryReportData() {
 
   const { data: items, error } = await supabase
     .from('items')
-    .select(`
-      sku,
-      name,
-      rental_price,
-      status,
-      is_archived,
-      brands ( name ),
-      types ( name ),
-      order_products (
-        price,
-        quantity,
-        orders (
-          status,
-          pickup_date,
-          return_date
-        )
-      )
-    `)
+    .select(`sku, name, rental_price, status, is_archived, brands(name), types(name), order_products(price, quantity, orders(status, pickup_date, return_date))`)
     .order('sku');
-
   if (error) return { error: error.message };
 
   let fleetTotalRevenue = 0;
   let activeFleetCount = 0;
 
   const rows = (items || []).map((item) => {
-    const validRentals = (item.order_products || []).filter(
-      (op: any) => op.orders && !['Cancelled', 'Draft'].includes(op.orders.status)
+    const valid = (item.order_products || []).filter(
+      (op: any) => op.orders && !['Cancelled', 'Draft'].includes(op.orders.status),
     );
-
-    const timesRented = validRentals.length;
+    const timesRented = valid.length;
     let daysOnLoan = 0;
     let skuRevenue = 0;
-
-    validRentals.forEach((op: any) => {
+    valid.forEach((op: any) => {
       skuRevenue += (Number(op.price) || 0) * (op.quantity || 1);
       if (op.orders.pickup_date && op.orders.return_date) {
-        const start = new Date(op.orders.pickup_date).getTime();
-        const end = new Date(op.orders.return_date).getTime();
-        const diff = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
-        daysOnLoan += diff;
+        const s = new Date(op.orders.pickup_date).getTime();
+        const e = new Date(op.orders.return_date).getTime();
+        daysOnLoan += Math.max(1, Math.round((e - s) / 86400000));
       }
     });
-
     fleetTotalRevenue += skuRevenue;
     if (!item.is_archived && item.status !== 'Under Repair') activeFleetCount++;
-
     return {
       sku: item.sku,
       name: item.name,
@@ -171,11 +121,7 @@ export async function getInventoryReportData() {
   });
 
   return {
-    kpis: {
-      totalItems: rows.length,
-      activeFleetCount,
-      fleetTotalRevenue,
-    },
+    kpis: { totalItems: rows.length, activeFleetCount, fleetTotalRevenue },
     rows: rows.sort((a, b) => b.revenueYield - a.revenueYield),
   };
 }
@@ -187,60 +133,40 @@ export async function getReturnsReportData(startDate?: string, endDate?: string)
 
   let query = supabase
     .from('returns')
-    .select(`
-      id,
-      order_id,
-      status,
-      requested_at,
-      has_stains,
-      has_damage,
-      is_incomplete,
-      has_odor,
-      deposit_held,
-      late_days,
-      qc_deduction,
-      return_shipping_cost,
-      refund_amount,
-      refund_destination,
-      refunded_at,
-      orders (
-        return_date
-      ),
-      customers (
-        first_name,
-        last_name
-      )
-    `)
+    .select(`id, order_id, status, requested_at, has_stains, has_damage, is_incomplete, has_odor, deposit_held, late_days, qc_deduction, return_shipping_cost, refund_amount, refund_destination, refunded_at, refund_status, orders(return_date), customers(first_name, last_name)`)
     .order('requested_at', { ascending: false });
-
   if (startDate) query = query.gte('requested_at', startDate);
   if (endDate) query = query.lte('requested_at', endDate);
 
   const { data: returns, error } = await query;
   if (error) return { error: error.message };
 
+  const allRows = returns || [];
+
   let totalDepositsHeld = 0;
   let totalQcDeductions = 0;
   let totalLateDays = 0;
   let totalRefunded = 0;
 
-  const rows = (returns || []).map((r) => {
+  const rows = allRows.map((r) => {
     const custName = `${(r.customers as any)?.first_name || ''} ${(r.customers as any)?.last_name || ''}`.trim() || 'Customer';
     const depHeld = Number(r.deposit_held) || 0;
     const deduction = Number(r.qc_deduction) || 0;
     const refunded = Number(r.refund_amount) || 0;
     const daysLate = Number(r.late_days) || 0;
+    const isRefunded = r.refund_status === 'Refunded';
 
-    totalDepositsHeld += depHeld;
-    totalQcDeductions += deduction;
-    totalRefunded += refunded;
+    // KPIs count only refunded rows for deposits, deductions, refunds; late_days for all
+    totalDepositsHeld += isRefunded ? depHeld : 0;
+    totalQcDeductions += isRefunded ? deduction : 0;
+    totalRefunded += isRefunded ? refunded : 0;
     totalLateDays += daysLate;
 
-    const issueTags: string[] = [];
-    if (r.has_stains) issueTags.push('Stains');
-    if (r.has_damage) issueTags.push('Damage');
-    if (r.is_incomplete) issueTags.push('Incomplete');
-    if (r.has_odor) issueTags.push('Odor');
+    const issues: string[] = [];
+    if (r.has_stains) issues.push('Stains');
+    if (r.has_damage) issues.push('Damage');
+    if (r.is_incomplete) issues.push('Incomplete');
+    if (r.has_odor) issues.push('Odor');
 
     return {
       returnId: r.id,
@@ -250,23 +176,18 @@ export async function getReturnsReportData(startDate?: string, endDate?: string)
       deadline: (r.orders as any)?.return_date || '—',
       actualDate: r.refunded_at ? r.refunded_at.split('T')[0] : 'In Progress',
       daysLate,
-      qcIssues: issueTags.length > 0 ? issueTags.join(', ') : 'Clean',
+      qcIssues: issues.length > 0 ? issues.join(', ') : 'Clean',
       depositHeld: depHeld,
       qcDeduction: deduction,
       refundAmount: refunded,
       refundDestination: r.refund_destination || '—',
       status: r.status,
+      refundStatus: r.refund_status || '—',
     };
   });
 
   return {
-    kpis: {
-      totalReturns: rows.length,
-      totalDepositsHeld,
-      totalQcDeductions,
-      totalRefunded,
-      totalLateDays,
-    },
+    kpis: { totalReturns: rows.length, totalDepositsHeld, totalQcDeductions, totalRefunded, totalLateDays },
     rows,
   };
 }
@@ -278,48 +199,26 @@ export async function getCustomersReportData() {
 
   const { data: customers, error } = await supabase
     .from('customers')
-    .select(`
-      id,
-      first_name,
-      last_name,
-      phone,
-      status,
-      date_joined,
-      current_credit,
-      addresses ( city ),
-      orders (
-        total,
-        status
-      )
-    `)
+    .select(`id, first_name, last_name, phone, status, date_joined, current_credit, addresses(city), orders(total, status)`)
     .order('date_joined', { ascending: false });
-
   if (error) return { error: error.message };
 
   let totalLtvSum = 0;
   let totalCreditLiability = 0;
-
   const rows = (customers || []).map((c) => {
-    const custName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Customer';
-    const validOrders = (c.orders || []).filter(
-      (o: any) => !['Cancelled', 'Draft'].includes(o.status)
-    );
-
+    const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Customer';
+    const validOrders = (c.orders || []).filter((o: any) => !['Cancelled', 'Draft'].includes(o.status));
     const totalOrdersCount = validOrders.length;
-    const ltv = validOrders.reduce((acc: number, o: any) => acc + (Number(o.total) || 0), 0);
+    const ltv = validOrders.reduce((a: number, o: any) => a + (Number(o.total) || 0), 0);
     const aov = totalOrdersCount > 0 ? Math.round(ltv / totalOrdersCount) : 0;
     const credit = Number(c.current_credit) || 0;
-
     totalLtvSum += ltv;
     totalCreditLiability += credit;
-
-    const city = c.addresses?.[0]?.city || '—';
-
     return {
       id: c.id,
-      name: custName,
+      name,
       phone: c.phone || '—',
-      city,
+      city: c.addresses?.[0]?.city || '—',
       status: c.status,
       ordersCount: totalOrdersCount,
       ltv,
@@ -350,7 +249,6 @@ export async function getAuditReportData(startDate?: string, endDate?: string) {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(500);
-
   if (startDate) query = query.gte('created_at', startDate);
   if (endDate) query = query.lte('created_at', endDate);
 
@@ -370,10 +268,5 @@ export async function getAuditReportData(startDate?: string, endDate?: string) {
     newVal: l.new_value || '—',
   }));
 
-  return {
-    kpis: {
-      totalEntries: rows.length,
-    },
-    rows,
-  };
+  return { kpis: { totalEntries: rows.length }, rows };
 }
