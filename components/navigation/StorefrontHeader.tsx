@@ -6,16 +6,36 @@ import { Search, User, ShoppingBag } from "lucide-react";
 import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
+import IdVerificationModal from "@/components/storefront/IdVerificationModal";
+import { hasValidKtp } from "@/lib/storefront/ktp";
 
 export default function StorefrontHeader() {
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
   const [openCart, setOpenCart] = useState<"rental" | "fitting" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [openKtpModal, setOpenKtpModal] = useState(false);
 
   const handleCheckout = () => {
     setOpenCart(null);
-    // TODO(Phase 2): open ID verification modal, then route to /checkout
-    setToast("Checkout coming soon — message us on WhatsApp to complete your booking.");
+
+    if (!hasValidKtp()) {
+      // No KTP on file → open verification gate
+      setOpenKtpModal(true);
+      return;
+    }
+
+    // KTP is on file — proceed
+    setToast(
+      "Checkout coming soon — message us on WhatsApp to complete your booking.",
+    );
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleKtpProceed = () => {
+    setOpenKtpModal(false);
+    setToast(
+      "Checkout coming soon — message us on WhatsApp to complete your booking.",
+    );
     setTimeout(() => setToast(null), 4000);
   };
 
@@ -51,9 +71,15 @@ export default function StorefrontHeader() {
                   {[
                     { label: "All", href: "/shop" },
                     { label: "New Arrivals", href: "/shop?filter=new" },
-                    { label: "Available This Week", href: "/shop?filter=available-now" },
+                    {
+                      label: "Available This Week",
+                      href: "/shop?filter=available-now",
+                    },
                     { label: "Dresses", href: "/shop?category=dresses" },
-                    { label: "Accessories", href: "/shop?category=accessories" },
+                    {
+                      label: "Accessories",
+                      href: "/shop?category=accessories",
+                    },
                   ].map((item) => (
                     <Link
                       key={item.href}
@@ -67,21 +93,35 @@ export default function StorefrontHeader() {
               )}
             </div>
 
-            <Link href="/how-to-rent" className="hover:text-[#1F261C] transition-colors py-2">
+            <Link
+              href="/how-to-rent"
+              className="hover:text-[#1F261C] transition-colors py-2"
+            >
               How To Rent
             </Link>
-            <Link href="/about" className="hover:text-[#1F261C] transition-colors py-2">
+            <Link
+              href="/about"
+              className="hover:text-[#1F261C] transition-colors py-2"
+            >
               About Kora
             </Link>
           </nav>
 
           {/* Actions */}
           <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
-            <Link href="/search" aria-label="Search" className="hover:text-[#1F261C] transition-colors">
+            <Link
+              href="/search"
+              aria-label="Search"
+              className="hover:text-[#1F261C] transition-colors"
+            >
               <Search className="w-[18px] h-[18px] stroke-[1.8]" />
             </Link>
 
-            <Link href="/account" aria-label="Account" className="hover:text-[#1F261C] transition-colors">
+            <Link
+              href="/account"
+              aria-label="Account"
+              className="hover:text-[#1F261C] transition-colors"
+            >
               <User className="w-[19px] h-[19px] stroke-[1.8]" />
             </Link>
 
@@ -123,6 +163,11 @@ export default function StorefrontHeader() {
       <FittingCartDrawer
         isOpen={openCart === "fitting"}
         onClose={() => setOpenCart(null)}
+      />
+      <IdVerificationModal
+        isOpen={openKtpModal}
+        onClose={() => setOpenKtpModal(false)}
+        onProceed={handleKtpProceed}
       />
 
       {/* Toast */}
