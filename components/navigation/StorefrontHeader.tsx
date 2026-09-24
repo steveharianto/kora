@@ -2,48 +2,56 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Search, User, ShoppingBag } from "lucide-react";
 import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
 import IdVerificationModal from "@/components/storefront/IdVerificationModal";
-import { hasValidKtp } from "@/lib/storefront/ktp";
+import { getCurrentCustomer } from "@/app/actions/customerAuth";
 
 export default function StorefrontHeader() {
+  const router = useRouter();
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
   const [openCart, setOpenCart] = useState<"rental" | "fitting" | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [openKtpModal, setOpenKtpModal] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  const handleCheckout = () => {
+  const showToast = (text: string) => {
+    setToast(text);
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleCheckout = async () => {
     setOpenCart(null);
 
-    if (!hasValidKtp()) {
-      // No KTP on file → open verification gate
+    const customer = await getCurrentCustomer();
+
+    // 1. Must be logged in
+    if (!customer) {
+      router.push("/account/login?redirect=/shop");
+      return;
+    }
+
+    // 2. Must have KTP on file
+    if (customer.status === "Not Submitted") {
       setOpenKtpModal(true);
       return;
     }
 
-    // KTP is on file — proceed
-    setToast(
-      "Checkout coming soon — message us on WhatsApp to complete your booking.",
-    );
-    setTimeout(() => setToast(null), 4000);
+    // 3. Proceed (real checkout is Phase 3)
+    showToast("Checkout coming soon — message us on WhatsApp to complete your booking.");
   };
 
   const handleKtpProceed = () => {
     setOpenKtpModal(false);
-    setToast(
-      "Checkout coming soon — message us on WhatsApp to complete your booking.",
-    );
-    setTimeout(() => setToast(null), 4000);
+    showToast("Checkout coming soon — message us on WhatsApp to complete your booking.");
   };
 
   return (
     <>
       <header className="sticky top-0 z-50 w-full bg-[#ECEBE4] border-b border-[#DFDDD4] transition-colors">
         <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between">
-          {/* Brand */}
           <Link
             href="/"
             className="font-serif text-[28px] sm:text-[32px] tracking-[0.06em] text-[#485642] hover:opacity-90 transition-opacity font-normal"
@@ -51,7 +59,6 @@ export default function StorefrontHeader() {
             KORA
           </Link>
 
-          {/* Center nav */}
           <nav className="hidden md:flex items-center gap-8 text-[12px] tracking-[0.14em] text-[#3B4736] font-medium uppercase">
             <div
               className="relative"
@@ -71,15 +78,9 @@ export default function StorefrontHeader() {
                   {[
                     { label: "All", href: "/shop" },
                     { label: "New Arrivals", href: "/shop?filter=new" },
-                    {
-                      label: "Available This Week",
-                      href: "/shop?filter=available-now",
-                    },
+                    { label: "Available This Week", href: "/shop?filter=available-now" },
                     { label: "Dresses", href: "/shop?category=dresses" },
-                    {
-                      label: "Accessories",
-                      href: "/shop?category=accessories",
-                    },
+                    { label: "Accessories", href: "/shop?category=accessories" },
                   ].map((item) => (
                     <Link
                       key={item.href}
@@ -93,35 +94,20 @@ export default function StorefrontHeader() {
               )}
             </div>
 
-            <Link
-              href="/how-to-rent"
-              className="hover:text-[#1F261C] transition-colors py-2"
-            >
+            <Link href="/how-to-rent" className="hover:text-[#1F261C] transition-colors py-2">
               How To Rent
             </Link>
-            <Link
-              href="/about"
-              className="hover:text-[#1F261C] transition-colors py-2"
-            >
+            <Link href="/about" className="hover:text-[#1F261C] transition-colors py-2">
               About Kora
             </Link>
           </nav>
 
-          {/* Actions */}
           <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
-            <Link
-              href="/search"
-              aria-label="Search"
-              className="hover:text-[#1F261C] transition-colors"
-            >
+            <Link href="/search" aria-label="Search" className="hover:text-[#1F261C] transition-colors">
               <Search className="w-[18px] h-[18px] stroke-[1.8]" />
             </Link>
 
-            <Link
-              href="/account"
-              aria-label="Account"
-              className="hover:text-[#1F261C] transition-colors"
-            >
+            <Link href="/account" aria-label="Account" className="hover:text-[#1F261C] transition-colors">
               <User className="w-[19px] h-[19px] stroke-[1.8]" />
             </Link>
 
@@ -154,7 +140,6 @@ export default function StorefrontHeader() {
         </div>
       </header>
 
-      {/* Drawers */}
       <RentalCartDrawer
         isOpen={openCart === "rental"}
         onClose={() => setOpenCart(null)}
@@ -170,7 +155,6 @@ export default function StorefrontHeader() {
         onProceed={handleKtpProceed}
       />
 
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] max-w-[92vw] bg-store-fg text-white text-[12px] tracking-wider px-6 py-3 shadow-xl">
           {toast}

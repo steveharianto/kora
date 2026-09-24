@@ -3,12 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Upload, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import {
-  readKtpRecord,
-  writeKtpRecord,
-  clearKtpRecord,
-  type KtpRecord,
-} from "@/lib/storefront/ktp";
+import { uploadCustomerKtp } from "@/app/actions/customerProfile";
 
 interface Props {
   isOpen: boolean;
@@ -18,26 +13,24 @@ interface Props {
 
 const MAX_SIZE_MB = 5;
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const BUCKET = "item-images"; // TODO: move to a private bucket + signed URLs before launch
+const BUCKET = "item-images"; // TODO: move to a private bucket before launch
 
 type ViewState = "idle" | "uploading" | "uploaded";
 
 export default function IdVerificationModal({ isOpen, onClose, onProceed }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<ViewState>("idle");
-  const [record, setRecord] = useState<KtpRecord | null>(null);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // Initialize view from localStorage whenever the modal opens
   useEffect(() => {
     if (!isOpen) return;
-    const existing = readKtpRecord();
-    setRecord(existing);
-    setState(existing ? "uploaded" : "idle");
+    setState("idle");
+    setUploadedUrl(null);
     setError("");
   }, [isOpen]);
 
-  // Body lock + ESC to close
   useEffect(() => {
     if (!isOpen) return;
     document.body.style.overflow = "hidden";
@@ -75,14 +68,7 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
       if (upErr) throw new Error(upErr.message);
 
       const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-
-      const newRecord: KtpRecord = {
-        url: urlData.publicUrl,
-        uploadedAt: new Date().toISOString(),
-        status: "pending",
-      };
-      writeKtpRecord(newRecord);
-      setRecord(newRecord);
+      setUploadedUrl(urlData.publicUrl);
       setState("uploaded");
     } catch (e: any) {
       setError(e.message || "Upload failed. Please try again.");
@@ -97,10 +83,25 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
   };
 
   const handleReplace = () => {
-    clearKtpRecord();
-    setRecord(null);
+    setUploadedUrl(null);
     setState("idle");
     setError("");
+  };
+
+  const handleProceed = async () => {
+    if (!uploadedUrl) return;
+    setSaving(true);
+    setError("");
+
+    const res = await uploadCustomerKtp(uploadedUrl);
+    setSaving(false);
+
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+
+    onProceed();
   };
 
   if (!isOpen) return null;
@@ -124,14 +125,92 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
           </h2>
 
           <div className="px-6 sm:px-12 pb-12">
-            {state === "uploaded" && record ? (
-              <UploadedView record={record} onReplace={handleReplace} onProceed={onProceed} />
+            {state === "uploaded" && uploadedUrl ? (
+              <div>
+                <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-10">
+                  Thank you for uploading your ID. You can now proceed to checkout.
+                </p>
+
+                <div className="max-w-[600px] mx-auto">
+                  <div className="relative border border-store-border-strong bg-white p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={uploadedUrl}
+                      alt="Uploaded ID"
+                      className="w-full h-auto object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleReplace}
+                      aria-label="Replace ID"
+                      className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center bg-white border border-store-border rounded-full shadow-sm hover:bg-store-hover/50 transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4 text-store-fg-muted" strokeWidth={2} />
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[12px] text-store-fg-muted leading-relaxed mt-6">
+                    Your ID will only be used for verification purposes and handled securely in
+                    accordance with our Privacy Policy.
+                  </p>
+
+                  {error && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-[12px] text-center">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="flex justify-center mt-10">
+                    <button
+                      type="button"
+                      onClick={handleProceed}
+                      disabled={saving}
+                      className="px-12 py-3.5 bg-store-accent text-white text-[11px] tracking-[0.22em] uppercase font-medium hover:bg-store-accent-hover transition-colors cursor-pointer disabled:opacity-60"
+                    >
+                      {saving ? "Saving…" : "Proceed to Checkout"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <EmptyView
-                isUploading={state === "uploading"}
-                error={error}
-                onSelectFile={() => fileInputRef.current?.click()}
-              />
+              <>
+                <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-12">
+                  You haven&apos;t uploaded your ID yet. Please upload it below to proceed with
+                  checkout. Make sure your ID follows the guidelines below.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-16 max-w-[660px] mx-auto mb-14">
+                  <ReferenceCard variant="good" caption="Make sure your ID is clear and fully visible." />
+                  <ReferenceCard variant="bad" caption="Avoid cropped or partially visible ID photos." />
+                </div>
+
+                {error && (
+                  <div className="max-w-[600px] mx-auto mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-[12px] text-center">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={state === "uploading"}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full max-w-[640px] mx-auto block border border-dashed border-store-fg/30 hover:border-store-accent bg-transparent py-12 px-6 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                >
+                  <div className="flex items-center justify-center gap-3 text-store-fg-muted">
+                    {state === "uploading" ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" strokeWidth={1.5} />
+                        <span className="text-[13px] tracking-wide">Uploading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5" strokeWidth={1.5} />
+                        <span className="text-[13px] tracking-wide">Upload your ID (KTP) Here</span>
+                      </>
+                    )}
+                  </div>
+                </button>
+              </>
             )}
 
             <input
@@ -148,151 +227,27 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
   );
 }
 
-/* ── Empty state (upload zone) ───────────────────────────────────── */
-
-function EmptyView({
-  isUploading,
-  error,
-  onSelectFile,
-}: {
-  isUploading: boolean;
-  error: string;
-  onSelectFile: () => void;
-}) {
-  return (
-    <>
-      <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-12">
-        You haven&apos;t uploaded your ID yet. Please upload it below to proceed with checkout.
-        Make sure your ID follows the guidelines below.
-      </p>
-
-      {/* Reference pair */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-16 max-w-[660px] mx-auto mb-14">
-        <ReferenceCard variant="good" caption="Make sure your ID is clear and fully visible." />
-        <ReferenceCard variant="bad" caption="Avoid cropped or partially visible ID photos." />
-      </div>
-
-      {error && (
-        <div className="max-w-[600px] mx-auto mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-[12px] text-center">
-          {error}
-        </div>
-      )}
-
-      {/* Upload zone */}
-      <button
-        type="button"
-        disabled={isUploading}
-        onClick={onSelectFile}
-        className="w-full max-w-[640px] mx-auto block border border-dashed border-store-fg/30 hover:border-store-accent bg-transparent py-12 px-6 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-      >
-        <div className="flex items-center justify-center gap-3 text-store-fg-muted">
-          {isUploading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" strokeWidth={1.5} />
-              <span className="text-[13px] tracking-wide">Uploading…</span>
-            </>
-          ) : (
-            <>
-              <Upload className="w-5 h-5" strokeWidth={1.5} />
-              <span className="text-[13px] tracking-wide">Upload your ID (KTP) Here</span>
-            </>
-          )}
-        </div>
-      </button>
-    </>
-  );
-}
-
-/* ── Uploaded state ──────────────────────────────────────────────── */
-
-function UploadedView({
-  record,
-  onReplace,
-  onProceed,
-}: {
-  record: KtpRecord;
-  onReplace: () => void;
-  onProceed: () => void;
-}) {
-  return (
-    <>
-      <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-10">
-        Thank you for uploading your ID. You can now proceed to checkout.
-      </p>
-
-      <div className="max-w-[600px] mx-auto">
-        <div className="relative border border-store-border-strong bg-white p-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={record.url}
-            alt="Uploaded ID"
-            className="w-full h-auto object-contain"
-          />
-          <button
-            type="button"
-            onClick={onReplace}
-            aria-label="Replace ID"
-            title="Replace ID"
-            className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center bg-white border border-store-border rounded-full shadow-sm hover:bg-store-hover/50 transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4 text-store-fg-muted" strokeWidth={2} />
-          </button>
-        </div>
-
-        <p className="text-center text-[12px] text-store-fg-muted leading-relaxed mt-6">
-          Your ID will only be used for verification purposes and handled securely in accordance
-          with our Privacy Policy.
-        </p>
-
-        <div className="flex justify-center mt-10">
-          <button
-            type="button"
-            onClick={onProceed}
-            className="px-12 py-3.5 bg-store-accent text-white text-[11px] tracking-[0.22em] uppercase font-medium hover:bg-store-accent-hover transition-colors cursor-pointer"
-          >
-            Proceed to Checkout
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-/* ── Reference illustration ──────────────────────────────────────── */
-
-function ReferenceCard({
-  variant,
-  caption,
-}: {
-  variant: "good" | "bad";
-  caption: string;
-}) {
+function ReferenceCard({ variant, caption }: { variant: "good" | "bad"; caption: string }) {
   const isBad = variant === "bad";
   return (
     <div className="flex flex-col items-center">
       <div className="relative w-full aspect-[3/2]">
-        {/* Grey frame */}
         <div className="absolute inset-0 bg-[#909090] overflow-hidden">
-          {/* White ID card — cropped on the "bad" variant */}
           <div
             className={`absolute top-[14%] bottom-[14%] bg-white ${
               isBad ? "left-[8%] right-[-18%]" : "left-[8%] right-[8%]"
             }`}
           >
-            {/* Green header band */}
             <div className="absolute top-0 left-0 right-0 h-[28%] bg-[#64765B]" />
-            {/* Avatar */}
             <div className="absolute left-[7%] top-[42%] w-[18%] aspect-square bg-[#E1DFCE] flex items-center justify-center">
               <div className="w-1/2 h-1/2 rounded-full bg-[#64765B] opacity-60" />
             </div>
-            {/* Text bars */}
             <div className="absolute left-[30%] top-[42%] right-[8%] h-[8%] bg-[#E1DFCE]" />
             <div className="absolute left-[30%] top-[56%] right-[8%] h-[8%] bg-[#E1DFCE]" />
             <div className="absolute left-[30%] bottom-[12%] right-[8%] h-[8%] bg-[repeating-linear-gradient(45deg,#E1DFCE_0,#E1DFCE_2px,transparent_2px,transparent_5px)]" />
           </div>
         </div>
 
-        {/* Badge */}
         <div
           className={`absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full flex items-center justify-center ring-4 ring-store-bg ${
             isBad ? "bg-[#E53935]" : "bg-[#10B981]"
@@ -301,15 +256,7 @@ function ReferenceCard({
           {isBad ? (
             <X className="w-6 h-6 text-white" strokeWidth={3} />
           ) : (
-            <svg
-              viewBox="0 0 24 24"
-              className="w-6 h-6 text-white"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 13l4 4L19 7" />
             </svg>
           )}
