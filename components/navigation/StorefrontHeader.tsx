@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Search, User, ShoppingBag } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import { Search, User, ShoppingBag } from "lucide-react";
 
 export default function StorefrontHeader() {
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
@@ -34,25 +34,25 @@ export default function StorefrontHeader() {
             </Link>
 
             {isShopMenuOpen && (
-              <div className="absolute top-full left-0 w-44 bg-[#ECEBE4] border border-[#DFDDD4] rounded-sm py-2 shadow-lg z-50">
-                <Link
-                  href="/shop?category=dresses"
-                  className="block px-4 py-2 text-[11px] tracking-wider text-[#3B4736] hover:bg-[#E2E0D6] transition-colors"
-                >
-                  Dresses
-                </Link>
-                <Link
-                  href="/shop?category=traditional"
-                  className="block px-4 py-2 text-[11px] tracking-wider text-[#3B4736] hover:bg-[#E2E0D6] transition-colors"
-                >
-                  Kebaya & Traditional
-                </Link>
-                <Link
-                  href="/shop?category=accessories"
-                  className="block px-4 py-2 text-[11px] tracking-wider text-[#3B4736] hover:bg-[#E2E0D6] transition-colors"
-                >
-                  Accessories
-                </Link>
+              <div className="absolute top-full left-0 w-56 bg-[#ECEBE4] border border-[#DFDDD4] rounded-sm py-2 shadow-lg z-50">
+                {[
+                  { label: "All", href: "/shop" },
+                  { label: "New Arrivals", href: "/shop?filter=new" },
+                  {
+                    label: "Available This Week",
+                    href: "/shop?filter=available-now",
+                  },
+                  { label: "Dresses", href: "/shop?category=dresses" },
+                  { label: "Accessories", href: "/shop?category=accessories" },
+                ].map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="block px-4 py-2 text-[11px] tracking-[0.16em] uppercase text-[#3B4736] hover:bg-[#E2E0D6] transition-colors"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
               </div>
             )}
           </div>
