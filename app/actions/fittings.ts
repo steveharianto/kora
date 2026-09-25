@@ -345,19 +345,71 @@ export async function recordAfterHoursFeePayment(
   return { success: true };
 }
 
+// -----------------------------------------------------------------------------
+// Send reminder → timestamp the row, then dispatch `fitting_reminder` via Fonnte
+// -----------------------------------------------------------------------------
 export async function markFittingReminderSent(fittingId: string) {
   const supabase = await createClient();
+  const admin = await getCurrentAdmin();
+  if (!admin) return { error: "Unauthorized: Session not found." };
+
+  const { data: fitting } = await supabase
+    .from("fittings")
+    .select("id, date, slot, customers(first_name, last_name, phone)")
+    .eq("id", fittingId)
+    .single();
+
+  if (!fitting) return { error: "Fitting not found." };
+
+  // Timestamp regardless of whether the WA send succeeds so the "REMINDER DUE"
+  // badge clears (the admin can always re-send later via the same button).
   await supabase
     .from("fittings")
     .update({ reminder_sent_at: new Date().toISOString() })
     .eq("id", fittingId);
-  revalidatePath("/admin/fittings");
-  revalidatePath(`/admin/fittings/${fittingId}`);
-  return { success: true };
+
+  const customer = (fitting as any).customers as
+    | { first_name?: string; last_name?: string; phone?: string }
+    | undefined;
+
+  if (!customer?.phone) {
+    revalidatePath("/admin/fittings");
+    revalidatePath(`/admin/fittings/${fittingId}`);
+    return { success: true, sent: false, error: "Customer has no phone number." };
+  }
+
+  const customerName =
+    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "there";
+  const timeFormatted = fitting.slot ? String(fitting.slot).slice(0, 5) : "10:00";
+
+  try {
+    const { emitWa } = await import("@/lib/notifications");
+    const res = await emitWa(supabase, admin, {
+      entity: "fitting",
+      entityId: fittingId,
+      kind: "fitting_reminder",
+      to: customer.phone,
+      vars: {
+        CUSTOMER_NAME: customerName,
+        FITTING_TIME: `${fitting.date} · ${timeFormatted}`,
+        FITTING_DATE: String(fitting.date),
+      },
+      fallbackTemplate:
+        "Hi [CUSTOMER_NAME], reminder for your fitting appointment tomorrow at [FITTING_TIME]. See you at our showroom!",
+    });
+
+    revalidatePath("/admin/fittings");
+    revalidatePath(`/admin/fittings/${fittingId}`);
+    return { success: true, waUrl: res.waUrl, sent: res.sent, error: res.error };
+  } catch (e: any) {
+    revalidatePath("/admin/fittings");
+    revalidatePath(`/admin/fittings/${fittingId}`);
+    return { success: true, sent: false, error: e.message };
+  }
 }
 
 // -----------------------------------------------------------------------------
-// CHANGE: accept optional pick_up_method; default Self pickup
+// Convert to order — accepts optional pick_up_method; default Self pickup
 // -----------------------------------------------------------------------------
 export async function convertFittingToOrder(
   fittingId: string,

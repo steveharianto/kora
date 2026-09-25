@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentAdmin } from './auth';
 import { revalidatePath } from 'next/cache';
+import { emitWa } from '@/lib/notifications';
 
 export async function createCustomer(formData: {
   first_name: string;
@@ -241,6 +242,11 @@ export async function reviewKtp(
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
+  // Rejection requires a reason — it flows into the WhatsApp message.
+  if (status === 'Not Submitted' && !notes.trim()) {
+    return { error: 'A rejection reason is required.' };
+  }
+
   const { error } = await supabase
     .from('customers')
     .update({ status })
@@ -263,6 +269,50 @@ export async function reviewKtp(
     field_name: 'status',
     new_value: status,
   });
+
+  // --- WhatsApp notification via Fonnte ------------------------------------
+  // Approved  → ktp_approved
+  // Rejected  → ktp_rejected with the reason the admin typed
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('first_name, last_name, phone')
+    .eq('id', customerId)
+    .single();
+
+  if (customer?.phone) {
+    const customerName =
+      `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'there';
+
+    let kind: string | null = null;
+    let fallbackTemplate = '';
+    const vars: Record<string, string> = { CUSTOMER_NAME: customerName };
+
+    if (status === 'Verified') {
+      kind = 'ktp_approved';
+      fallbackTemplate =
+        'Hi [CUSTOMER_NAME], your ID verification has been approved! Your order is now confirmed for dispatch.';
+    } else if (status === 'Not Submitted') {
+      kind = 'ktp_rejected';
+      fallbackTemplate =
+        'Hi [CUSTOMER_NAME], we could not verify your ID: [REJECTION_REASON]. Please upload a clearer photo on your KORA account.';
+      vars.REJECTION_REASON = notes.trim();
+    }
+
+    if (kind) {
+      try {
+        await emitWa(supabase, admin, {
+          entity: 'customer',
+          entityId: customerId,
+          kind,
+          to: customer.phone,
+          vars,
+          fallbackTemplate,
+        });
+      } catch {
+        // Non-blocking — the status change has already committed.
+      }
+    }
+  }
 
   revalidatePath(`/admin/customers/${customerId}`);
   revalidatePath('/admin/customers');

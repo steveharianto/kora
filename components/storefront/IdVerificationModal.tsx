@@ -13,14 +13,20 @@ interface Props {
 
 const MAX_SIZE_MB = 5;
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const BUCKET = "item-images"; // TODO: move to a private bucket before launch
+const BUCKET = "ktp-photos";
+const SIGNED_URL_TTL_S = 60 * 60 * 24 * 365; // 1 year — Supabase max
 
 type ViewState = "idle" | "uploading" | "uploaded";
 
-export default function IdVerificationModal({ isOpen, onClose, onProceed }: Props) {
+export default function IdVerificationModal({
+  isOpen,
+  onClose,
+  onProceed,
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<ViewState>("idle");
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -33,14 +39,11 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
 
   useEffect(() => {
     if (!isOpen) return;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [isOpen, onClose]);
+    setState("idle");
+    setUploadedUrl(null);
+    setUploadedPath(null);
+    setError("");
+  }, [isOpen]);
 
   const handleFile = async (file: File) => {
     setError("");
@@ -67,8 +70,18 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
 
       if (upErr) throw new Error(upErr.message);
 
-      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      setUploadedUrl(urlData.publicUrl);
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(path, SIGNED_URL_TTL_S);
+
+      if (signErr || !signed?.signedUrl) {
+        throw new Error(
+          signErr?.message || "Could not sign the uploaded file.",
+        );
+      }
+
+      setUploadedPath(path);
+      setUploadedUrl(signed.signedUrl);
       setState("uploaded");
     } catch (e: any) {
       setError(e.message || "Upload failed. Please try again.");
@@ -81,26 +94,36 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
     if (file) handleFile(file);
     e.target.value = "";
   };
-
-  const handleReplace = () => {
+  const handleReplace = async () => {
+    // Best-effort cleanup of the abandoned upload.
+    if (uploadedPath) {
+      const supabase = createClient();
+      await supabase.storage
+        .from(BUCKET)
+        .remove([uploadedPath])
+        .catch(() => {});
+    }
     setUploadedUrl(null);
+    setUploadedPath(null);
     setState("idle");
     setError("");
   };
 
   const handleProceed = async () => {
-    if (!uploadedUrl) return;
+    if (!uploadedUrl || !uploadedPath) return;
     setSaving(true);
     setError("");
 
-    const res = await uploadCustomerKtp(uploadedUrl);
+    const res = await uploadCustomerKtp({
+      photoUrl: uploadedUrl,
+      photoPath: uploadedPath,
+    });
     setSaving(false);
 
     if (res.error) {
       setError(res.error);
       return;
     }
-
     onProceed();
   };
 
@@ -108,7 +131,11 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-[80]" onClick={onClose} aria-hidden />
+      <div
+        className="fixed inset-0 bg-black/30 z-[80]"
+        onClick={onClose}
+        aria-hidden
+      />
       <div className="fixed inset-0 z-[90] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
         <div className="bg-store-bg w-full max-w-[880px] my-8 relative">
           <button
@@ -128,7 +155,8 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
             {state === "uploaded" && uploadedUrl ? (
               <div>
                 <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-10">
-                  Thank you for uploading your ID. You can now proceed to checkout.
+                  Thank you for uploading your ID. You can now proceed to
+                  checkout.
                 </p>
 
                 <div className="max-w-[600px] mx-auto">
@@ -145,13 +173,16 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
                       aria-label="Replace ID"
                       className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center bg-white border border-store-border rounded-full shadow-sm hover:bg-store-hover/50 transition-colors cursor-pointer"
                     >
-                      <X className="w-4 h-4 text-store-fg-muted" strokeWidth={2} />
+                      <X
+                        className="w-4 h-4 text-store-fg-muted"
+                        strokeWidth={2}
+                      />
                     </button>
                   </div>
 
                   <p className="text-center text-[12px] text-store-fg-muted leading-relaxed mt-6">
-                    Your ID will only be used for verification purposes and handled securely in
-                    accordance with our Privacy Policy.
+                    Your ID will only be used for verification purposes and
+                    handled securely in accordance with our Privacy Policy.
                   </p>
 
                   {error && (
@@ -175,13 +206,20 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
             ) : (
               <>
                 <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-12">
-                  You haven&apos;t uploaded your ID yet. Please upload it below to proceed with
-                  checkout. Make sure your ID follows the guidelines below.
+                  You haven&apos;t uploaded your ID yet. Please upload it below
+                  to proceed with checkout. Make sure your ID follows the
+                  guidelines below.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-16 max-w-[660px] mx-auto mb-14">
-                  <ReferenceCard variant="good" caption="Make sure your ID is clear and fully visible." />
-                  <ReferenceCard variant="bad" caption="Avoid cropped or partially visible ID photos." />
+                  <ReferenceCard
+                    variant="good"
+                    caption="Make sure your ID is clear and fully visible."
+                  />
+                  <ReferenceCard
+                    variant="bad"
+                    caption="Avoid cropped or partially visible ID photos."
+                  />
                 </div>
 
                 {error && (
@@ -199,13 +237,20 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
                   <div className="flex items-center justify-center gap-3 text-store-fg-muted">
                     {state === "uploading" ? (
                       <>
-                        <Loader2 className="w-5 h-5 animate-spin" strokeWidth={1.5} />
-                        <span className="text-[13px] tracking-wide">Uploading…</span>
+                        <Loader2
+                          className="w-5 h-5 animate-spin"
+                          strokeWidth={1.5}
+                        />
+                        <span className="text-[13px] tracking-wide">
+                          Uploading…
+                        </span>
                       </>
                     ) : (
                       <>
                         <Upload className="w-5 h-5" strokeWidth={1.5} />
-                        <span className="text-[13px] tracking-wide">Upload your ID (KTP) Here</span>
+                        <span className="text-[13px] tracking-wide">
+                          Upload your ID (KTP) Here
+                        </span>
                       </>
                     )}
                   </div>
@@ -227,7 +272,13 @@ export default function IdVerificationModal({ isOpen, onClose, onProceed }: Prop
   );
 }
 
-function ReferenceCard({ variant, caption }: { variant: "good" | "bad"; caption: string }) {
+function ReferenceCard({
+  variant,
+  caption,
+}: {
+  variant: "good" | "bad";
+  caption: string;
+}) {
   const isBad = variant === "bad";
   return (
     <div className="flex flex-col items-center">
@@ -256,7 +307,15 @@ function ReferenceCard({ variant, caption }: { variant: "good" | "bad"; caption:
           {isBad ? (
             <X className="w-6 h-6 text-white" strokeWidth={3} />
           ) : (
-            <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M5 13l4 4L19 7" />
             </svg>
           )}

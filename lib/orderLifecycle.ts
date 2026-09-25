@@ -656,19 +656,27 @@ export async function restoreOrder(
 export async function markNotification(
   supabase: SupabaseClient,
   admin: Admin | null,
-  entityType: "order" | "return" | "fitting",
+  entityType: 'order' | 'return' | 'fitting' | 'customer',
   entityId: string,
   kind: string,
-  value: string,
+  value:
+    | string
+    | { waUrl: string; sent: boolean; error?: string; fonnteId?: string },
 ): Promise<void> {
-  await supabase.from("admin_audit_logs").insert({
+  const payload =
+    typeof value === 'string'
+      ? { waUrl: value, sent: false }
+      : value;
+
+  await supabase.from('admin_audit_logs').insert({
     admin_id: admin?.id ?? null,
-    admin_name: admin?.name ?? "Automation",
+    admin_name: admin?.name ?? 'Automation',
     entity_type: entityType,
     entity_id: entityId,
-    action_type: "WA_DISPATCHED",
+    action_type: 'WA_DISPATCHED',
     field_name: kind,
-    new_value: value,
+    new_value: payload.sent ? 'sent' : 'failed',
+    details: payload,
   });
 }
 

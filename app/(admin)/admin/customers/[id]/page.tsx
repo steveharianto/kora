@@ -23,6 +23,21 @@ export default async function CustomerDetailPage({
     notFound();
   }
 
+  const ktpLogs = ktpRes.data || [];
+  const latestKtp = ktpLogs[0] ?? null;
+
+  // Sign the latest KTP photo for display. Falls back to the legacy
+  // public-item-images URL for rows created before the storage migration.
+  let ktpPhotoUrl: string | null = null;
+  if (latestKtp?.photo_path) {
+    const { data: signed } = await supabase.storage
+      .from('ktp-photos')
+      .createSignedUrl(latestKtp.photo_path, 60 * 60); // 1 hour
+    ktpPhotoUrl = signed?.signedUrl ?? null;
+  } else if (latestKtp?.photo_url) {
+    ktpPhotoUrl = latestKtp.photo_url;
+  }
+
   return (
     <div className="pb-20">
       <Link
@@ -35,7 +50,8 @@ export default async function CustomerDetailPage({
       <CustomerDetailClient
         customer={customerRes.data}
         addresses={addressesRes.data || []}
-        ktpLogs={ktpRes.data || []}
+        ktpLogs={ktpLogs}
+        ktpPhotoUrl={ktpPhotoUrl}
         orders={ordersRes.data || []}
         auditLogs={auditRes.data || []}
       />

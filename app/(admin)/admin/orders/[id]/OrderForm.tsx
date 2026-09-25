@@ -41,6 +41,15 @@ function formatLogDate(iso?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
+// Timezone-safe ISO (YYYY-MM-DD) from a Date. Uses local components so we
+// never drift a day backward when the server runs in UTC.
+function toISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function ProductSkuSelect({
   value,
   selectedLabel,
@@ -191,6 +200,10 @@ export default function OrderForm({
   const [bookingError, setBookingError] = useState<string>("");
   const [copiedWaybill, setCopiedWaybill] = useState(false);
 
+  // Date override escape hatch. Off by default — pickup/return stay derived
+  // from Event Date + Event Days, matching the customer checkout flow.
+  const [datesOverridden, setDatesOverridden] = useState(false);
+
   // SSR-safe origin gate: empty on server → empty on first client render → match.
   // Populated in useEffect after hydration, so origin-dependent links appear post-mount.
   const [mountedOrigin, setMountedOrigin] = useState("");
@@ -250,7 +263,7 @@ export default function OrderForm({
     latitude: initialOrder.latitude ?? null,
     order_method: initialOrder.order_method || "Manual",
     status: initialOrder.status || "Draft",
-    pick_up_method: initialOrder.pick_up_method || "JNE - REG",
+    pick_up_method: initialOrder.pick_up_method || "Self pickup",
     packing_slip_id: initialOrder.packing_slip_id || "",
     payment_method: initialOrder.payment_method || "QRIS (EDC)",
     shipping_fee: Number(initialOrder.shipping_fee) || 0,
@@ -273,7 +286,7 @@ export default function OrderForm({
       latitude: initialOrder.latitude ?? null,
       order_method: initialOrder.order_method || "Manual",
       status: initialOrder.status || "Draft",
-      pick_up_method: initialOrder.pick_up_method || "JNE - REG",
+      pick_up_method: initialOrder.pick_up_method || "Self pickup",
       packing_slip_id: initialOrder.packing_slip_id || "",
       payment_method: initialOrder.payment_method || "QRIS (EDC)",
       shipping_fee: Number(initialOrder.shipping_fee) || 0,
@@ -292,6 +305,12 @@ export default function OrderForm({
     setBookingNote(`KORA Rental ${initialOrder.id} - Handle with care`);
   }, [initialOrder]);
 
+  // Derived fulfilment flags — drive the schedule behaviour and UI guards.
+  const isSelfPickup = (formData.pick_up_method || "")
+    .toLowerCase()
+    .includes("self pickup");
+  const usesShipping = !isSelfPickup;
+
   const isAddressLocked = useMemo(
     () =>
       isWebsite ||
@@ -300,7 +319,8 @@ export default function OrderForm({
     [isWebsite, formData.status, formData.packing_slip_id],
   );
 
-  // Booking window — mirrors server-side guard
+  // Booking window — only enforced for website orders. Manual admins book at
+  // will because they're operating the showroom on behalf of a walk-in.
   const daysUntilPickup = useMemo(() => {
     if (!formData.pickup_date) return null;
     const [py, pm, pd] = formData.pickup_date.split("-").map(Number);
@@ -312,8 +332,12 @@ export default function OrderForm({
   }, [formData.pickup_date]);
 
   const canBookAtAll =
-    daysUntilPickup !== null && daysUntilPickup <= bookingWindowDays;
-  const canBookNow = daysUntilPickup !== null && daysUntilPickup <= 0;
+    isWebsite
+      ? daysUntilPickup !== null && daysUntilPickup <= bookingWindowDays
+      : daysUntilPickup !== null;
+  const canBookNow = isWebsite
+    ? daysUntilPickup !== null && daysUntilPickup <= 0
+    : daysUntilPickup !== null && daysUntilPickup <= 0;
 
   const bookingWindowOpensOn = useMemo(() => {
     if (!formData.pickup_date) return null;
@@ -360,7 +384,9 @@ export default function OrderForm({
     })),
   );
 
+  // Courier lead time — ignored for showroom pickup (self pickup).
   const leadTimeDays = useMemo(() => {
+    if (isSelfPickup) return 0;
     if (!formData.postal_code) return 1;
     const prefix2 = formData.postal_code.slice(0, 2);
     const match = deliveryLeadTimes.find((lead: any) => {
@@ -371,7 +397,68 @@ export default function OrderForm({
       return lead.prefix.startsWith(prefix2);
     });
     return match ? Number(match.days) : 1;
-  }, [formData.postal_code, deliveryLeadTimes]);
+  }, [formData.postal_code, deliveryLeadTimes, isSelfPickup]);
+
+  // ── Date derivation ───────────────────────────────────────────────────────
+  // Mirrors CheckoutClient exactly:
+  //   Pickup = Event Date − lead days (self pickup → lead = 0)
+  //   Return = Event Date + event days + 1
+  const recomputeDates = (
+    eventStartDate: string,
+    eventDays: number,
+    postalCode: string,
+    selfPickup: boolean,
+  ) => {
+    if (!eventStartDate) return { pickup_date: "", return_date: "" };
+    const [y, m, d] = eventStartDate.split("-").map(Number);
+    if (!y || !m || !d) return { pickup_date: "", return_date: "" };
+    const eventDate = new Date(y, m - 1, d);
+    if (isNaN(eventDate.getTime())) {
+      return { pickup_date: "", return_date: "" };
+    }
+
+    let leadDays = 0;
+    if (!selfPickup && postalCode) {
+      const prefix2 = postalCode.slice(0, 2);
+      const match = deliveryLeadTimes.find((lead: any) => {
+        if (lead.prefix.includes("-")) {
+          const [s, e] = lead.prefix.replace("xxx", "").split("-");
+          return prefix2 >= s && prefix2 <= e;
+        }
+        return lead.prefix.startsWith(prefix2);
+      });
+      leadDays = match ? Number(match.days) : 1;
+    }
+
+    const pickupD = new Date(eventDate);
+    pickupD.setDate(pickupD.getDate() - leadDays);
+
+    const returnD = new Date(eventDate);
+    returnD.setDate(returnD.getDate() + (Number(eventDays) || 1) + 1);
+
+    return {
+      pickup_date: toISO(pickupD),
+      return_date: toISO(returnD),
+    };
+  };
+
+  // Initial override detection — if the stored dates diverge from the derived
+  // formula, respect the admin's original intent by starting with override on.
+  useEffect(() => {
+    if (!initialOrder.event_start_date) return;
+    const derived = recomputeDates(
+      initialOrder.event_start_date,
+      initialOrder.event_days || 1,
+      initialOrder.postal_code || "",
+      (initialOrder.pick_up_method || "").toLowerCase().includes("self pickup"),
+    );
+    const diverges =
+      derived.pickup_date &&
+      (derived.pickup_date !== (initialOrder.pickup_date || "") ||
+        derived.return_date !== (initialOrder.return_date || ""));
+    if (diverges) setDatesOverridden(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialOrder.id]);
 
   const handleEventDateChange = (val: string) => {
     if (!val) {
@@ -383,21 +470,69 @@ export default function OrderForm({
       }));
       return;
     }
-    const [y, m, d] = val.split("-").map(Number);
-    const eventDate = new Date(y, m - 1, d);
-    if (isNaN(eventDate.getTime())) return;
-    const pickupD = new Date(eventDate);
-    pickupD.setDate(pickupD.getDate() - leadTimeDays);
-    const returnD = new Date(eventDate);
-    returnD.setDate(returnD.getDate() + (Number(formData.event_days) || 1) + 1);
-    setFormData((p) => ({
-      ...p,
-      event_start_date: val,
-      pickup_date: pickupD.toISOString().split("T")[0],
-      return_date: returnD.toISOString().split("T")[0],
-    }));
+    setFormData((p) => {
+      const computed = datesOverridden
+        ? { pickup_date: p.pickup_date, return_date: p.return_date }
+        : recomputeDates(val, p.event_days, p.postal_code, isSelfPickup);
+      return { ...p, event_start_date: val, ...computed };
+    });
   };
 
+  const handleEventDaysChange = (val: number) => {
+    const days = Math.max(1, val || 1);
+    setFormData((p) => {
+      const computed = datesOverridden
+        ? { pickup_date: p.pickup_date, return_date: p.return_date }
+        : recomputeDates(p.event_start_date, days, p.postal_code, isSelfPickup);
+      return { ...p, event_days: days, ...computed };
+    });
+  };
+
+  const reDeriveIfNotOverridden = (
+    postalCode: string,
+    selfPickup: boolean,
+    next: Partial<typeof formData>,
+  ) => {
+    setFormData((p) => {
+      if (datesOverridden || !p.event_start_date) return { ...p, ...next };
+      const computed = recomputeDates(
+        p.event_start_date,
+        p.event_days,
+        postalCode,
+        selfPickup,
+      );
+      return { ...p, ...next, ...computed };
+    });
+  };
+
+  const handlePickupMethodChange = (method: string) => {
+    const nextSelfPickup = method.toLowerCase().includes("self pickup");
+    setFormData((p) => {
+      const computed =
+        datesOverridden || !p.event_start_date
+          ? { pickup_date: p.pickup_date, return_date: p.return_date }
+          : recomputeDates(
+              p.event_start_date,
+              p.event_days,
+              p.postal_code,
+              nextSelfPickup,
+            );
+      return {
+        ...p,
+        pick_up_method: method,
+        shipping_fee: nextSelfPickup ? 0 : p.shipping_fee,
+        ...computed,
+      };
+    });
+  };
+
+  const handlePostalCodeChange = (postalCode: string) => {
+    reDeriveIfNotOverridden(postalCode, isSelfPickup, {
+      postal_code: postalCode,
+    });
+  };
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleAddLine = () =>
     setProducts([
       ...products,
@@ -430,23 +565,22 @@ export default function OrderForm({
     if (cust?.addresses && cust.addresses.length > 0) {
       const a =
         cust.addresses.find((x: any) => x.is_default) || cust.addresses[0];
-      setFormData((p) => ({
-        ...p,
+      const next = {
         street_address: a.street_address || "",
         city: a.city || "",
         postal_code: a.postal_code || "",
         latitude: a.latitude ?? null,
         longitude: a.longitude ?? null,
-      }));
+      };
+      reDeriveIfNotOverridden(a.postal_code || "", isSelfPickup, next);
     } else {
-      setFormData((p) => ({
-        ...p,
+      reDeriveIfNotOverridden("", isSelfPickup, {
         street_address: "",
         city: "",
         postal_code: "",
         latitude: null,
         longitude: null,
-      }));
+      });
     }
     setIsCustomerDropdownOpen(false);
     setCustomerSearch("");
@@ -482,7 +616,7 @@ export default function OrderForm({
         0,
         productsSubtotal +
           totalDeposit +
-          Number(formData.shipping_fee) -
+          (isSelfPickup ? 0 : Number(formData.shipping_fee)) -
           Number(formData.store_credit_applied),
       ),
     [
@@ -490,6 +624,7 @@ export default function OrderForm({
       totalDeposit,
       formData.shipping_fee,
       formData.store_credit_applied,
+      isSelfPickup,
     ],
   );
 
@@ -511,6 +646,7 @@ export default function OrderForm({
     setErrorMsg("");
     const res = await saveOrder({
       ...formData,
+      shipping_fee: isSelfPickup ? 0 : formData.shipping_fee,
       customer_id: selectedCustomerId,
       products,
     });
@@ -704,14 +840,13 @@ export default function OrderForm({
         }),
       );
 
-      setFormData((p) => ({
-        ...p,
+      reDeriveIfNotOverridden(added.postal_code || "", isSelfPickup, {
         street_address: added.street_address,
         city: added.city,
         postal_code: added.postal_code || "",
         latitude: added.latitude ?? null,
         longitude: added.longitude ?? null,
-      }));
+      });
 
       setIsAddressModalOpen(false);
       setNewAddress({
@@ -786,7 +921,7 @@ export default function OrderForm({
             </button>
           )}
 
-          {formData.status === "Ordered" && (
+          {formData.status === "Ordered" && !isSelfPickup && (
             <button
               type="button"
               onClick={handleOpenBookingModal}
@@ -991,6 +1126,7 @@ export default function OrderForm({
               </div>
             </div>
 
+            {/* Schedule — mirrors the customer checkout flow */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
@@ -1008,7 +1144,7 @@ export default function OrderForm({
               </div>
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
-                  Event Start Date <span className="text-bad">*</span>
+                  Event Date <span className="text-bad">*</span>
                 </label>
                 <input
                   type="date"
@@ -1031,44 +1167,99 @@ export default function OrderForm({
                   disabled={isWebsite || isAddressLocked}
                   value={formData.event_days}
                   onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      event_days: parseInt(e.target.value) || 1,
-                    })
+                    handleEventDaysChange(parseInt(e.target.value) || 1)
                   }
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
               <div>
-                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
-                  Pick Up / Send Date <span className="text-bad">*</span>
+                <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1 flex items-center gap-1.5">
+                  Pickup / Send
+                  {!datesOverridden && (
+                    <span className="text-[9.5px] text-muted/70 tracking-normal normal-case font-normal">
+                      (auto)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="date"
-                  disabled={isWebsite || isAddressLocked}
+                  disabled={isWebsite || isAddressLocked || !datesOverridden}
                   value={formData.pickup_date}
                   onChange={(e) =>
                     setFormData({ ...formData, pickup_date: e.target.value })
                   }
-                  className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                  className={`w-full text-[13px] border border-line rounded-lg px-3 py-2 ${
+                    datesOverridden
+                      ? "bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                      : "bg-[#F6F4EF] text-muted cursor-not-allowed"
+                  }`}
                 />
+                {!datesOverridden && formData.event_start_date && (
+                  <p className="text-[10px] text-muted mt-1 leading-tight">
+                    {isSelfPickup
+                      ? "= Event Date (showroom pickup)"
+                      : `= Event Date − ${leadTimeDays} day${leadTimeDays === 1 ? "" : "s"} courier lead`}
+                  </p>
+                )}
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
-                Return Date <span className="text-bad">*</span>
+              <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1 flex items-center gap-1.5">
+                Return Deadline
+                {!datesOverridden && (
+                  <span className="text-[9.5px] text-muted/70 tracking-normal normal-case font-normal">
+                    (auto)
+                  </span>
+                )}
               </label>
               <input
                 type="date"
-                disabled={isWebsite || isAddressLocked}
+                disabled={isWebsite || isAddressLocked || !datesOverridden}
                 value={formData.return_date}
                 onChange={(e) =>
                   setFormData({ ...formData, return_date: e.target.value })
                 }
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                className={`w-full text-[13px] border border-line rounded-lg px-3 py-2 ${
+                  datesOverridden
+                    ? "bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
+                    : "bg-[#F6F4EF] text-muted cursor-not-allowed"
+                }`}
               />
+              {!datesOverridden && formData.event_start_date && (
+                <p className="text-[10px] text-muted mt-1 leading-tight">
+                  = Event Date + {formData.event_days} day
+                  {formData.event_days === 1 ? "" : "s"} + 1
+                </p>
+              )}
             </div>
+
+            {/* Escape hatch — off by default so the derived flow is the happy path */}
+            {!isWebsite && !isAddressLocked && (
+              <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={datesOverridden}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setDatesOverridden(next);
+                    if (!next && formData.event_start_date) {
+                      const computed = recomputeDates(
+                        formData.event_start_date,
+                        formData.event_days,
+                        formData.postal_code,
+                        isSelfPickup,
+                      );
+                      setFormData((p) => ({ ...p, ...computed }));
+                    }
+                  }}
+                  className="rounded border-line text-wine focus:ring-wine"
+                />
+                <span className="text-[11px] text-muted">
+                  Manually adjust pickup and return dates
+                </span>
+              </label>
+            )}
 
             <div className="pt-2 border-t border-line">
               <div className="flex items-center justify-between mb-1.5">
@@ -1102,16 +1293,18 @@ export default function OrderForm({
                       const addr = customerAddresses.find(
                         (a: any) => String(a.id) === e.target.value,
                       );
-                      if (addr) {
-                        setFormData((prev) => ({
-                          ...prev,
+                      if (!addr) return;
+                      reDeriveIfNotOverridden(
+                        addr.postal_code || "",
+                        isSelfPickup,
+                        {
                           street_address: addr.street_address || "",
                           city: addr.city || "",
                           postal_code: addr.postal_code || "",
                           latitude: addr.latitude ?? null,
                           longitude: addr.longitude ?? null,
-                        }));
-                      }
+                        },
+                      );
                     }}
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   >
@@ -1154,9 +1347,7 @@ export default function OrderForm({
                   placeholder="Postal Code"
                   disabled={isWebsite || isAddressLocked}
                   value={formData.postal_code}
-                  onChange={(e) =>
-                    setFormData({ ...formData, postal_code: e.target.value })
-                  }
+                  onChange={(e) => handlePostalCodeChange(e.target.value)}
                   className="text-xs border border-line rounded px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 />
               </div>
@@ -1207,17 +1398,17 @@ export default function OrderForm({
                 <select
                   disabled={isWebsite || isAddressLocked}
                   value={formData.pick_up_method}
-                  onChange={(e) =>
-                    setFormData({ ...formData, pick_up_method: e.target.value })
-                  }
+                  onChange={(e) => handlePickupMethodChange(e.target.value)}
                   className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                 >
+                  {!isWebsite && (
+                    <option value="Self pickup">Self pickup (Diambil)</option>
+                  )}
                   <option value="JNE - REG">JNE - REG</option>
                   <option value="JNE - YES">JNE - YES</option>
                   <option value="SiCepat - REG">SiCepat - REG</option>
                   <option value="Gosend - Instant">Gosend - Instant</option>
                   <option value="Paxel - Medium">Paxel - Medium</option>
-                  <option value="Self pickup">Self pickup (Diambil)</option>
                 </select>
               </div>
 
@@ -1295,8 +1486,9 @@ export default function OrderForm({
                     className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
                   />
                   <p className="text-[10.5px] text-muted mt-1">
-                    Or use the Book Biteship button above to auto-fill via
-                    courier.
+                    {isSelfPickup
+                      ? "Self pickup — no waybill needed. The customer collects from the showroom."
+                      : "Or use the Book Biteship button above to auto-fill via courier."}
                   </p>
                 </div>
               )}
@@ -1429,11 +1621,18 @@ export default function OrderForm({
             </span>
           </div>
           <div className="flex justify-between items-center py-2">
-            <span className="text-muted">Shipping fee (ongkir)</span>
+            <span className="text-muted">
+              Shipping fee (ongkir)
+              {isSelfPickup && (
+                <span className="ml-2 text-[10px] text-muted/70">
+                  — not applicable for showroom pickup
+                </span>
+              )}
+            </span>
             <RupiahInput
-              value={formData.shipping_fee}
+              value={isSelfPickup ? 0 : formData.shipping_fee}
               onChange={(v) => setFormData({ ...formData, shipping_fee: v })}
-              disabled={isWebsite || isAddressLocked}
+              disabled={isWebsite || isAddressLocked || isSelfPickup}
               className="w-32 text-right"
             />
           </div>
@@ -1925,7 +2124,7 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* MODAL: ADD ADDRESS — now with AddressMapPicker, matching the customer page */}
+      {/* MODAL: ADD ADDRESS */}
       {isAddressModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-card border border-line rounded-xl w-full max-w-xl p-6 shadow-xl relative my-8 animate-in fade-in zoom-in-95">

@@ -5,6 +5,7 @@ import { getCurrentAdmin } from "./auth";
 import { createBiteshipOrder } from "@/lib/biteship";
 import { revalidatePath } from "next/cache";
 import { resolveReturnCourier } from "@/lib/courierMap";
+import { formatRupiah } from "@/lib/utils";
 
 export async function createReturnRequest(payload: {
   order_id: string;
@@ -271,7 +272,6 @@ export async function saveReturnResi(
   if (!resi.trim())
     return { error: "Return Resi / Waybill number cannot be empty." };
 
-  // Validate courier is a known key (upper/lower normalized)
   try {
     resolveReturnCourier(courier);
   } catch (e: any) {
@@ -406,9 +406,12 @@ export async function releaseDepositAndCompleteReturn(
   if (!payload.refund_destination)
     return { error: "Refund destination is required." };
 
+  // Pull the customer alongside the order so we can notify on release.
   const { data: ret, error: retErr } = await supabase
     .from("returns")
-    .select("*, orders(id, return_date, order_products(item_sku))")
+    .select(
+      "*, orders(id, return_date, order_products(item_sku)), customers(id, first_name, last_name, phone)",
+    )
     .eq("id", returnId)
     .single();
   if (retErr || !ret) return { error: "Return not found." };
@@ -432,7 +435,6 @@ export async function releaseDepositAndCompleteReturn(
   const shippingCost = Math.max(0, Number(payload.return_shipping_cost) || 0);
   const netRefund = Math.max(0, depositHeld - qcDeduction - shippingCost);
 
-  // Server-side late_days recompute
   const deadline = ret.orders?.return_date
     ? new Date(ret.orders.return_date)
     : null;
@@ -514,6 +516,47 @@ export async function releaseDepositAndCompleteReturn(
     },
   });
 
+  // --- WhatsApp notification: deposit_refunded -----------------------------
+  const customer = (ret as any).customers as
+    | { first_name?: string; last_name?: string; phone?: string }
+    | undefined;
+
+  if (customer?.phone) {
+    const customerName =
+      `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+      "there";
+
+    const qcParts: string[] = [];
+    if (payload.has_stains) qcParts.push("stains");
+    if (payload.has_damage) qcParts.push("damage");
+    if (payload.is_incomplete) qcParts.push("missing items");
+    if (payload.has_odor) qcParts.push("odor");
+
+    const qcSummary =
+      qcParts.length > 0
+        ? `QC notes: ${qcParts.join(", ")}. Deduction: ${formatRupiah(qcDeduction)}.`
+        : "All items passed QC — no deductions.";
+
+    try {
+      const { emitWa } = await import("@/lib/notifications");
+      await emitWa(supabase, admin, {
+        entity: "return",
+        entityId: returnId,
+        kind: "deposit_refunded",
+        to: customer.phone,
+        vars: {
+          CUSTOMER_NAME: customerName,
+          REFUND_AMOUNT: formatRupiah(netRefund),
+          QC_SUMMARY: qcSummary,
+        },
+        fallbackTemplate:
+          "Hi [CUSTOMER_NAME], your deposit refund of [REFUND_AMOUNT] has been transferred. [QC_SUMMARY] Thank you for choosing KORA!",
+      });
+    } catch {
+      // Non-blocking
+    }
+  }
+
   revalidatePath("/admin/returns");
   revalidatePath(`/admin/returns/${returnId}`);
   revalidatePath("/admin/orders");
@@ -544,7 +587,7 @@ export async function addReturnNote(returnId: string, note: string) {
 }
 
 // -----------------------------------------------------------------------------
-// NEW: Remind customer (WA) — reusable server-side emit
+// Remind customer (WA) — routed through the Fonnte-backed emitWa hub
 // -----------------------------------------------------------------------------
 export async function remindReturnCustomer(returnId: string) {
   const supabase = await createClient();
@@ -567,19 +610,20 @@ export async function remindReturnCustomer(returnId: string) {
     const res = await emitWa(supabase, admin, {
       entity: "return",
       entityId: returnId,
-      kind: "return_due",
+      kind: "return_reminder",
       to: phone,
       vars: {
         CUSTOMER_NAME:
           `${ret.customers?.first_name || ""} ${ret.customers?.last_name || ""}`.trim(),
         ORDER_ID: ret.orders?.id || "",
         RETURN_DATE: ret.orders?.return_date || "",
+        RETURN_DEADLINE: ret.orders?.return_date || "",
       },
       fallbackTemplate:
         "Hi [CUSTOMER_NAME], gentle reminder to return your rental for order [ORDER_ID] by [RETURN_DATE].",
     });
     revalidatePath(`/admin/returns/${returnId}`);
-    return { success: true, waUrl: res.waUrl };
+    return { success: true, waUrl: res.waUrl, sent: res.sent };
   } catch (e: any) {
     return { error: e.message };
   }

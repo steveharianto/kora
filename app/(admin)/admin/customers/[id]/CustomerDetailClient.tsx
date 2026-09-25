@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import {
   updateCustomer,
   deleteCustomer,
@@ -18,12 +19,18 @@ export default function CustomerDetailClient({
   customer,
   addresses,
   ktpLogs,
+  ktpPhotoUrl,
   orders,
   auditLogs,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // KTP review state
+  const [ktpNotes, setKtpNotes] = useState("");
+  const [ktpBusy, setKtpBusy] = useState(false);
+  const [ktpFlash, setKtpFlash] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   // Profile Form State
   const [profile, setProfile] = useState({
@@ -49,6 +56,13 @@ export default function CustomerDetailClient({
     });
   }, [customer]);
 
+  // Auto-clear the KTP flash after a few seconds
+  useEffect(() => {
+    if (!ktpFlash) return;
+    const t = setTimeout(() => setKtpFlash(null), 4000);
+    return () => clearTimeout(t);
+  }, [ktpFlash]);
+
   // Address Modal State
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<any>(null);
@@ -61,9 +75,6 @@ export default function CustomerDetailClient({
     longitude: null as number | null,
     is_default: false,
   });
-
-  // KTP Notes
-  const [ktpNotes, setKtpNotes] = useState("");
 
   // Save Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -146,13 +157,38 @@ export default function CustomerDetailClient({
     setLoading(false);
   };
 
+  // KTP Review — approve or reject (reject requires a reason)
   const handleKtpReview = async (newStatus: "Verified" | "Not Submitted") => {
-    setLoading(true);
-    await reviewKtp(customer.id, newStatus, ktpNotes);
+    if (newStatus === "Not Submitted" && !ktpNotes.trim()) {
+      setKtpFlash({
+        type: "err",
+        text: "Please add a rejection reason before resetting the KTP.",
+      });
+      return;
+    }
+
+    setKtpBusy(true);
+    setKtpFlash(null);
+
+    const res = await reviewKtp(customer.id, newStatus, ktpNotes.trim());
+
+    setKtpBusy(false);
+
+    if (res?.error) {
+      setKtpFlash({ type: "err", text: res.error });
+      return;
+    }
+
     setKtpNotes("");
     setProfile((prev) => ({ ...prev, status: newStatus }));
+    setKtpFlash({
+      type: "ok",
+      text:
+        newStatus === "Verified"
+          ? "KTP approved — WhatsApp notification sent."
+          : "KTP rejected — WhatsApp notification sent.",
+    });
     router.refresh();
-    setLoading(false);
   };
 
   const handleDeleteCustomer = async () => {
@@ -167,6 +203,8 @@ export default function CustomerDetailClient({
     }
     router.push("/admin/customers");
   };
+
+  const latestKtp = ktpLogs?.[0] ?? null;
 
   return (
     <div>
@@ -446,7 +484,58 @@ export default function CustomerDetailClient({
               KTP Verification
             </h3>
 
-            <div className="p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6] mb-4">
+            {/* Photo preview */}
+            <div className="mb-4">
+              {ktpPhotoUrl ? (
+                <div className="border border-line rounded-lg overflow-hidden bg-[#F6F4EF]">
+                  <a
+                    href={ktpPhotoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block bg-black/5"
+                    title="Open full size"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={ktpPhotoUrl}
+                      alt="Customer KTP"
+                      className="w-full h-auto max-h-[320px] object-contain mx-auto"
+                    />
+                  </a>
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-line bg-white">
+                    <span className="text-[11px] text-muted">
+                      Uploaded{" "}
+                      {latestKtp?.created_at
+                        ? new Date(latestKtp.created_at).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </span>
+                    <a
+                      href={ktpPhotoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-wine-ink hover:underline inline-flex items-center gap-1"
+                    >
+                      Open full size
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="border border-dashed border-line rounded-lg py-8 text-center bg-[#FDFCFA]">
+                  <p className="text-xs text-muted">
+                    No KTP photo uploaded yet.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3.5 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs text-muted">
                   Current Verification Status:
@@ -455,33 +544,55 @@ export default function CustomerDetailClient({
                   {customer.status}
                 </span>
               </div>
+
               <textarea
                 rows={2}
-                placeholder="Internal verification notes..."
+                placeholder={
+                  customer.status === "KTP Pending"
+                    ? "Rejection reason (required if rejecting)…"
+                    : "Internal verification notes…"
+                }
                 value={ktpNotes}
                 onChange={(e) => setKtpNotes(e.target.value)}
                 className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-white focus:outline-none"
               />
+
+              {ktpFlash && (
+                <div
+                  className={`mt-2 text-[11px] font-medium rounded-md px-2 py-1 ${
+                    ktpFlash.type === "ok"
+                      ? "bg-ok-bg text-ok"
+                      : "bg-bad-bg text-bad"
+                  }`}
+                >
+                  {ktpFlash.text}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-2">
                 <button
                   type="button"
                   onClick={() => handleKtpReview("Not Submitted")}
-                  className="px-3 py-1 bg-white border border-line text-xs rounded-md hover:bg-bad-bg hover:text-bad cursor-pointer"
+                  disabled={ktpBusy || customer.status === "Not Submitted"}
+                  className="px-3 py-1 bg-white border border-line text-xs rounded-md hover:bg-bad-bg hover:text-bad cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                 >
+                  <XCircle className="w-3.5 h-3.5" />
                   Reject / Reset
                 </button>
                 <button
                   type="button"
                   onClick={() => handleKtpReview("Verified")}
-                  className="px-3 py-1 bg-wine text-white text-xs rounded-md hover:bg-[#181E15] cursor-pointer"
+                  disabled={ktpBusy || customer.status === "Verified"}
+                  className="px-3 py-1 bg-wine text-white text-xs rounded-md hover:bg-[#181E15] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                 >
-                  Approve KTP
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {ktpBusy ? "Processing…" : "Approve KTP"}
                 </button>
               </div>
             </div>
 
             {/* KTP Logs */}
-            <div className="text-xs">
+            <div className="text-xs mt-4">
               <h4 className="font-semibold text-muted uppercase text-[10px] tracking-wider mb-2">
                 Review History
               </h4>
@@ -494,7 +605,7 @@ export default function CustomerDetailClient({
                   {ktpLogs.map((log: any) => (
                     <li
                       key={log.id}
-                      className="border-b border-line pb-1.5 text-xs"
+                      className="border-b border-line pb-1.5 text-xs last:border-none"
                     >
                       <span className="font-medium">{log.status}</span> —{" "}
                       {log.description || "No notes"}{" "}

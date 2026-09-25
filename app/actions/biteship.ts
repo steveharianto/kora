@@ -152,7 +152,6 @@ export async function dispatchOrderViaBiteship(
     biteshipResult.id ||
     `BTS-${Date.now()}`;
 
-  // SESUDAH
   const trackingId = biteshipResult.tracking_id || null;
   const trackingUrl =
     biteshipResult.courier?.link ||
@@ -195,6 +194,31 @@ export async function dispatchOrderViaBiteship(
       early_dispatch: !isToday,
     },
   });
+
+  // --- WhatsApp notification: package_shipped ------------------------------
+  // Uses the same emitWa hub as every other notification so the template is
+  // read from app_settings.notifications.package_shipped and the send is
+  // logged to admin_audit_logs as WA_DISPATCHED (success or failure).
+  if (order.customers?.phone) {
+    try {
+      const { emitWa } = await import("@/lib/notifications");
+      await emitWa(supabase, admin, {
+        entity: "order",
+        entityId: orderId,
+        kind: "package_shipped",
+        to: order.customers.phone,
+        vars: {
+          CUSTOMER_NAME: customerName,
+          ORDER_ID: orderId,
+          TRACKING_LINK: trackingUrl || waybill,
+        },
+        fallbackTemplate:
+          "Hi [CUSTOMER_NAME], your order [ORDER_ID] is on its way! Track courier progress here: [TRACKING_LINK].",
+      });
+    } catch {
+      // Non-blocking: dispatch already succeeded, don't roll back on WA failure.
+    }
+  }
 
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);

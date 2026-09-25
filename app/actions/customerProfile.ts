@@ -139,18 +139,32 @@ export async function setDefaultCustomerAddress(addressId: number) {
 }
 
 /* ── KTP upload ──────────────────────────────────────────────────── */
-
-export async function uploadCustomerKtp(url: string) {
+export async function uploadCustomerKtp(input: {
+  photoUrl: string;
+  photoPath: string;
+}) {
   const session = await getCurrentCustomer();
   if (!session) return { error: "Unauthorized." };
 
-  if (!url) return { error: "No file URL provided." };
+  if (!input.photoUrl || !input.photoPath) {
+    return { error: "Missing KTP file details." };
+  }
 
   const supabase = await createClient();
 
+  // Look up the previous KTP so we can clean up its storage object.
+  const { data: prev } = await supabase
+    .from("ktp_logs")
+    .select("photo_path")
+    .eq("customer_id", session.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const { error: logErr } = await supabase.from("ktp_logs").insert({
     customer_id: session.id,
-    photo_url: url,
+    photo_url: input.photoUrl,
+    photo_path: input.photoPath,
     status: "KTP Pending",
     description: "Uploaded by customer via storefront",
   });
@@ -164,6 +178,11 @@ export async function uploadCustomerKtp(url: string) {
 
   if (upErr) return { error: upErr.message };
 
+  // Best-effort: drop the previous file so we don't accumulate private data.
+  if (prev?.photo_path && prev.photo_path !== input.photoPath) {
+    await supabase.storage.from("ktp-photos").remove([prev.photo_path]);
+  }
+
   revalidatePath("/account");
   return { success: true };
 }
@@ -175,7 +194,10 @@ export async function deleteCustomerAccount() {
   if (!session) return { error: "Unauthorized." };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("customers").delete().eq("id", session.id);
+  const { error } = await supabase
+    .from("customers")
+    .delete()
+    .eq("id", session.id);
   if (error) {
     return {
       error:
