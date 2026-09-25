@@ -137,3 +137,81 @@ export async function getBiteshipTracking(waybillId: string, courierCode: string
     return { error: err.message };
   }
 }
+
+/* ── Shipping rate quotes ────────────────────────────────────────── */
+
+export interface BiteshipRateRequest {
+  origin_postal_code: string;
+  destination_postal_code: string;
+  couriers: string; // comma-separated lowercase codes
+  items: BiteshipItem[];
+}
+
+export interface BiteshipRateOption {
+  courier_company: string; // "jne" | "sicepat" | "gojek" | "paxel" | ...
+  courier_type: string;    // "reg" | "yes" | "instant" | "medium" | ...
+  courier_name?: string;
+  price: number;
+  etd?: string;            // "1-2 days", "2 hours", etc.
+  duration?: string;
+}
+
+export async function getBiteshipRates(
+  payload: BiteshipRateRequest,
+): Promise<{ success: boolean; rates?: BiteshipRateOption[]; error?: string }> {
+  const apiKey = process.env.BITESHIP_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: "BITESHIP_API_KEY is not configured." };
+  }
+
+  try {
+    const res = await fetch(`${BITESHIP_API_URL}/rates/couriers`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        origin_postal_code: payload.origin_postal_code,
+        destination_postal_code: payload.destination_postal_code,
+        couriers: payload.couriers,
+        items: payload.items,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error:
+          data?.error ||
+          data?.message ||
+          "Failed to fetch Biteship rates.",
+      };
+    }
+
+    // Biteship /rates/couriers returns `courier_code` and
+    // `courier_service_code`, which differ from the /orders response shape.
+    return {
+      success: true,
+      rates: (data.pricing || []).map((r: any) => ({
+        courier_company: r.courier_code || r.courier_company || "",
+        courier_type: r.courier_service_code || r.courier_type || "",
+        courier_name:
+          r.courier_name || r.courier_service_name || r.courier_code || "",
+        price: Number(r.price) || 0,
+        etd:
+          r.shipment_duration_range && r.shipment_duration_unit
+            ? `${r.shipment_duration_range} ${r.shipment_duration_unit}`
+            : r.duration || r.etd || "",
+        duration: r.duration,
+      })),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Network error contacting Biteship.",
+    };
+  }
+}

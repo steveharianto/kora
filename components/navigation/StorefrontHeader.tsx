@@ -27,25 +27,22 @@ export default function StorefrontHeader() {
 
     const customer = await getCurrentCustomer();
 
-    // 1. Must be logged in
     if (!customer) {
-      router.push("/account/login?redirect=/shop");
+      router.push("/account/login?redirect=/checkout");
       return;
     }
 
-    // 2. Must have KTP on file
     if (customer.status === "Not Submitted") {
       setOpenKtpModal(true);
       return;
     }
 
-    // 3. Proceed (real checkout is Phase 3)
-    showToast("Checkout coming soon — message us on WhatsApp to complete your booking.");
+    router.push("/checkout");
   };
 
   const handleKtpProceed = () => {
     setOpenKtpModal(false);
-    showToast("Checkout coming soon — message us on WhatsApp to complete your booking.");
+    router.push("/checkout");
   };
 
   return (
@@ -78,9 +75,15 @@ export default function StorefrontHeader() {
                   {[
                     { label: "All", href: "/shop" },
                     { label: "New Arrivals", href: "/shop?filter=new" },
-                    { label: "Available This Week", href: "/shop?filter=available-now" },
+                    {
+                      label: "Available This Week",
+                      href: "/shop?filter=available-now",
+                    },
                     { label: "Dresses", href: "/shop?category=dresses" },
-                    { label: "Accessories", href: "/shop?category=accessories" },
+                    {
+                      label: "Accessories",
+                      href: "/shop?category=accessories",
+                    },
                   ].map((item) => (
                     <Link
                       key={item.href}
@@ -94,20 +97,34 @@ export default function StorefrontHeader() {
               )}
             </div>
 
-            <Link href="/how-to-rent" className="hover:text-[#1F261C] transition-colors py-2">
+            <Link
+              href="/how-to-rent"
+              className="hover:text-[#1F261C] transition-colors py-2"
+            >
               How To Rent
             </Link>
-            <Link href="/about" className="hover:text-[#1F261C] transition-colors py-2">
+            <Link
+              href="/about"
+              className="hover:text-[#1F261C] transition-colors py-2"
+            >
               About Kora
             </Link>
           </nav>
 
           <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
-            <Link href="/search" aria-label="Search" className="hover:text-[#1F261C] transition-colors">
+            <Link
+              href="/search"
+              aria-label="Search"
+              className="hover:text-[#1F261C] transition-colors"
+            >
               <Search className="w-[18px] h-[18px] stroke-[1.8]" />
             </Link>
 
-            <Link href="/account" aria-label="Account" className="hover:text-[#1F261C] transition-colors">
+            <Link
+              href="/account"
+              aria-label="Account"
+              className="hover:text-[#1F261C] transition-colors"
+            >
               <User className="w-[19px] h-[19px] stroke-[1.8]" />
             </Link>
 

@@ -6,7 +6,12 @@ import { revalidatePath } from "next/cache";
 
 const CANCELLATION_FEE = 100000;
 const FEE_WINDOW_HOURS = 24;
-const BLOCKING_STATUSES = ["Cancelled", "Completed", "Conflict Evicted", "No Show"];
+const BLOCKING_STATUSES = [
+  "Cancelled",
+  "Completed",
+  "Conflict Evicted",
+  "No Show",
+];
 
 /* ── Cancel ─────────────────────────────────────────────────────── */
 
@@ -18,7 +23,7 @@ export async function cancelFitting(fittingId: string) {
 
   const { data: fitting } = await supabase
     .from("fittings")
-    .select("id, date, slot, status, customer_id")
+    .select("id, date, slot, status, customer_id, fee_payment_status, after_hours_fee")
     .eq("id", fittingId)
     .eq("customer_id", session.id)
     .maybeSingle();
@@ -36,7 +41,22 @@ export async function cancelFitting(fittingId: string) {
     return { error: "This session has already passed." };
   }
 
+  const wasPaid = (fitting as any).fee_payment_status === "Paid";
+  const paidAmount = Number((fitting as any).after_hours_fee) || 0;
   const fee = hoursUntil < FEE_WINDOW_HOURS ? CANCELLATION_FEE : 0;
+
+  let refundStatus: "n/a" | "Pending" | "Forfeited" = "n/a";
+  let refundAmount = 0;
+
+  if (wasPaid) {
+    if (hoursUntil < FEE_WINDOW_HOURS) {
+      refundStatus = "Forfeited";
+      refundAmount = 0;
+    } else {
+      refundStatus = "Pending";
+      refundAmount = paidAmount;
+    }
+  }
 
   const { error } = await supabase
     .from("fittings")
@@ -45,6 +65,8 @@ export async function cancelFitting(fittingId: string) {
       cancellation_fee: fee,
       cancelled_at: new Date().toISOString(),
       cancelled_by: "Customer",
+      refund_status: refundStatus,
+      refund_amount: refundAmount,
       updated_at: new Date().toISOString(),
     })
     .eq("id", fittingId);
@@ -93,7 +115,9 @@ export async function rescheduleFitting(
     .maybeSingle();
 
   if (conflict) {
-    return { error: "That time slot is no longer available. Please pick another." };
+    return {
+      error: "That time slot is no longer available. Please pick another.",
+    };
   }
 
   const hour = parseInt(data.slot.split(":")[0], 10);

@@ -9,6 +9,8 @@ import {
 } from '@/app/actions/fittings';
 import { formatRupiah } from '@/lib/utils';
 import { MessageCircle, AlertTriangle } from 'lucide-react';
+import { markFittingRefunded } from "@/app/actions/fittings";
+import { BadgeDollarSign } from "lucide-react";
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
@@ -164,6 +166,7 @@ export default function FittingDetailForm({
           <span><strong>Session Cancelled by Inventory Eviction:</strong> {initialFitting.conflict_notes}</span>
         </div>
       )}
+      <RefundBanner fitting={initialFitting} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <div className="bg-card border border-line rounded-[10px] p-5 space-y-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
@@ -323,6 +326,53 @@ export default function FittingDetailForm({
             {converting ? 'Creating Order Draft...' : 'Post the order first'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RefundBanner({ fitting }: { fitting: any }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  if (fitting.refund_status !== "Pending") return null;
+
+  const amount = Number(fitting.refund_amount) || 0;
+
+  const handleMark = async () => {
+    if (!confirm(`Mark Rp ${amount.toLocaleString("id-ID")} as refunded? Confirm you've already processed this in Xendit.`)) return;
+    setLoading(true);
+    setError("");
+    const res = await markFittingRefunded(fitting.id, amount);
+    setLoading(false);
+    if (res.error) setError(res.error);
+    else window.location.reload();
+  };
+
+  return (
+    <div className="mb-5 p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900">
+      <div className="flex items-start gap-3">
+        <BadgeDollarSign className="w-5 h-5 flex-shrink-0 mt-0.5" strokeWidth={1.8} />
+        <div className="flex-1">
+          <p className="font-semibold text-[13px]">
+            Refund owed to customer: Rp {amount.toLocaleString("id-ID")}
+          </p>
+          <p className="text-[12px] mt-1 leading-relaxed">
+            This fitting was paid and has been {fitting.status === "Conflict Evicted" ? "evicted by a paid rental" : "cancelled"}.
+            Process the refund manually in the Xendit dashboard, then mark it here.
+          </p>
+          {error && (
+            <p className="text-[11.5px] text-red-700 mt-2">{error}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleMark}
+          disabled={loading}
+          className="flex-shrink-0 px-4 py-2 bg-amber-700 text-white text-[11px] font-semibold rounded-lg hover:bg-amber-800 transition cursor-pointer disabled:opacity-50"
+        >
+          {loading ? "Saving…" : "Mark Refunded"}
+        </button>
       </div>
     </div>
   );
