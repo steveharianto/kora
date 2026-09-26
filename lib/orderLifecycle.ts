@@ -653,17 +653,35 @@ export async function restoreOrder(
 // -----------------------------------------------------------------------------
 // PUBLIC: notification markers via audit log
 // -----------------------------------------------------------------------------
+
+/**
+ * Payload shape stored on a WA_DISPATCHED audit row.
+ *
+ * `attachment` is only present for kinds that ship a PDF — currently only
+ * `order_posted`. It records the mode (base64 vs url) so we can later
+ * distinguish what actually went to Fonnte without persisting the raw bytes.
+ */
+export interface NotificationDispatchDetails {
+  waUrl: string;
+  sent: boolean;
+  error?: string;
+  fonnteId?: string;
+  attachment?: {
+    url: string | null;
+    filename: string;
+    mode: 'base64' | 'url';
+  } | null;
+}
+
 export async function markNotification(
   supabase: SupabaseClient,
   admin: Admin | null,
   entityType: 'order' | 'return' | 'fitting' | 'customer',
   entityId: string,
   kind: string,
-  value:
-    | string
-    | { waUrl: string; sent: boolean; error?: string; fonnteId?: string },
+  value: string | NotificationDispatchDetails,
 ): Promise<void> {
-  const payload =
+  const payload: NotificationDispatchDetails =
     typeof value === 'string'
       ? { waUrl: value, sent: false }
       : value;
