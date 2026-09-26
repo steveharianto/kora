@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, CheckCircle2, XCircle } from "lucide-react";
+import { ExternalLink, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
 import {
   updateCustomer,
   deleteCustomer,
@@ -206,6 +206,16 @@ export default function CustomerDetailClient({
 
   const latestKtp = ktpLogs?.[0] ?? null;
 
+  // Normalise the stored phone to wa.me format: digits only, country code
+  // prefixed. The DB stores numbers like "62821229228280"; a leading "0"
+  // (occasionally present from manual entry) is upgraded to "62" so the
+  // link still resolves.
+  const waDigits = String(customer.phone || "").replace(/\D/g, "");
+  const waPhone = waDigits.startsWith("0")
+    ? `62${waDigits.slice(1)}`
+    : waDigits;
+  const waUrl = waPhone ? `https://wa.me/${waPhone}` : null;
+
   return (
     <div>
       {/* Header & Badges */}
@@ -233,6 +243,30 @@ export default function CustomerDetailClient({
           >
             {customer.status}
           </span>
+
+          {waUrl ? (
+            <a
+              href={waUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open WhatsApp chat with ${customer.first_name} ${customer.last_name || ""}`.trim()}
+              className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#25D366] hover:bg-[#F4FBF5] transition cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <MessageCircle className="w-4 h-4 text-[#25D366]" strokeWidth={1.8} />
+              WhatsApp
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="No phone number on file"
+              className="font-medium border border-line bg-card text-muted rounded-lg px-3.5 py-2 text-sm opacity-50 cursor-not-allowed inline-flex items-center gap-1.5"
+            >
+              <MessageCircle className="w-4 h-4" strokeWidth={1.8} />
+              WhatsApp
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleDeleteCustomer}

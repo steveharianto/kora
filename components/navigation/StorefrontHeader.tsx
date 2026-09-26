@@ -8,9 +8,16 @@ import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
 import IdVerificationModal from "@/components/storefront/IdVerificationModal";
-import { getCurrentCustomer } from "@/app/actions/customerAuth";
+import {
+  getCurrentCustomer,
+  type CustomerSession,
+} from "@/app/actions/customerAuth";
 
-export default function StorefrontHeader() {
+export default function StorefrontHeader({
+  customer,
+}: {
+  customer: CustomerSession | null;
+}) {
   const router = useRouter();
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
   const [openCart, setOpenCart] = useState<"rental" | "fitting" | null>(null);
@@ -25,14 +32,16 @@ export default function StorefrontHeader() {
   const handleCheckout = async () => {
     setOpenCart(null);
 
-    const customer = await getCurrentCustomer();
+    // Re-verify the session on click — the layout-provided prop may be
+    // stale if the cookie expired in another tab.
+    const current = await getCurrentCustomer();
 
-    if (!customer) {
+    if (!current) {
       router.push("/account/login?redirect=/checkout");
       return;
     }
 
-    if (customer.status === "Not Submitted") {
+    if (current.status === "Not Submitted") {
       setOpenKtpModal(true);
       return;
     }
@@ -44,6 +53,11 @@ export default function StorefrontHeader() {
     setOpenKtpModal(false);
     router.push("/checkout");
   };
+
+  // "Daphne" or "Daphne Kirana" — trailing space trimmed when no last name.
+  const displayName = customer
+    ? `${customer.firstName} ${customer.lastName || ""}`.trim()
+    : null;
 
   return (
     <>
@@ -120,12 +134,22 @@ export default function StorefrontHeader() {
               <Search className="w-[18px] h-[18px] stroke-[1.8]" />
             </Link>
 
+            {/* Account — shows the customer's name beside the icon when
+                logged in. Hidden below the sm breakpoint to keep the
+                mobile header from crowding. */}
             <Link
               href="/account"
-              aria-label="Account"
-              className="hover:text-[#1F261C] transition-colors"
+              aria-label={
+                displayName ? `My account — ${displayName}` : "Account"
+              }
+              className="flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
             >
-              <User className="w-[19px] h-[19px] stroke-[1.8]" />
+              <User className="w-[19px] h-[19px] stroke-[1.8] flex-shrink-0" />
+              {displayName && (
+                <span className="hidden sm:inline text-[11.5px] tracking-[0.06em] font-medium text-[#3B4736] max-w-[140px] truncate">
+                  {displayName}
+                </span>
+              )}
             </Link>
 
             <button
