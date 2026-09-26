@@ -3,29 +3,68 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentCustomer } from "./customerAuth";
 import { getBiteshipRates } from "@/lib/biteship";
-import { createXenditInvoice } from "@/lib/xendit";
+import {
+  createXenditInvoice,
+  getXenditInvoiceByExternalId,
+} from "@/lib/xendit";
 import {
   guardAvailability,
   guardCredit,
   applyOrderSideEffects,
 } from "@/lib/orderLifecycle";
+import { emitWa } from "@/lib/notifications";
+import { formatRupiah } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
 /* ── Courier rate lookup ─────────────────────────────────────────── */
 
-const COURIER_QUERY = "jne,sicepat,gojek,paxel";
+const COURIER_QUERY =
+  "jne,sicepat,gojek,paxel,grab,anteraja,ninja,pos,tiki,lion";
 
-// Biteship company|type → our internal label used across admin + PDP
+// Curated display labels for the common combinations. Anything Biteship
+// returns that isn't in here still passes through — it just gets a
+// dynamically formatted label instead of being silently dropped.
 const COURIER_LABELS: Record<string, string> = {
   "jne|reg": "JNE - REG",
   "jne|yes": "JNE - YES",
   "sicepat|reg": "SiCepat - REG",
+  "sicepat|best": "SiCepat - BEST",
   "gojek|instant": "Gosend - Instant",
+  "gojek|sameday": "Gosend - Same Day",
+  "paxel|small": "Paxel - Small",
   "paxel|medium": "Paxel - Medium",
+  "paxel|large": "Paxel - Large",
+  "paxel|regular": "Paxel - Regular",
+  "paxel|instant": "Paxel - Instant",
+  "grab|instant": "GrabExpress - Instant",
+  "grab|sameday": "GrabExpress - Same Day",
+  "anteraja|reg": "Anteraja - REG",
+  "anteraja|sameday": "Anteraja - Same Day",
+  "ninja|standard": "Ninja Xpress - Standard",
+  "pos|reg": "Pos Indonesia - Reguler",
+  "tiki|reg": "TIKI - REG",
+  "lion|reg": "Lion Parcel - REG",
 };
+
+function labelForCourier(company: string, type: string): string {
+  const key = `${company.toLowerCase()}|${type.toLowerCase()}`;
+  if (COURIER_LABELS[key]) return COURIER_LABELS[key];
+
+  const comp = company
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const typ = type
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return `${comp} - ${typ}`;
+}
 
 export async function getCheckoutShippingRates(input: {
   destinationPostalCode: string;
+  /** Coordinates of the selected delivery address. Required for instant
+   *  couriers like Paxel, Gosend, GrabExpress to be priced by Biteship. */
+  destinationLatitude?: number | null;
+  destinationLongitude?: number | null;
   itemSkus: string[];
 }) {
   const customer = await getCurrentCustomer();
@@ -73,37 +112,48 @@ export async function getCheckoutShippingRates(input: {
     return { error: "No valid items in cart." };
   }
 
+  // Origin coordinate — required by Biteship for instant courier pricing.
+  const originCoordinate =
+    origin.latitude != null && origin.longitude != null
+      ? {
+          latitude: Number(origin.latitude),
+          longitude: Number(origin.longitude),
+        }
+      : undefined;
+
+  // Destination coordinate — from the customer's selected address.
+  const destinationCoordinate =
+    input.destinationLatitude != null && input.destinationLongitude != null
+      ? {
+          latitude: Number(input.destinationLatitude),
+          longitude: Number(input.destinationLongitude),
+        }
+      : undefined;
+
   const res = await getBiteshipRates({
     origin_postal_code: String(origin.postal_code),
     destination_postal_code: input.destinationPostalCode,
     couriers: COURIER_QUERY,
     items: packageItems,
+    origin_coordinate: originCoordinate,
+    destination_coordinate: destinationCoordinate,
   });
 
   if (!res.success || !res.rates) {
     return { error: res.error || "Could not fetch shipping rates." };
   }
 
-  const options = res.rates
-    .map((r) => {
-      const key = `${r.courier_company.toLowerCase()}|${r.courier_type.toLowerCase()}`;
-      const label = COURIER_LABELS[key];
-      if (!label) return null;
-      return {
-        label,
-        price: r.price,
-        etd: r.etd || r.duration || "",
-        courierCompany: r.courier_company,
-        courierType: r.courier_type,
-      };
-    })
-    .filter(Boolean) as Array<{
-    label: string;
-    price: number;
-    etd: string;
-    courierCompany: string;
-    courierType: string;
-  }>;
+  // Build options with the dynamic label — nothing gets dropped.
+  const options = res.rates.map((r) => ({
+    label: labelForCourier(r.courier_company, r.courier_type),
+    price: r.price,
+    etd: r.etd || r.duration || "",
+    courierCompany: r.courier_company,
+    courierType: r.courier_type,
+  }));
+
+  // Sort by price ascending — cheapest floats to the top.
+  options.sort((a, b) => a.price - b.price);
 
   return { success: true, options };
 }
@@ -132,8 +182,11 @@ export async function createWebsiteOrder(input: {
   items: {
     sku: string;
     quantity: number;
+    /** Per-event-day rental price in IDR. */
     price: number;
     deposit: number;
+    /** Number of event days for this item. Multiplies `price`. */
+    eventDays: number;
   }[];
   eventStartDate: string;
   eventDays: number;
@@ -163,7 +216,6 @@ export async function createWebsiteOrder(input: {
   const supabase = await createClient();
   const skus = input.items.map((i) => i.sku);
 
-  // Availability check — no existing order to exclude, so pass a placeholder id
   const av = await guardAvailability(
     supabase,
     "NEW_WEBSITE_ORDER",
@@ -173,10 +225,18 @@ export async function createWebsiteOrder(input: {
   );
   if (av.error) return { error: av.error };
 
-  const cr = await guardCredit(supabase, customer.id, input.storeCreditApplied, 0);
+  const cr = await guardCredit(
+    supabase,
+    customer.id,
+    input.storeCreditApplied,
+    0,
+  );
   if (cr.error) return { error: cr.error };
 
-  // Server-side price recalculation — never trust client totals
+  // Server-side price recalculation. The client sends the per-day unit price
+  // for display; the server independently derives the unit price from the
+  // items table and multiplies by event days, so a tampered client payload
+  // can't underpay.
   const { data: itemRows } = await supabase
     .from("items")
     .select("sku, rental_price")
@@ -192,22 +252,34 @@ export async function createWebsiteOrder(input: {
   const productRows = input.items
     .filter((i) => priceMap.has(i.sku))
     .map((i) => {
-      const serverPrice = priceMap.get(i.sku)!;
-      const deposit = serverPrice > 1000000 ? 250000 : 150000;
-      totalPrice += serverPrice * i.quantity;
-      totalDeposit += deposit * i.quantity;
+      const serverUnitPrice = priceMap.get(i.sku)!;
+      const days = Math.max(1, Number(i.eventDays) || 1);
+      const qty = Math.max(1, Number(i.quantity) || 1);
+
+      // Line total = unit price × event days × quantity.
+      const lineSubtotal = serverUnitPrice * days * qty;
+
+      // Deposit tracks the item's value (unit price), not the rental length.
+      const deposit = serverUnitPrice > 1000000 ? 250000 : 150000;
+
+      totalPrice += lineSubtotal;
+      totalDeposit += deposit * qty;
+
       return {
         item_sku: i.sku,
-        quantity: i.quantity,
-        price: serverPrice,
+        quantity: qty,
+        price: lineSubtotal,
         deposit,
-        subtotal: serverPrice * i.quantity,
+        subtotal: lineSubtotal,
       };
     });
 
   const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
   const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
-  const grandTotal = Math.max(0, totalPrice + totalDeposit + shippingFee - credit);
+  const grandTotal = Math.max(
+    0,
+    totalPrice + totalDeposit + shippingFee - credit,
+  );
 
   const orderId = await getNextWebsiteOrderId();
   const recipientName =
@@ -257,7 +329,16 @@ export async function createWebsiteOrder(input: {
     entity_id: orderId,
     action_type: "CREATE_WEBSITE_DRAFT",
     field_name: "all",
-    details: { customer_id: customer.id, recipient: recipientName },
+    details: {
+      customer_id: customer.id,
+      recipient: recipientName,
+      event_days: input.eventDays,
+      lines: productRows.map((p) => ({
+        sku: p.item_sku,
+        unit_days: input.items.find((x) => x.sku === p.item_sku)?.eventDays,
+        line_total: p.price,
+      })),
+    },
   });
 
   revalidatePath("/account/orders");
@@ -340,21 +421,27 @@ export async function markWebsiteOrderPaid(
     payment_method?: string;
     payment_channel?: string;
   },
+  source: string = "Xendit Webhook",
 ) {
   const supabase = await createClient();
 
   const { data: order } = await supabase
     .from("orders")
     .select(
-      `id, status, customer_id, store_credit_applied, pickup_date, return_date,
-       order_products(item_sku)`,
+      `id, status, customer_id, store_credit_applied, pickup_date, return_date, total,
+       order_products(item_sku),
+       customers ( first_name, last_name, phone )`,
     )
     .eq("id", orderId)
     .maybeSingle();
 
   if (!order) return { error: "Order not found." };
 
-  // Idempotency — Xendit can retry the webhook
+  const sessionCustomer = await getCurrentCustomer();
+  if (sessionCustomer && order.customer_id !== sessionCustomer.id) {
+    return { error: "Order not found." };
+  }
+
   if (order.status !== "Draft") {
     return { success: true, alreadyProcessed: true };
   }
@@ -375,7 +462,6 @@ export async function markWebsiteOrderPaid(
 
   if (upErr) return { error: upErr.message };
 
-  // Apply reservation side effects (items Unavailable, fitting eviction, credit)
   const { data: sysAdmin } = await supabase
     .from("admins")
     .select("id, name, role")
@@ -383,32 +469,30 @@ export async function markWebsiteOrderPaid(
     .limit(1)
     .maybeSingle();
 
-  if (sysAdmin && skus.length > 0) {
-    await applyOrderSideEffects(
-      supabase,
-      {
-        id: sysAdmin.id,
-        name: "Website Payment (Xendit)",
-        role: sysAdmin.role,
-      },
-      {
-        orderId,
-        prevStatus: "Draft",
-        newStatus: "Ordered",
-        skus,
-        pickupDate: order.pickup_date,
-        returnDate: order.return_date,
-        prevCustomerId: order.customer_id,
-        newCustomerId: order.customer_id,
-        prevCreditApplied: 0,
-        newCreditApplied: Number(order.store_credit_applied) || 0,
-      },
-    );
+  const actor = {
+    id: sysAdmin?.id || "00000000-0000-0000-0000-000000000000",
+    name: source,
+    role: sysAdmin?.role || "staff",
+  };
+
+  if (skus.length > 0) {
+    await applyOrderSideEffects(supabase, actor, {
+      orderId,
+      prevStatus: "Draft",
+      newStatus: "Ordered",
+      skus,
+      pickupDate: order.pickup_date,
+      returnDate: order.return_date,
+      prevCustomerId: order.customer_id,
+      newCustomerId: order.customer_id,
+      prevCreditApplied: 0,
+      newCreditApplied: Number(order.store_credit_applied) || 0,
+    });
   }
 
   await supabase.from("admin_audit_logs").insert({
     admin_id: null,
-    admin_name: "Xendit Webhook",
+    admin_name: source,
     entity_type: "order",
     entity_id: orderId,
     action_type: "XENDIT_PAYMENT_SUCCESS",
@@ -418,9 +502,98 @@ export async function markWebsiteOrderPaid(
     details: xenditMeta,
   });
 
+  const customer = (order as any).customers as
+    | { first_name?: string; last_name?: string; phone?: string }
+    | undefined;
+
+  if (customer?.phone) {
+    const customerName =
+      `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+      "there";
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+    try {
+      await emitWa(supabase, actor, {
+        entity: "order",
+        entityId: orderId,
+        kind: "order_posted",
+        to: customer.phone,
+        vars: {
+          CUSTOMER_NAME: customerName,
+          ORDER_ID: orderId,
+          INVOICE_LINK: `${baseUrl}/account/orders`,
+          TOTAL: formatRupiah(Number(order.total) || 0),
+        },
+        fallbackTemplate:
+          "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].",
+      });
+    } catch {
+      // Non-blocking — payment has already committed.
+    }
+  }
+
   revalidatePath("/account/orders");
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/inventory");
 
   return { success: true };
+}
+
+/* ── Success-page verifier ───────────────────────────────────────── */
+
+const VERIFY_ATTEMPTS = 3;
+const VERIFY_DELAY_MS = 1500;
+
+export async function verifyAndPostWebsiteOrder(orderId: string) {
+  if (!orderId) return { error: "order_id is required." };
+
+  const supabase = await createClient();
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("id, status")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (!order) return { error: "Order not found." };
+  if (order.status !== "Draft") {
+    return { success: true, status: order.status, paid: true };
+  }
+
+  for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
+    const lookup = await getXenditInvoiceByExternalId(orderId);
+
+    if (lookup.success && lookup.invoice) {
+      const inv = lookup.invoice;
+      const isPaid = inv.status === "PAID" || inv.status === "SETTLED";
+
+      if (isPaid) {
+        const res = await markWebsiteOrderPaid(
+          orderId,
+          {
+            invoice_id: inv.id,
+            status: inv.status,
+            paid_amount: inv.paid_amount,
+            paid_at: inv.paid_at || inv.updated,
+            payment_method: inv.payment_method,
+            payment_channel: inv.payment_channel,
+          },
+          "Website Checkout Verification",
+        );
+        if (res.error) return { error: res.error };
+        return { success: true, status: "Ordered", paid: true };
+      }
+
+      if (inv.status === "EXPIRED") {
+        return { success: true, status: "Draft", paid: false, expired: true };
+      }
+    }
+
+    if (attempt < VERIFY_ATTEMPTS - 1) {
+      await new Promise((r) => setTimeout(r, VERIFY_DELAY_MS));
+    }
+  }
+
+  return { success: true, status: "Draft", paid: false };
 }

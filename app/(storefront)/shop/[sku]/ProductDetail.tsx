@@ -41,6 +41,11 @@ interface Accessory {
   rentalPrice: number;
   image: string | null;
 }
+interface LeadTime {
+  prefix: string;
+  region: string;
+  days: number;
+}
 
 const SIZE_LABELS: Array<[string, string]> = [
   ["bust", "Bust"],
@@ -59,11 +64,13 @@ export default function ProductDetail({
   relatedItems,
   accessories,
   fittingPrefill,
+  deliveryLeadTimes,
 }: {
   item: Item;
   relatedItems: RelatedItem[];
   accessories: Accessory[];
   fittingPrefill: { date: string; slot: string } | null;
+  deliveryLeadTimes: LeadTime[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("description");
   const [activeImg, setActiveImg] = useState(0);
@@ -76,10 +83,14 @@ export default function ProductDetail({
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
   const addToRentalCart = (payload: {
     sku: string;
     rentalStart: string;
     rentalEnd: string;
+    eventStart: string;
+    eventEnd: string;
+    eventDays: number;
     postalCode: string;
     accessories: string[];
   }) => {
@@ -89,14 +100,21 @@ export default function ProductDetail({
         sku: payload.sku,
         name: item.name,
         price: item.rentalPrice,
+        eventDays: payload.eventDays,
         image: item.images[0] || null,
         rentalStart: payload.rentalStart,
         rentalEnd: payload.rentalEnd,
+        eventStart: payload.eventStart,
+        eventEnd: payload.eventEnd,
         postalCode: payload.postalCode,
         accessories: payload.accessories,
       });
       writeRentalCart(next);
-      setToast("Added to rental cart");
+      setToast(
+        payload.eventDays > 1
+          ? `Added to rental cart · ${payload.eventDays} days`
+          : "Added to rental cart",
+      );
     } catch {
       setToast("Could not save to cart");
     }
@@ -148,6 +166,7 @@ export default function ProductDetail({
       setToast("Could not save to fitting cart");
     }
   };
+
   const formatRupiah = (n: number) => `Rp. ${n.toLocaleString("id-ID")}`;
 
   const prefillLabel = fittingPrefill
@@ -161,7 +180,6 @@ export default function ProductDetail({
         <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr]">
           {/* Gallery */}
           <div className="flex gap-3 p-4 sm:p-6">
-            {/* Vertical thumbs */}
             {item.images.length > 1 && (
               <div className="hidden md:flex flex-col gap-2 w-[70px] flex-shrink-0 max-h-[720px] overflow-y-auto">
                 {item.images.map((url, i) => (
@@ -186,7 +204,6 @@ export default function ProductDetail({
               </div>
             )}
 
-            {/* Main */}
             <div className="flex-1 aspect-[3/4] bg-[#E2E0D6] overflow-hidden">
               {item.images[activeImg] ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -300,7 +317,6 @@ export default function ProductDetail({
                     data={item.measurements.skirt}
                     size={null}
                   />
-                  {/* TODO: move to app_settings.website_content */}
                   <p className="pt-2 text-[13px] text-store-fg-muted">
                     Model&apos;s measurements: Height 170 cm.
                   </p>
@@ -309,7 +325,6 @@ export default function ProductDetail({
 
               {activeTab === "tnc" && (
                 <div className="space-y-3.5">
-                  {/* TODO: pull from app_settings.website_content */}
                   <ul className="list-disc pl-5 space-y-2 text-[13.5px]">
                     <li>
                       3-day rental window — arrives Day 1, returns by Day 4.
@@ -407,6 +422,7 @@ export default function ProductDetail({
         name={item.name}
         rentalPrice={item.rentalPrice}
         accessories={accessories}
+        deliveryLeadTimes={deliveryLeadTimes}
         onAdded={(payload) => {
           addToRentalCart(payload);
           setAvailOpen(false);

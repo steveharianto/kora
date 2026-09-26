@@ -15,20 +15,31 @@ export default async function ProductDetailPage({
 
   const supabase = await createClient();
 
-  const { data: item } = await supabase
-    .from("items")
-    .select(`
-      sku, name, description, size, color, tags, rental_price, measurements,
-      brands ( id, name ),
-      types ( name ),
-      item_images ( image_url, display_order )
-    `)
-    .ilike("sku", sku)
-    .eq("website_status", "Published")
-    .eq("is_archived", false)
-    .maybeSingle();
+  const [itemRes, shippingRes] = await Promise.all([
+    supabase
+      .from("items")
+      .select(`
+        sku, name, description, size, color, tags, rental_price, measurements,
+        brands ( id, name ),
+        types ( name ),
+        item_images ( image_url, display_order )
+      `)
+      .ilike("sku", sku)
+      .eq("website_status", "Published")
+      .eq("is_archived", false)
+      .maybeSingle(),
+    supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "shipping")
+      .single(),
+  ]);
 
+  const item = itemRes.data;
   if (!item) notFound();
+
+  const deliveryLeadTimes: { prefix: string; region: string; days: number }[] =
+    (shippingRes.data?.value?.delivery_lead_times as any[]) || [];
 
   // Related — same brand first
   const brandId = (item.brands as any)?.id;
@@ -103,6 +114,7 @@ export default async function ProductDetailPage({
       relatedItems={normaliseRelated(related)}
       accessories={accessories}
       fittingPrefill={fittingPrefill}
+      deliveryLeadTimes={deliveryLeadTimes}
     />
   );
 }

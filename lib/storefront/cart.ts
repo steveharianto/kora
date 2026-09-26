@@ -3,10 +3,15 @@
 export interface RentalCartItem {
   sku: string;
   name: string;
+  /** Per-event-day rental price in IDR. Total for this line = price × eventDays. */
   price: number;
+  /** Number of event days the customer selected. Multiplies `price`. */
+  eventDays: number;
   image: string | null;
-  rentalStart: string; // YYYY-MM-DD
-  rentalEnd: string; // YYYY-MM-DD
+  rentalStart: string; // YYYY-MM-DD — delivery / pickup day
+  rentalEnd: string; // YYYY-MM-DD — return deadline
+  eventStart: string; // YYYY-MM-DD — first event day
+  eventEnd: string; // YYYY-MM-DD — last event day
   postalCode: string;
   accessories: string[];
 }
@@ -19,9 +24,9 @@ export interface FittingCartItem {
 }
 
 export interface FittingSession {
-  date: string; // YYYY-MM-DD
-  slot: string; // "HH:MM"
-  fee: number; // 0 for regular hours, >0 for after-hours
+  date: string;
+  slot: string;
+  fee: number;
   isAfterHours: boolean;
   items: FittingCartItem[];
 }
@@ -45,16 +50,32 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 export function readRentalCart(): RentalCartItem[] {
   if (typeof window === "undefined") return [];
   const raw = safeParse<any[]>(localStorage.getItem(RENTAL_KEY), []);
-  // Drop any entry that doesn't match the current shape.
-  return raw.filter(
-    (x) =>
-      x &&
-      typeof x === "object" &&
-      typeof x.sku === "string" &&
-      typeof x.price === "number" &&
-      typeof x.rentalStart === "string" &&
-      typeof x.rentalEnd === "string",
-  ) as RentalCartItem[];
+
+  return raw
+    .filter(
+      (x) =>
+        x &&
+        typeof x === "object" &&
+        typeof x.sku === "string" &&
+        typeof x.price === "number" &&
+        typeof x.rentalStart === "string" &&
+        typeof x.rentalEnd === "string",
+    )
+    .map((x) => ({
+      sku: x.sku,
+      name: x.name || "",
+      price: x.price,
+      // Backward-compat: older cart entries have no eventDays — treat as 1.
+      eventDays:
+        typeof x.eventDays === "number" && x.eventDays >= 1 ? x.eventDays : 1,
+      image: x.image ?? null,
+      rentalStart: x.rentalStart,
+      rentalEnd: x.rentalEnd,
+      eventStart: typeof x.eventStart === "string" ? x.eventStart : x.rentalStart,
+      eventEnd: typeof x.eventEnd === "string" ? x.eventEnd : x.rentalEnd,
+      postalCode: typeof x.postalCode === "string" ? x.postalCode : "",
+      accessories: Array.isArray(x.accessories) ? x.accessories : [],
+    })) as RentalCartItem[];
 }
 
 export function writeRentalCart(items: RentalCartItem[]) {
@@ -66,12 +87,21 @@ export function countRentalCart(): number {
   return readRentalCart().length;
 }
 
+/** Line-item total: per-day price × number of event days. */
+export function rentalLineTotal(item: RentalCartItem): number {
+  return (item.price || 0) * (item.eventDays || 1);
+}
+
+/** Sum of all line totals. */
+export function rentalCartSubtotal(items: RentalCartItem[]): number {
+  return items.reduce((s, i) => s + rentalLineTotal(i), 0);
+}
+
 /* ── Fitting cart ─────────────────────────────────────────────────── */
 
 export function readFittingCart(): FittingSession[] {
   if (typeof window === "undefined") return [];
   const raw = safeParse<any[]>(localStorage.getItem(FITTING_KEY), []);
-  // Drop any entry that doesn't match the current shape (e.g. old {skus} format).
   return raw
     .filter(
       (x) =>
@@ -104,7 +134,6 @@ export function countFittingCart(): number {
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
-/** True if a slot falls inside after-hours for its day. */
 export function isAfterHoursSlot(dateStr: string, slot: string): boolean {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dow = new Date(y, m - 1, d).getDay();

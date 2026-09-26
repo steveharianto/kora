@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentCustomer } from "@/app/actions/customerAuth";
 import { redirect } from "next/navigation";
+import OrderVerifier from "./OrderVerifier";
 
 export const metadata = {
   title: "Order Confirmed | KORA",
@@ -17,6 +18,7 @@ export default async function CheckoutSuccessPage({
   if (!customer) redirect("/account/login");
 
   let orderStatus: string | null = null;
+
   if (order_id) {
     const supabase = await createClient();
     const { data } = await supabase
@@ -28,19 +30,34 @@ export default async function CheckoutSuccessPage({
     orderStatus = data?.status || null;
   }
 
-  const isPaid = orderStatus === "Ordered" || orderStatus === "In Shipping" || orderStatus === "Active" || orderStatus === "Completed";
+  const isPaid =
+    orderStatus === "Ordered" ||
+    orderStatus === "In Shipping" ||
+    orderStatus === "Active" ||
+    orderStatus === "Completed";
+
+  // Kick off the Draft → Ordered transition from a client component so the
+  // `revalidatePath` calls inside the action run outside this render pass.
+  // Idempotent with the webhook — whichever lands first wins.
+  const needsVerification = Boolean(order_id && !isPaid);
 
   return (
     <div className="w-full bg-store-bg">
+      {order_id && (
+        <OrderVerifier orderId={order_id} enabled={needsVerification} />
+      )}
+
       <div className="max-w-[600px] mx-auto px-6 py-24 text-center">
         <h1 className="font-serif text-[32px] sm:text-[40px] text-store-accent font-normal tracking-[0.01em] mb-5">
           {isPaid ? "Thank you for your order!" : "Processing your payment…"}
         </h1>
+
         <p className="text-[13px] text-store-fg-muted leading-relaxed mb-3">
           {isPaid
-            ? "Your payment was successful. We'll start preparing your rental and be in touch via WhatsApp shortly."
-            : "We're waiting for the payment confirmation from Xendit. This usually takes a few seconds — refresh this page in a moment."}
+            ? "Your payment was successful. Your order is confirmed and we'll start preparing your rental — you'll hear from us on WhatsApp shortly."
+            : "We're confirming your payment with Xendit. This usually takes a few seconds — the page will update automatically."}
         </p>
+
         {order_id && (
           <p className="text-[12px] text-store-fg-muted font-mono mb-12">
             Order reference: {order_id}

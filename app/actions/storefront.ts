@@ -20,9 +20,16 @@ function addDays(s: string, n: number): string {
 /* ── Availability map for a single SKU, one month ──────────────────── */
 
 /**
- * Returns a per-day availability map for the requested month.
- * "Available" means: a fresh 4-day rental starting on that day would not
- * collide with any active order (including the item-type turnaround buffer).
+ * Returns a per-day free/busy map for the requested month.
+ *
+ * NEW SEMANTICS (per-day): a day D is `true` if the SKU is NOT committed to
+ * any active order on that specific calendar day (existing order windows are
+ * expanded by the item-type turnaround buffer). This lets the caller validate
+ * arbitrary-length rental windows (delivery → event day(s) → rest → return)
+ * by checking that every day in the proposed range returns `true`.
+ *
+ * Previously this function answered "can a *fixed 4-day* rental start on
+ * day D?" — that no longer fits since event days are now variable length.
  */
 export async function getSkuAvailabilityMap(
   sku: string,
@@ -30,7 +37,6 @@ export async function getSkuAvailabilityMap(
   month: number, // 1-12
 ): Promise<Record<string, boolean>> {
   const supabase = await createClient();
-  const RENTAL_LEN = 4;
   const daysInMonth = new Date(year, month, 0).getDate();
   const mm = String(month).padStart(2, "0");
   const monthStart = `${year}-${mm}-01`;
@@ -59,8 +65,10 @@ export async function getSkuAvailabilityMap(
   const bufferDays =
     item.buffer_override ?? (item.types as any)?.default_buffer_days ?? 2;
 
-  const fetchStart = addDays(monthStart, -(bufferDays + RENTAL_LEN));
-  const fetchEnd = addDays(monthEnd, bufferDays + RENTAL_LEN);
+  // Widen the fetch window so a conflict order whose pickup is far before the
+  // visible month but whose buffered return extends into it still appears.
+  const fetchStart = addDays(monthStart, -(bufferDays + 30));
+  const fetchEnd = addDays(monthEnd, bufferDays + 30);
 
   const { data: conflicts } = await supabase
     .from("order_products")
@@ -70,19 +78,24 @@ export async function getSkuAvailabilityMap(
     .gte("orders.return_date", fetchStart)
     .lte("orders.pickup_date", fetchEnd);
 
+  // Pre-compute blocked intervals [startMs, endMs] once
+  const blockedIntervals: { start: number; end: number }[] = [];
+  for (const c of conflicts || []) {
+    const o = (c as any).orders;
+    if (!o.pickup_date || !o.return_date) continue;
+    const start = parseISO(o.pickup_date).getTime();
+    const end = parseISO(addDays(o.return_date, bufferDays)).getTime();
+    blockedIntervals.push({ start, end });
+  }
+
   const map: Record<string, boolean> = {};
   for (let d = 1; d <= daysInMonth; d++) {
     const dayStr = `${year}-${mm}-${String(d).padStart(2, "0")}`;
-    const winStart = parseISO(dayStr).getTime();
-    const winEnd = parseISO(addDays(dayStr, RENTAL_LEN - 1)).getTime();
+    const dayTime = parseISO(dayStr).getTime();
 
     let available = true;
-    for (const c of conflicts || []) {
-      const o = (c as any).orders;
-      if (!o.pickup_date || !o.return_date) continue;
-      const existStart = parseISO(o.pickup_date).getTime();
-      const existEnd = parseISO(addDays(o.return_date, bufferDays)).getTime();
-      if (winStart <= existEnd && winEnd >= existStart) {
+    for (const interval of blockedIntervals) {
+      if (dayTime >= interval.start && dayTime <= interval.end) {
         available = false;
         break;
       }

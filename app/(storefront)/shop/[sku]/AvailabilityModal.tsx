@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { getSkuAvailabilityMap } from "@/app/actions/storefront";
 
 interface Accessory {
@@ -11,6 +11,12 @@ interface Accessory {
   image: string | null;
 }
 
+interface LeadTime {
+  prefix: string;
+  region: string;
+  days: number;
+}
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -18,29 +24,152 @@ interface Props {
   name: string;
   rentalPrice: number;
   accessories: Accessory[];
+  deliveryLeadTimes: LeadTime[];
   onAdded: (payload: {
     sku: string;
     rentalStart: string;
     rentalEnd: string;
+    eventStart: string;
+    eventEnd: string;
+    /** Number of event days — multiplies rentalPrice. */
+    eventDays: number;
     postalCode: string;
     accessories: string[];
   }) => void;
 }
 
-const RENTAL_LEN = 4;
+const BASE_PREP_DAYS = 3;
 
-function toISO(d: Date) {
+/* ── Date helpers ────────────────────────────────────────────────── */
+
+function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function parseISO(s: string) {
+function parseISO(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
-function addDays(s: string, n: number) {
+function addDays(s: string, n: number): string {
   const d = parseISO(s);
   d.setDate(d.getDate() + n);
   return toISO(d);
 }
+function cmpISO(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function fmtShort(s: string): string {
+  const [y, m, d] = s.split("-").map(Number);
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+}
+function fmtRupiah(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID")}`;
+}
+function nextMonth(y: number, m: number): { y: number; m: number } {
+  return m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
+}
+function prevMonth(y: number, m: number): { y: number; m: number } {
+  return m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
+}
+function daysInMonth(y: number, m: number): number {
+  return new Date(y, m, 0).getDate();
+}
+function monthLabel(y: number, m: number): string {
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+}
+function diffDays(a: string, b: string): number {
+  return Math.round(
+    (parseISO(b).getTime() - parseISO(a).getTime()) / 86400000,
+  );
+}
+function isoOf(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/* ── Lead-time resolver ──────────────────────────────────────────── */
+
+function resolveLead(
+  postalCode: string,
+  leadTimes: LeadTime[],
+): { region: string; days: number } | null {
+  if (!postalCode || postalCode.length < 5) return null;
+  const p2 = postalCode.slice(0, 2);
+
+  for (const lt of leadTimes) {
+    if (lt.prefix.includes("-")) {
+      const [s, e] = lt.prefix.replace("xxx", "").split("-");
+      if (p2 >= s && p2 <= e) {
+        return { region: lt.region, days: Number(lt.days) };
+      }
+    } else if (lt.prefix.startsWith(p2)) {
+      return { region: lt.region, days: Number(lt.days) };
+    }
+  }
+
+  const other = leadTimes.find((l) => l.prefix === "other");
+  if (other) return { region: other.region, days: Number(other.days) };
+  return { region: "Indonesia", days: 2 };
+}
+
+/* ── Calendar cell model ─────────────────────────────────────────── */
+
+type CellOwner = "prev" | "current" | "next";
+
+interface Cell {
+  date: string;
+  dayNum: number;
+  owner: CellOwner;
+  interactive: boolean;
+}
+
+function buildCells(year: number, month: number): Cell[] {
+  const total = daysInMonth(year, month);
+  const firstOfMonth = new Date(year, month - 1, 1);
+  const firstDow = firstOfMonth.getDay();
+  const offset = firstDow === 0 ? 6 : firstDow - 1;
+
+  const prev = prevMonth(year, month);
+  const prevTotal = daysInMonth(prev.y, prev.m);
+  const next = nextMonth(year, month);
+
+  const cells: Cell[] = [];
+
+  for (let i = offset - 1; i >= 0; i--) {
+    const d = prevTotal - i;
+    cells.push({
+      date: isoOf(prev.y, prev.m, d),
+      dayNum: d,
+      owner: "prev",
+      interactive: false,
+    });
+  }
+
+  for (let d = 1; d <= total; d++) {
+    cells.push({
+      date: isoOf(year, month, d),
+      dayNum: d,
+      owner: "current",
+      interactive: true,
+    });
+  }
+
+  const remainder = cells.length % 7;
+  const trailingCount = remainder === 0 ? 0 : 7 - remainder;
+  for (let d = 1; d <= trailingCount; d++) {
+    cells.push({
+      date: isoOf(next.y, next.m, d),
+      dayNum: d,
+      owner: "next",
+      interactive: true,
+    });
+  }
+
+  return cells;
+}
+
+/* ── Component ───────────────────────────────────────────────────── */
 
 export default function AvailabilityModal({
   isOpen,
@@ -49,27 +178,44 @@ export default function AvailabilityModal({
   name,
   rentalPrice,
   accessories,
+  deliveryLeadTimes,
   onAdded,
 }: Props) {
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
-  const [availability, setAvailability] = useState<Record<string, boolean>>({});
-  const [selectedStart, setSelectedStart] = useState<string | null>(null);
-  const [postalCode, setPostalCode] = useState("");
-  const [addedAccessories, setAddedAccessories] = useState<string[]>([]);
+  const todayISO = useMemo(() => toISO(new Date()), []);
+
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+
+  const [availCurrent, setAvailCurrent] = useState<Record<string, boolean>>({});
+  const [availNext, setAvailNext] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
 
-  // Reset state on open
+  const [eventStart, setEventStart] = useState<string | null>(null);
+  const [eventEnd, setEventEnd] = useState<string | null>(null);
+
+  const [dragAnchor, setDragAnchor] = useState<string | null>(null);
+  const [dragHover, setDragHover] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const [postalCode, setPostalCode] = useState("");
+  const [addedAccessories, setAddedAccessories] = useState<string[]>([]);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (isOpen) {
-      setSelectedStart(null);
-      setPostalCode("");
-      setAddedAccessories([]);
-    }
+    if (!isOpen) return;
+    setEventStart(null);
+    setEventEnd(null);
+    setDragAnchor(null);
+    setDragHover(null);
+    setIsDragging(false);
+    setPostalCode("");
+    setAddedAccessories([]);
+    setRangeError(null);
+    const t = new Date();
+    setYear(t.getFullYear());
+    setMonth(t.getMonth() + 1);
   }, [isOpen]);
 
-  // Body scroll lock
   useEffect(() => {
     if (!isOpen) return;
     document.body.style.overflow = "hidden";
@@ -78,15 +224,19 @@ export default function AvailabilityModal({
     };
   }, [isOpen]);
 
-  // Fetch availability for current month
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     setLoading(true);
+    const next = nextMonth(year, month);
     (async () => {
-      const map = await getSkuAvailabilityMap(sku, year, month);
+      const [a1, a2] = await Promise.all([
+        getSkuAvailabilityMap(sku, year, month),
+        getSkuAvailabilityMap(sku, next.y, next.m),
+      ]);
       if (!cancelled) {
-        setAvailability(map);
+        setAvailCurrent(a1);
+        setAvailNext(a2);
         setLoading(false);
       }
     })();
@@ -95,280 +245,604 @@ export default function AvailabilityModal({
     };
   }, [isOpen, sku, year, month]);
 
-  // Calendar cells (Mon first)
-  const cells = useMemo(() => {
-    const firstOfMonth = new Date(year, month - 1, 1);
-    const firstDow = firstOfMonth.getDay(); // 0=Sun
-    const offset = firstDow === 0 ? 6 : firstDow - 1; // Mon=0 index
+  const availability = useMemo(
+    () => ({ ...availCurrent, ...availNext }),
+    [availCurrent, availNext],
+  );
 
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const arr: (string | null)[] = [];
-    for (let i = 0; i < offset; i++) arr.push(null);
-    for (let d = 1; d <= daysInMonth; d++) {
-      arr.push(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  const resolvedLead = useMemo(
+    () => resolveLead(postalCode, deliveryLeadTimes),
+    [postalCode, deliveryLeadTimes],
+  );
+
+  const earliestReceipt = useMemo(() => {
+    const base = addDays(todayISO, BASE_PREP_DAYS);
+    if (!resolvedLead) return base;
+    return addDays(base, resolvedLead.days);
+  }, [todayISO, resolvedLead]);
+
+  const earliestEventStart = useMemo(
+    () => addDays(earliestReceipt, 1),
+    [earliestReceipt],
+  );
+
+  const previewRange = useMemo(() => {
+    if (!isDragging || !dragAnchor || !dragHover) return null;
+    const lo = cmpISO(dragAnchor, dragHover) <= 0 ? dragAnchor : dragHover;
+    const hi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
+    return { lo, hi };
+  }, [isDragging, dragAnchor, dragHover]);
+
+  const committed = useMemo(() => {
+    if (!eventStart || !eventEnd) return null;
+    const lo = cmpISO(eventStart, eventEnd) <= 0 ? eventStart : eventEnd;
+    const hi = cmpISO(eventStart, eventEnd) <= 0 ? eventEnd : eventStart;
+    return { lo, hi };
+  }, [eventStart, eventEnd]);
+
+  const displayRange = previewRange || committed;
+
+  const isSelectable = useCallback(
+    (dateStr: string) => {
+      if (dateStr < todayISO) return false;
+      if (dateStr < earliestEventStart) return false;
+      if (availability[dateStr] === false) return false;
+      return true;
+    },
+    [todayISO, earliestEventStart, availability],
+  );
+
+  const validateRange = useCallback(
+    (lo: string, hi: string): { ok: boolean; reason?: string } => {
+      const deliv = addDays(lo, -1);
+      const ret = addDays(hi, 2);
+
+      if (deliv < earliestReceipt) {
+        return {
+          ok: false,
+          reason: `Earliest delivery is ${fmtShort(earliestReceipt)} — pick a later event day.`,
+        };
+      }
+
+      let cursor = deliv;
+      while (cmpISO(cursor, ret) <= 0) {
+        if (availability[cursor] === false) {
+          return {
+            ok: false,
+            reason: `${fmtShort(cursor)} is already booked. Try a different window.`,
+          };
+        }
+        cursor = addDays(cursor, 1);
+      }
+      return { ok: true };
+    },
+    [availability, earliestReceipt],
+  );
+
+  const commitDrag = useCallback(() => {
+    if (!dragAnchor || !dragHover) {
+      setIsDragging(false);
+      setDragAnchor(null);
+      setDragHover(null);
+      return;
     }
-    return arr;
-  }, [year, month]);
+    const lo = cmpISO(dragAnchor, dragHover) <= 0 ? dragAnchor : dragHover;
+    const hi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
 
-  const rentalEnd = selectedStart ? addDays(selectedStart, RENTAL_LEN - 1) : null;
-  const eventDay = selectedStart ? addDays(selectedStart, 1) : null;
+    const v = validateRange(lo, hi);
+    if (!v.ok) {
+      setRangeError(v.reason || "That range is unavailable.");
+      setTimeout(() => setRangeError(null), 5000);
+    } else {
+      setEventStart(lo);
+      setEventEnd(hi);
+      setRangeError(null);
+    }
 
-  const dayState = (dateStr: string): "unavailable" | "start" | "event" | "rental" | "neutral" => {
-    if (!availability[dateStr]) return "unavailable";
-    if (!selectedStart) return "neutral";
-    if (dateStr === selectedStart) return "start";
-    if (dateStr === eventDay) return "event";
-    const inWindow = dateStr > selectedStart && dateStr <= (rentalEnd || "");
-    return inWindow ? "rental" : "neutral";
+    setIsDragging(false);
+    setDragAnchor(null);
+    setDragHover(null);
+  }, [dragAnchor, dragHover, validateRange]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onUp = () => commitDrag();
+    window.addEventListener("pointerup", onUp);
+    return () => window.removeEventListener("pointerup", onUp);
+  }, [isDragging, commitDrag]);
+
+  const handlePointerDown = (dateStr: string) => {
+    if (!isSelectable(dateStr)) return;
+    setDragAnchor(dateStr);
+    setDragHover(dateStr);
+    setIsDragging(true);
+    setRangeError(null);
   };
 
-  const prevMonth = () => {
-    if (month === 1) {
-      setMonth(12);
-      setYear((y) => y - 1);
-    } else setMonth((m) => m - 1);
-  };
-  const nextMonth = () => {
-    if (month === 12) {
-      setMonth(1);
-      setYear((y) => y + 1);
-    } else setMonth((m) => m + 1);
+  const handlePointerEnter = (dateStr: string) => {
+    if (!isDragging) return;
+    setDragHover(dateStr);
   };
 
-  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-  });
+  type CellState =
+    | "past"
+    | "disabled-earliest"
+    | "unavailable"
+    | "delivery"
+    | "event"
+    | "rest"
+    | "return"
+    | "available";
 
-  // Delivery info
-  const delivery = useMemo(() => {
-    if (!postalCode || postalCode.length < 5) return null;
-    const p2 = parseInt(postalCode.slice(0, 2), 10);
-    // TODO: pull from app_settings.shipping.delivery_lead_times
-    if (p2 >= 10 && p2 <= 14) {
-      return {
-        region: "West Jakarta",
-        type: "Instant/Sameday",
-        arrivesToday: true,
-      };
-    }
-    if (p2 >= 40 && p2 <= 46) {
-      return { region: "Jawa Barat", type: "2 days", arrivesToday: false };
-    }
-    if (p2 >= 50 && p2 <= 54) {
-      return { region: "Jawa Tengah", type: "2 days", arrivesToday: false };
-    }
-    if (p2 >= 60 && p2 <= 69) {
-      return { region: "Jawa Timur", type: "2 days", arrivesToday: false };
-    }
-    return { region: "Indonesia", type: "1–3 days", arrivesToday: false };
-  }, [postalCode]);
+  const getCellState = (dateStr: string): CellState => {
+    if (dateStr < todayISO) return "past";
 
-  if (!isOpen) return null;
+    if (displayRange) {
+      const deliv = addDays(displayRange.lo, -1);
+      const rest = addDays(displayRange.hi, 1);
+      const ret = addDays(displayRange.hi, 2);
 
-  const canAddToCart = Boolean(selectedStart && postalCode.length >= 5);
+      if (dateStr === deliv) return "delivery";
+      if (
+        cmpISO(dateStr, displayRange.lo) >= 0 &&
+        cmpISO(dateStr, displayRange.hi) <= 0
+      )
+        return "event";
+      if (dateStr === rest) return "rest";
+      if (dateStr === ret) return "return";
+    }
+
+    if (dateStr < earliestEventStart) return "disabled-earliest";
+    if (availability[dateStr] === false) return "unavailable";
+    return "available";
+  };
+
+  const infoDelivery = committed ? addDays(committed.lo, -1) : null;
+  const infoRest = committed ? addDays(committed.hi, 1) : null;
+  const infoReturn = committed ? addDays(committed.hi, 2) : null;
+  const infoEventCount = committed ? diffDays(committed.lo, committed.hi) + 1 : 0;
+
+  // Rental total = per-day rate × event-day count.
+  const lineTotal = infoEventCount > 0 ? rentalPrice * infoEventCount : 0;
+
+  const selectionStillValid = useMemo(() => {
+    if (!committed) return false;
+    return committed.lo >= earliestEventStart;
+  }, [committed, earliestEventStart]);
+
+  const canAddToCart = Boolean(
+    committed && selectionStillValid && postalCode.length >= 5,
+  );
 
   const handleAddToCart = () => {
-    if (!canAddToCart || !rentalEnd) return;
+    if (!canAddToCart || !committed || !infoDelivery || !infoReturn) return;
     onAdded({
       sku,
-      rentalStart: selectedStart!,
-      rentalEnd,
+      rentalStart: infoDelivery,
+      rentalEnd: infoReturn,
+      eventStart: committed.lo,
+      eventEnd: committed.hi,
+      eventDays: infoEventCount,
       postalCode,
       accessories: addedAccessories,
     });
   };
 
-  const toggleAccessory = (sku: string) =>
-    setAddedAccessories((a) => (a.includes(sku) ? a.filter((x) => x !== sku) : [...a, sku]));
+  const toggleAccessory = (a: string) =>
+    setAddedAccessories((prev) =>
+      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a],
+    );
 
-  const fmtLong = (dateStr: string) =>
-    parseISO(dateStr).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  const fmtShort = (dateStr: string) =>
-    parseISO(dateStr).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const cells = useMemo(() => buildCells(year, month), [year, month]);
+
+  if (!isOpen) return null;
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} aria-hidden />
+      <div
+        className="fixed inset-0 bg-black/30 z-40"
+        onClick={onClose}
+        aria-hidden
+      />
       <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
-        <div className="bg-store-bg w-full max-w-[1080px] my-8 relative">
+        <div className="bg-store-bg w-full max-w-[1100px] my-8 relative">
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-6 top-6 text-store-fg-muted hover:text-store-fg cursor-pointer"
+            className="absolute right-6 top-6 text-store-fg-muted hover:text-store-fg cursor-pointer z-10"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <h2 className="font-serif text-[32px] sm:text-[40px] text-store-accent text-center pt-10 pb-6">
+          <h2 className="font-serif text-[32px] sm:text-[40px] text-store-accent text-center pt-10 pb-8">
             Check Availability
           </h2>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 px-8 sm:px-12 pb-10">
-            {/* ── Calendar ─────────────────────────────────────────── */}
-            <div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 px-6 sm:px-10 pb-8">
+            {/* ── LEFT: Calendar + info panel ────────────────────────── */}
+            <div className="space-y-4">
               <div className="border border-store-border-strong p-6">
                 <div className="flex items-center justify-between mb-5">
                   <button
                     type="button"
-                    onClick={prevMonth}
-                    className="text-store-fg-muted hover:text-store-fg cursor-pointer"
+                    onClick={() => {
+                      const p = prevMonth(year, month);
+                      setYear(p.y);
+                      setMonth(p.m);
+                    }}
+                    className="text-store-fg-muted hover:text-store-fg cursor-pointer p-1"
                     aria-label="Previous month"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <span className="font-serif text-[19px] text-store-fg">{monthLabel}</span>
+                  <span className="font-serif text-[19px] text-store-fg">
+                    {monthLabel(year, month)}
+                  </span>
                   <button
                     type="button"
-                    onClick={nextMonth}
-                    className="text-store-fg-muted hover:text-store-fg cursor-pointer"
+                    onClick={() => {
+                      const n = nextMonth(year, month);
+                      setYear(n.y);
+                      setMonth(n.m);
+                    }}
+                    className="text-store-fg-muted hover:text-store-fg cursor-pointer p-1"
                     aria-label="Next month"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-7 text-center text-[12px] tracking-widest uppercase text-store-fg-muted mb-2">
+                <div className="grid grid-cols-7 text-center text-[11px] tracking-widest uppercase text-store-fg-muted mb-2">
                   {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
                     <div key={i}>{d}</div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-1 text-center text-[14px]">
-                  {cells.map((dateStr, i) => {
-                    if (!dateStr) return <div key={i} />;
-                    const state = dayState(dateStr);
-                    const dayNum = parseInt(dateStr.slice(8, 10), 10);
-                    const clickable = availability[dateStr];
+                <div className="grid grid-cols-7 gap-1">
+                  {cells.map((cell) => {
+                    const state = getCellState(cell.date);
+                    const selectable =
+                      cell.interactive && isSelectable(cell.date);
+
+                    const base =
+                      "aspect-square flex items-center justify-center text-[13.5px] rounded-sm transition-colors select-none";
+
+                    let cls = "";
+                    switch (state) {
+                      case "past":
+                        cls = "text-store-fg-subtle/30 cursor-default";
+                        break;
+                      case "disabled-earliest":
+                        cls = "text-store-fg-subtle/60 cursor-not-allowed";
+                        break;
+                      case "unavailable":
+                        cls =
+                          "bg-[#D6D3C9] text-store-fg-subtle cursor-not-allowed";
+                        break;
+                      case "delivery":
+                        cls = "bg-store-accent/35 text-store-fg font-medium";
+                        break;
+                      case "event":
+                        cls = "bg-[#C69B32] text-white font-semibold";
+                        break;
+                      case "rest":
+                        cls = "bg-store-accent text-white font-semibold";
+                        break;
+                      case "return":
+                        cls =
+                          "bg-store-accent text-white font-semibold ring-1 ring-store-fg/30 ring-inset";
+                        break;
+                      case "available":
+                      default:
+                        cls =
+                          "text-store-fg hover:bg-store-hover cursor-pointer";
+                        break;
+                    }
+
+                    const isPaddingMuted =
+                      cell.owner !== "current" &&
+                      state === "available" &&
+                      !selectable;
+                    if (isPaddingMuted) {
+                      cls = "text-store-fg-subtle/60 cursor-not-allowed";
+                    }
+
                     return (
                       <button
-                        key={dateStr}
+                        key={cell.date}
                         type="button"
-                        disabled={!clickable}
-                        onClick={() => clickable && setSelectedStart(dateStr)}
-                        className={`aspect-square flex items-center justify-center transition-colors cursor-pointer ${
-                          state === "unavailable"
-                            ? "text-store-fg-subtle"
-                            : state === "start"
-                              ? "bg-store-accent text-white"
-                              : state === "event"
-                                ? "bg-[#C69B32] text-white"
-                                : state === "rental"
-                                  ? "bg-store-accent text-white"
-                                  : clickable
-                                    ? "text-store-fg hover:bg-store-hover"
-                                    : "text-store-fg-subtle"
-                        } ${!clickable ? "cursor-not-allowed" : ""}`}
+                        disabled={!selectable}
+                        onPointerDown={() =>
+                          selectable && handlePointerDown(cell.date)
+                        }
+                        onPointerEnter={() =>
+                          selectable && handlePointerEnter(cell.date)
+                        }
+                        className={`${base} ${cls}`}
+                        style={{ touchAction: "none" }}
+                        aria-label={cell.date}
                       >
-                        {dayNum}
+                        {cell.dayNum}
                       </button>
                     );
                   })}
                 </div>
 
-                <div className="flex flex-wrap gap-4 mt-6 text-[11px] text-store-fg-muted">
-                  <LegendSwatch color="#C5C5C5" label="Unavailable Date" />
+                {cells[cells.length - 1]?.owner === "next" && (
+                  <p className="text-[10.5px] text-store-fg-muted text-center mt-3">
+                    Faded trailing dates belong to{" "}
+                    {monthLabel(
+                      nextMonth(year, month).y,
+                      nextMonth(year, month).m,
+                    )}
+                    — drag onto them to extend your selection across the month.
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-x-4 gap-y-2 mt-6 text-[11px] text-store-fg-muted">
+                  <LegendSwatch color="#D6D3C9" label="Unavailable Date" />
                   <LegendSwatch color="#C69B32" label="Event Date" />
                   <LegendSwatch color="#64765B" label="Rental Date" />
+                  <LegendSwatch
+                    color="#64765B"
+                    opacity={0.35}
+                    label="Delivery"
+                  />
                 </div>
+
+                {rangeError && (
+                  <div className="mt-4 p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-md text-[11.5px]">
+                    {rangeError}
+                  </div>
+                )}
               </div>
 
-              {selectedStart && rentalEnd && (
-                <div className="mt-5 p-5 bg-[#F1EFE1] border border-store-border">
-                  <DayRow
-                    tag="1"
-                    tagColor="#64765B"
-                    text="Penerima menerima paket baju"
-                    date={selectedStart}
-                  />
-                  <DayRow
-                    tag="2"
-                    tagColor="#C69B32"
-                    text="Hari-H acara"
-                    date={addDays(selectedStart, 1)}
-                  />
-                  <DayRow
-                    tag="3"
-                    tagColor="#64765B"
-                    text="REST & CHILL — kita sarankan penyewa untuk mengembalikan baju di hari ini untuk menghindari keterlambatan"
-                    date={addDays(selectedStart, 2)}
-                  />
-                  <DayRow
-                    tag="4"
-                    tagColor="#64765B"
-                    text="Deadline baju harus sudah dikembalikan — kirimkan resi ke admin sebelum jam 6 sore"
-                    date={addDays(selectedStart, 3)}
-                    last
-                  />
-                </div>
-              )}
+              {/* Info panel */}
+              <div className="p-5 bg-[#F1EFE1] border border-store-border">
+                {!committed ? (
+                  <p className="text-[12.5px] text-store-fg-muted leading-relaxed">
+                    Drag across the calendar to select your event day(s) — drag
+                    onto the faded trailing dates to cross into next month.
+                    Your delivery, rest day, and return deadline will appear
+                    here.
+                  </p>
+                ) : (
+                  <div>
+                    <InfoRow
+                      n="1"
+                      color="#64765B"
+                      date={infoDelivery ? fmtShort(infoDelivery) : "—"}
+                      text="Penerima menerima paket baju"
+                    />
+                    <InfoRow
+                      n="2"
+                      color="#C69B32"
+                      date={
+                        infoEventCount > 1
+                          ? `${fmtShort(committed.lo)} – ${fmtShort(committed.hi)}`
+                          : fmtShort(committed.lo)
+                      }
+                      suffix={
+                        infoEventCount > 1
+                          ? `(${infoEventCount} hari)`
+                          : undefined
+                      }
+                      text="Hari-H acara"
+                    />
+                    <InfoRow
+                      n="3"
+                      color="#64765B"
+                      date={infoRest ? fmtShort(infoRest) : "—"}
+                      text="REST & CHILL — kita sarankan penyewa untuk mengembalikan baju di hari ini untuk menghindari keterlambatan"
+                    />
+                    <InfoRow
+                      n="4"
+                      color="#64765B"
+                      date={infoReturn ? fmtShort(infoReturn) : "—"}
+                      text="Deadline baju harus sudah dikembalikan — kirimkan resi ke admin sebelum jam 6 sore"
+                      last
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* ── Right panel ───────────────────────────────────────── */}
+            {/* ── RIGHT: summary + postal + estimation + accessories ─── */}
             <div className="space-y-5">
               <div>
-                <label className="block text-[13px] text-store-fg mb-2">Rental Date</label>
+                <label className="block text-[13px] text-store-fg mb-2">
+                  Rental Date
+                </label>
                 <div className="border border-store-border-strong px-4 py-3 text-[13.5px] text-store-fg">
-                  {selectedStart && rentalEnd
-                    ? `${fmtShort(selectedStart)} - ${fmtShort(rentalEnd)}`
-                    : "MM/DD/YYYY - MM/DD/YYYY"}
+                  {committed && infoDelivery && infoReturn
+                    ? `${fmtShort(infoDelivery)} – ${fmtShort(infoReturn)}`
+                    : "Select event days to see your rental range"}
                 </div>
               </div>
 
+              {/* Price panel — always visible, multiplies by event day count */}
+              <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
+                    Rental Price
+                  </span>
+                  <span className="text-[11px] text-store-fg-muted font-mono">
+                    {infoEventCount > 0
+                      ? `${infoEventCount} event day${infoEventCount === 1 ? "" : "s"}`
+                      : "—"}
+                  </span>
+                </div>
+                {infoEventCount > 0 ? (
+                  <>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-[12.5px] text-store-fg-muted">
+                        {fmtRupiah(rentalPrice)} × {infoEventCount}
+                      </span>
+                      <span className="text-[17px] font-semibold text-store-fg">
+                        {fmtRupiah(lineTotal)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-store-fg-muted leading-relaxed border-t border-[#DBD7C6] pt-2">
+                      Your rental is priced per event day. Every additional day
+                      you keep the piece multiplies the base rate.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[12px] text-store-fg-muted leading-relaxed">
+                    Select your event day(s) on the calendar to see the rental
+                    total. Pricing is {fmtRupiah(rentalPrice)} per event day.
+                  </p>
+                )}
+              </div>
+
               <div>
-                <label className="block text-[13px] text-store-fg mb-2">Postal Code</label>
+                <label className="block text-[13px] text-store-fg mb-2">
+                  Postal Code
+                </label>
                 <input
                   type="text"
                   inputMode="numeric"
                   maxLength={5}
                   value={postalCode}
-                  onChange={(e) => setPostalCode(e.target.value.replace(/\D/g, ""))}
-                  className="w-full border border-store-border-strong px-4 py-3 text-[13.5px] text-store-fg bg-transparent focus:outline-none focus:border-store-accent"
+                  onChange={(e) =>
+                    setPostalCode(e.target.value.replace(/\D/g, ""))
+                  }
+                  placeholder="e.g. 12180"
+                  className="w-full border border-store-border-strong px-4 py-3 text-[13.5px] text-store-fg bg-transparent focus:outline-none focus:border-store-accent font-mono"
                 />
               </div>
 
-              {selectedStart && rentalEnd && delivery && (
-                <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="border border-store-border-strong px-3 py-2 text-[11.5px] text-store-fg-muted">
-                      Rental Date: {parseInt(selectedStart.slice(8, 10), 10)}–{parseInt(rentalEnd.slice(8, 10), 10)}{" "}
-                      {new Date(year, month - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+              {/* Delivery estimation — ALWAYS visible */}
+              <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-3">
+                <div className="flex items-center gap-2">
+                  <MapPin
+                    className="w-3.5 h-3.5 text-store-accent"
+                    strokeWidth={1.6}
+                  />
+                  <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
+                    Delivery Estimation
+                  </p>
+                </div>
+
+                {!resolvedLead ? (
+                  <>
+                    <div className="space-y-1.5 text-[12.5px] text-store-fg">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-store-fg-muted">
+                          Postal code
+                        </span>
+                        <span className="font-mono text-store-fg-muted">
+                          — not set —
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-store-fg-muted">
+                          Courier lead time
+                        </span>
+                        <span className="text-store-fg-muted">pending</span>
+                      </div>
+                      <div className="flex justify-between gap-3 pt-1.5 border-t border-[#DBD7C6]">
+                        <span className="text-store-fg-muted">
+                          Earliest delivery (min)
+                        </span>
+                        <span className="font-semibold text-store-accent">
+                          {fmtShort(earliestReceipt)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-store-fg-muted">
+                          Earliest event day
+                        </span>
+                        <span className="font-medium">
+                          {fmtShort(earliestEventStart)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="border border-store-border-strong px-3 py-2 text-[11.5px] text-store-fg-muted">
-                      Returning Date: {fmtLong(rentalEnd)}
+                    <p className="text-[11px] text-store-fg-muted leading-relaxed border-t border-[#DBD7C6] pt-2">
+                      Enter your 5-digit postal code above to add the courier
+                      transit and unlock the exact calendar window for your
+                      area.
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-1.5 text-[12.5px] text-store-fg">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-store-fg-muted">Postal code</span>
+                      <span className="font-mono font-medium">
+                        {postalCode}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-store-fg-muted">Region</span>
+                      <span className="font-medium">
+                        {resolvedLead.region}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-store-fg-muted">
+                        Courier lead time
+                      </span>
+                      <span className="font-medium">
+                        {resolvedLead.days} day
+                        {resolvedLead.days === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3 pt-1.5 border-t border-[#DBD7C6]">
+                      <span className="text-store-fg-muted">
+                        Earliest delivery
+                      </span>
+                      <span className="font-semibold text-store-accent">
+                        {fmtShort(earliestReceipt)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-store-fg-muted">
+                        Earliest event day
+                      </span>
+                      <span className="font-medium">
+                        {fmtShort(earliestEventStart)}
+                      </span>
                     </div>
                   </div>
-                  <p className="text-[12px] text-store-fg">
-                    Postal Code: <strong>{delivery.region} ({delivery.type})</strong>
-                  </p>
-                  <p className="text-[12px] text-store-fg-muted">
-                    {delivery.arrivesToday
-                      ? "Your delivery will arrive today, so you can wear your dress immediately!"
-                      : `Your delivery will take approximately ${delivery.type}.`}
-                  </p>
+                )}
+              </div>
+
+              {committed && !selectionStillValid && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md text-[11.5px] leading-relaxed">
+                  Your postal code shifted the earliest delivery to{" "}
+                  <strong>{fmtShort(earliestReceipt)}</strong>. Please re-select
+                  your event days.
                 </div>
               )}
 
               {accessories.length > 0 && (
                 <div>
-                  <h3 className="font-serif text-[17px] text-store-fg mb-2">Complete Your Look</h3>
+                  <h3 className="font-serif text-[17px] text-store-fg mb-2">
+                    Complete Your Look
+                  </h3>
                   <p className="text-[12px] text-store-fg-muted mb-4 leading-relaxed">
-                    The accessories listed below are confirmed available for the selected date, and the price reflects the same duration as the dress rental.
+                    The accessories listed below are confirmed available for
+                    the selected date, and the price reflects the same duration
+                    as the dress rental.
                   </p>
                   <div className="space-y-3">
                     {accessories.map((a) => {
                       const added = addedAccessories.includes(a.sku);
+                      const accTotal =
+                        infoEventCount > 0
+                          ? a.rentalPrice * infoEventCount
+                          : a.rentalPrice;
                       return (
                         <div key={a.sku} className="flex items-center gap-3">
                           <div className="w-12 h-12 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                             {a.image && (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={a.image} alt="" className="w-full h-full object-cover" />
+                              <img
+                                src={a.image}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -376,7 +850,9 @@ export default function AvailabilityModal({
                               {a.sku}-{a.name}
                             </p>
                             <p className="text-[11.5px] text-store-fg-muted">
-                              Rp. {a.rentalPrice.toLocaleString("id-ID")}
+                              {infoEventCount > 1
+                                ? `${fmtRupiah(a.rentalPrice)} × ${infoEventCount} = ${fmtRupiah(accTotal)}`
+                                : fmtRupiah(accTotal)}
                             </p>
                           </div>
                           <button
@@ -399,7 +875,21 @@ export default function AvailabilityModal({
             </div>
           </div>
 
-          <div className="flex justify-center pb-12 pt-2">
+          {/* Add to cart — with a prominent rental total to the left */}
+          <div className="px-6 sm:px-10 pb-12 pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-store-border mt-2 pt-6">
+            <div className="text-left sm:text-left text-center">
+              <p className="text-[11px] tracking-[0.14em] uppercase text-store-fg-muted mb-1">
+                Rental Total
+              </p>
+              <p className="text-[22px] font-semibold text-store-fg leading-none">
+                {infoEventCount > 0 ? fmtRupiah(lineTotal) : "—"}
+              </p>
+              {infoEventCount > 1 && (
+                <p className="text-[11px] text-store-fg-muted mt-1">
+                  {fmtRupiah(rentalPrice)} × {infoEventCount} days
+                </p>
+              )}
+            </div>
             <button
               type="button"
               disabled={!canAddToCart}
@@ -423,37 +913,64 @@ export default function AvailabilityModal({
   );
 }
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
+/* ── Sub-components ──────────────────────────────────────────────── */
+
+function LegendSwatch({
+  color,
+  label,
+  opacity = 1,
+}: {
+  color: string;
+  label: string;
+  opacity?: number;
+}) {
   return (
     <span className="flex items-center gap-2">
-      <span className="w-3.5 h-3.5 inline-block" style={{ backgroundColor: color }} />
+      <span
+        className="w-3.5 h-3.5 inline-block"
+        style={{ backgroundColor: color, opacity }}
+      />
       {label}
     </span>
   );
 }
 
-function DayRow({
-  tag,
-  tagColor,
-  text,
+function InfoRow({
+  n,
+  color,
   date,
+  suffix,
+  text,
   last,
 }: {
-  tag: string;
-  tagColor: string;
-  text: string;
+  n: string;
+  color: string;
   date: string;
+  suffix?: string;
+  text: string;
   last?: boolean;
 }) {
   return (
-    <div className={`flex gap-3 py-2.5 ${last ? "" : "border-b border-[#DBD7C6]"}`}>
+    <div
+      className={`flex gap-3 py-2.5 ${last ? "" : "border-b border-[#DBD7C6]"}`}
+    >
       <span
-        className="w-7 h-7 flex-shrink-0 flex items-center justify-center text-white text-[12px] font-medium"
-        style={{ backgroundColor: tagColor }}
+        className="w-7 h-7 flex-shrink-0 flex items-center justify-center text-white text-[12px] font-medium rounded-sm"
+        style={{ backgroundColor: color }}
       >
-        {tag}
+        {n}
       </span>
-      <p className="text-[12.5px] text-store-fg leading-snug">{text}</p>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+          <span className="text-[12px] font-mono font-medium text-store-fg">
+            {date}
+          </span>
+          {suffix && (
+            <span className="text-[10.5px] text-store-fg-muted">{suffix}</span>
+          )}
+        </div>
+        <p className="text-[12.5px] text-store-fg leading-snug">{text}</p>
+      </div>
     </div>
   );
 }

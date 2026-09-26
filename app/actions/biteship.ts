@@ -13,10 +13,27 @@ function stripToLocal(raw: string): string {
   return digits;
 }
 
+export type DispatchOrderResult =
+  | {
+      success: true;
+      waybill: string;
+      trackingId: string | null;
+      trackingUrl: string | null;
+      courierCompany: string;
+      courierType: string;
+      price: number | null;
+    }
+  | {
+      error: string;
+      /** True when the failure is specifically "courier can't do scheduled
+       *  delivery" — the UI surfaces a "Try as Instant" retry button. */
+      retryAsInstant?: boolean;
+    };
+
 export async function dispatchOrderViaBiteship(
   orderId: string,
-  options?: { note?: string },
-) {
+  options?: { note?: string; forceInstant?: boolean },
+): Promise<DispatchOrderResult> {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
   if (!admin) return { error: "Unauthorized: Session not found." };
@@ -109,42 +126,85 @@ export async function dispatchOrderViaBiteship(
     `${order.customers?.first_name || ""} ${order.customers?.last_name || ""}`.trim() ||
     "Customer";
 
-  // delivery_type: scheduled if pickup is in the future
+  // delivery_type decision:
+  //   pickup today (or unspecified) → "now"
+  //   pickup in the future         → "scheduled"
+  //   admin explicitly forced      → "now" (escape hatch when scheduled is rejected)
   const todayStr = new Date().toISOString().split("T")[0];
   const isToday = !order.pickup_date || order.pickup_date === todayStr;
-  const deliveryType = isToday ? "now" : "scheduled";
+  const wantsScheduled = !isToday && !options?.forceInstant;
+  const deliveryType: "now" | "scheduled" = wantsScheduled
+    ? "scheduled"
+    : "now";
 
-  const biteshipResult = await createBiteshipOrder({
-    origin: {
-      name: origin.name,
-      phone: stripToLocal(origin.phone),
-      address: `${origin.street_address}, ${origin.city}`,
-      postal_code: String(origin.postal_code),
-      coordinate: {
-        latitude: Number(origin.latitude),
-        longitude: Number(origin.longitude),
+  // ── Call Biteship ─────────────────────────────────────────────────────
+  let biteshipResult;
+  try {
+    biteshipResult = await createBiteshipOrder({
+      origin: {
+        name: origin.name,
+        phone: stripToLocal(origin.phone),
+        address: `${origin.street_address}, ${origin.city}`,
+        postal_code: String(origin.postal_code),
+        coordinate: {
+          latitude: Number(origin.latitude),
+          longitude: Number(origin.longitude),
+        },
       },
-    },
-    destination: {
-      name: customerName,
-      phone: stripToLocal(order.customers?.phone || ""),
-      address: `${order.street_address}, ${order.city}`,
-      postal_code: order.postal_code ? String(order.postal_code) : undefined,
-      coordinate: {
-        latitude: Number(order.latitude),
-        longitude: Number(order.longitude),
+      destination: {
+        name: customerName,
+        phone: stripToLocal(order.customers?.phone || ""),
+        address: `${order.street_address}, ${order.city}`,
+        postal_code: order.postal_code ? String(order.postal_code) : undefined,
+        coordinate: {
+          latitude: Number(order.latitude),
+          longitude: Number(order.longitude),
+        },
       },
-    },
-    courier_company: codes.company,
-    courier_type: codes.type,
-    delivery_type: deliveryType as any,
-    delivery_date: isToday ? undefined : order.pickup_date,
-    reference_id: orderId,
-    items: packageItems,
-    note: options?.note || `KORA Rental ${orderId} - Handle with care`,
-  });
+      courier_company: codes.company,
+      courier_type: codes.type,
+      delivery_type: deliveryType,
+      delivery_date: wantsScheduled ? order.pickup_date : undefined,
+      reference_id: orderId,
+      items: packageItems,
+      note: options?.note || `KORA Rental ${orderId} - Handle with care`,
+    });
+  } catch (err: any) {
+    console.error("[Biteship] Unexpected throw:", err);
+    return {
+      error: `Unexpected error dispatching via Biteship: ${err?.message || "unknown"}`,
+    };
+  }
 
-  if (!biteshipResult.success) return { error: biteshipResult.error };
+  if (!biteshipResult.success) {
+    const rawError = biteshipResult.error || "";
+
+    // Detect the specific "courier can't do scheduled" rejection so the UI
+    // can offer a one-click "Try as Instant" fallback.
+    const scheduledBlocked =
+      /not available for scheduled delivery/i.test(rawError) ||
+      /scheduled delivery/i.test(rawError);
+
+    let friendlyError = rawError;
+    if (scheduledBlocked) {
+      friendlyError =
+        `${codes.company.toUpperCase()} — ${codes.type.toUpperCase()} doesn't accept advance bookings (pickup scheduled for ${order.pickup_date}). ` +
+        `Either click "Try as Instant" below to dispatch right now, or switch Pick Up Method to Gosend - Instant / Paxel - Medium which support scheduled pickups.`;
+    }
+
+    console.error("[Biteship] Dispatch failed:", {
+      orderId,
+      courier: `${codes.company}/${codes.type}`,
+      deliveryType,
+      pickupDate: order.pickup_date,
+      error: rawError,
+    });
+
+    return {
+      error: friendlyError,
+      retryAsInstant: scheduledBlocked,
+    };
+  }
 
   const waybill =
     biteshipResult.waybill_id ||
@@ -192,13 +252,12 @@ export async function dispatchOrderViaBiteship(
       waybill_id: waybill,
       note: options?.note || null,
       early_dispatch: !isToday,
+      delivery_type: deliveryType,
+      forced_instant: Boolean(options?.forceInstant),
     },
   });
 
   // --- WhatsApp notification: package_shipped ------------------------------
-  // Uses the same emitWa hub as every other notification so the template is
-  // read from app_settings.notifications.package_shipped and the send is
-  // logged to admin_audit_logs as WA_DISPATCHED (success or failure).
   if (order.customers?.phone) {
     try {
       const { emitWa } = await import("@/lib/notifications");

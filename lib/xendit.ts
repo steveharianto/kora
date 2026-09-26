@@ -55,8 +55,7 @@ export async function createXenditInvoice(
         currency: payload.currency || "IDR",
         success_redirect_url: payload.success_redirect_url,
         failure_redirect_url: payload.failure_redirect_url,
-        // Reasonable defaults for a retail session
-        invoice_duration: 60 * 60 * 24, // 24h
+        invoice_duration: 60 * 60 * 24,
         payment_methods: [
           "BCA",
           "BNI",
@@ -93,6 +92,77 @@ export async function createXenditInvoice(
       invoice_url: data.invoice_url,
       status: data.status,
     };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Network error contacting Xendit.",
+    };
+  }
+}
+
+/* ── Invoice lookup ──────────────────────────────────────────────── */
+
+export interface XenditInvoiceLookupResult {
+  success: boolean;
+  invoice?: {
+    id: string;
+    external_id: string;
+    status: string; // PENDING | PAID | SETTLED | EXPIRED
+    amount: number;
+    paid_amount?: number;
+    paid_at?: string;
+    payment_method?: string;
+    payment_channel?: string;
+    updated?: string;
+    invoice_url?: string;
+    [k: string]: any;
+  };
+  error?: string;
+}
+
+/**
+ * Look up an invoice by its external_id (which we set to the KORA order ID
+ * when the invoice was created). Xendit's list endpoint returns an array;
+ * we hand back the first match.
+ */
+export async function getXenditInvoiceByExternalId(
+  externalId: string,
+): Promise<XenditInvoiceLookupResult> {
+  if (!externalId) return { success: false, error: "external_id is required." };
+
+  try {
+    const res = await fetch(
+      `${XENDIT_API}/v2/invoices?external_id=${encodeURIComponent(externalId)}`,
+      {
+        headers: { Authorization: getAuthHeader() },
+      },
+    );
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error:
+          data?.error_code
+            ? `${data.error_code}: ${data.message || ""}`
+            : data?.message || `Xendit lookup failed (HTTP ${res.status}).`,
+      };
+    }
+
+    // Xendit returns either an array or `{ data: [...] }` depending on version.
+    const arr: any[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
+    const invoice = arr[0];
+
+    if (!invoice) {
+      return { success: false, error: "No invoice found for this order." };
+    }
+
+    return { success: true, invoice };
   } catch (err: any) {
     return {
       success: false,

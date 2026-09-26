@@ -3,10 +3,12 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, MapPin, Truck, Lock } from "lucide-react";
+import { Loader2, MapPin, Truck, Lock, Check } from "lucide-react";
 import {
   readRentalCart,
   writeRentalCart,
+  rentalLineTotal,
+  rentalCartSubtotal,
   type RentalCartItem,
 } from "@/lib/storefront/cart";
 import {
@@ -56,18 +58,12 @@ function addDays(s: string, n: number) {
   dt.setDate(dt.getDate() + n);
   return dt.toISOString().split("T")[0];
 }
-function computeLeadDays(postalCode: string, leadTimes: LeadTime[]) {
-  if (!postalCode || postalCode.length < 2) return 2;
-  const p2 = postalCode.slice(0, 2);
-  for (const lt of leadTimes) {
-    if (lt.prefix.includes("-")) {
-      const [s, e] = lt.prefix.replace("xxx", "").split("-");
-      if (p2 >= s && p2 <= e) return lt.days;
-    } else if (lt.prefix.startsWith(p2)) {
-      return lt.days;
-    }
-  }
-  return 2;
+function diffDays(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const A = new Date(ay, am - 1, ad).getTime();
+  const B = new Date(by, bm - 1, bd).getTime();
+  return Math.round((B - A) / 86400000);
 }
 
 export default function CheckoutClient({
@@ -81,7 +77,7 @@ export default function CheckoutClient({
   const [addressId, setAddressId] = useState<number | "">(
     addresses[0]?.id ?? "",
   );
-  const [eventStartDate, setEventStartDate] = useState(todayISO());
+  const [eventStartDate, setEventStartDate] = useState<string>("");
   const [eventDays, setEventDays] = useState(1);
   const [rates, setRates] = useState<RateOption[]>([]);
   const [selectedRate, setSelectedRate] = useState<RateOption | null>(null);
@@ -92,9 +88,30 @@ export default function CheckoutClient({
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
 
-  // Read cart on mount
   useEffect(() => {
-    setCart(readRentalCart());
+    const c = readRentalCart();
+    setCart(c);
+    if (c.length === 0) return;
+
+    const starts = c
+      .map((i) => i.eventStart)
+      .filter((s): s is string => Boolean(s))
+      .sort();
+    const ends = c
+      .map((i) => i.eventEnd)
+      .filter((s): s is string => Boolean(s))
+      .sort();
+
+    if (starts.length > 0 && ends.length > 0) {
+      const lo = starts[0];
+      const hi = ends[ends.length - 1];
+      setEventStartDate(lo);
+      setEventDays(Math.max(1, diffDays(lo, hi) + 1));
+    } else {
+      const tomorrow = addDays(todayISO(), 1);
+      setEventStartDate(tomorrow);
+      setEventDays(1);
+    }
   }, []);
 
   const selectedAddress = useMemo(
@@ -102,23 +119,49 @@ export default function CheckoutClient({
     [addresses, addressId],
   );
 
-  const leadDays = useMemo(
-    () => computeLeadDays(selectedAddress?.postal_code || "", deliveryLeadTimes),
-    [selectedAddress, deliveryLeadTimes],
-  );
-
   const pickupDate = useMemo(
-    () => addDays(eventStartDate, -leadDays),
-    [eventStartDate, leadDays],
+    () => (eventStartDate ? addDays(eventStartDate, -1) : ""),
+    [eventStartDate],
   );
-  const returnDate = useMemo(
-    () => addDays(eventStartDate, eventDays + 1),
-    [eventStartDate, eventDays],
+  const returnDate = useMemo(() => {
+    if (!eventStartDate || eventDays < 1) return "";
+    const eventEnd = addDays(eventStartDate, eventDays - 1);
+    return addDays(eventEnd, 2);
+  }, [eventStartDate, eventDays]);
+
+  const minEventStart = useMemo(() => {
+    const p2 = (selectedAddress?.postal_code || "").slice(0, 2);
+    let leadDays = 0;
+    if (p2) {
+      const match = deliveryLeadTimes.find((lt) => {
+        if (lt.prefix.includes("-")) {
+          const [s, e] = lt.prefix.replace("xxx", "").split("-");
+          return p2 >= s && p2 <= e;
+        }
+        return lt.prefix.startsWith(p2);
+      });
+      if (match) leadDays = Number(match.days);
+      else {
+        const other = deliveryLeadTimes.find((l) => l.prefix === "other");
+        if (other) leadDays = Number(other.days);
+      }
+    }
+    return addDays(todayISO(), 3 + leadDays + 1);
+  }, [selectedAddress, deliveryLeadTimes]);
+
+  // Subtotal = Σ(unit price × event days) per line.
+  const subtotal = useMemo(() => rentalCartSubtotal(cart), [cart]);
+
+  // Deposit stays per-unit — it tracks the item's value, not the duration.
+  const totalDeposit = useMemo(
+    () =>
+      cart.reduce(
+        (s, i) => s + (i.price > 1000000 ? 250000 : 150000),
+        0,
+      ),
+    [cart],
   );
 
-  const subtotal = cart.reduce((s, i) => s + i.price, 0);
-  const depositPerItem = cart.map((i) => (i.price > 1000000 ? 250000 : 150000));
-  const totalDeposit = depositPerItem.reduce((s, d) => s + d, 0);
   const shippingFee = selectedRate?.price || 0;
   const maxCredit = customer.currentCredit;
   const grandTotal = Math.max(
@@ -126,7 +169,6 @@ export default function CheckoutClient({
     subtotal + totalDeposit + shippingFee - storeCreditUsed,
   );
 
-  // Fetch shipping rates whenever the address or cart changes
   const fetchRates = useCallback(async () => {
     if (!selectedAddress?.postal_code || cart.length === 0) {
       setRates([]);
@@ -138,6 +180,8 @@ export default function CheckoutClient({
 
     const res = await getCheckoutShippingRates({
       destinationPostalCode: selectedAddress.postal_code,
+      destinationLatitude: selectedAddress.latitude,
+      destinationLongitude: selectedAddress.longitude,
       itemSkus: cart.map((c) => c.sku),
     });
 
@@ -161,17 +205,23 @@ export default function CheckoutClient({
       setCheckoutError("Please select an address and courier.");
       return;
     }
+    if (!eventStartDate || !pickupDate || !returnDate) {
+      setCheckoutError("Please select your event date.");
+      return;
+    }
 
     setSubmitting(true);
     setCheckoutError("");
 
-    // 1. Create the Draft order server-side
+    // Server-side recomputes totals from items.rental_price × eventDays —
+    // see createWebsiteOrder.
     const orderRes = await createWebsiteOrder({
       items: cart.map((c) => ({
         sku: c.sku,
         quantity: 1,
-        price: c.price,
+        price: c.price, // per-day unit price; server multiplies by eventDays
         deposit: c.price > 1000000 ? 250000 : 150000,
+        eventDays: c.eventDays,
       })),
       eventStartDate,
       eventDays,
@@ -193,7 +243,6 @@ export default function CheckoutClient({
       return;
     }
 
-    // 2. Create Xendit invoice
     const invoiceRes = await createXenditInvoiceForOrder(orderRes.orderId);
     if (invoiceRes.error || !invoiceRes.invoiceUrl) {
       setCheckoutError(invoiceRes.error || "Could not create payment session.");
@@ -201,7 +250,6 @@ export default function CheckoutClient({
       return;
     }
 
-    // 3. Clear cart and redirect to Xendit
     writeRentalCart([]);
     window.location.href = invoiceRes.invoiceUrl;
   };
@@ -237,7 +285,6 @@ export default function CheckoutClient({
         <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-12">
           {/* LEFT — form */}
           <div className="space-y-10">
-            {/* ── Delivery address ───────────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-5">
                 <MapPin className="w-4 h-4 text-store-accent" strokeWidth={1.6} />
@@ -306,7 +353,6 @@ export default function CheckoutClient({
               )}
             </section>
 
-            {/* ── Rental schedule ────────────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-5">
                 <Lock className="w-4 h-4 text-store-accent" strokeWidth={1.6} />
@@ -322,7 +368,7 @@ export default function CheckoutClient({
                   </label>
                   <input
                     type="date"
-                    min={todayISO()}
+                    min={minEventStart}
                     value={eventStartDate}
                     onChange={(e) => setEventStartDate(e.target.value)}
                     className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent"
@@ -338,7 +384,7 @@ export default function CheckoutClient({
                     max={7}
                     value={eventDays}
                     onChange={(e) =>
-                      setEventDays(parseInt(e.target.value) || 1)
+                      setEventDays(Math.max(1, parseInt(e.target.value) || 1))
                     }
                     className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent"
                   />
@@ -350,20 +396,19 @@ export default function CheckoutClient({
                   <div>
                     <p className="text-store-fg-muted">Pickup / Send</p>
                     <p className="text-store-fg font-medium">
-                      {fmtShortDate(pickupDate)}
+                      {pickupDate ? fmtShortDate(pickupDate) : "—"}
                     </p>
                   </div>
                   <div>
                     <p className="text-store-fg-muted">Return Deadline</p>
                     <p className="text-store-fg font-medium">
-                      {fmtShortDate(returnDate)}
+                      {returnDate ? fmtShortDate(returnDate) : "—"}
                     </p>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* ── Shipping ───────────────────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-5">
                 <Truck className="w-4 h-4 text-store-accent" strokeWidth={1.6} />
@@ -390,45 +435,59 @@ export default function CheckoutClient({
                   No courier options available for this route.
                 </p>
               ) : (
-                <div className="space-y-3">
-                  {rates.map((r) => (
-                    <label
-                      key={r.label}
-                      className={`block border px-5 py-4 cursor-pointer transition-colors ${
-                        selectedRate?.label === r.label
-                          ? "border-store-accent bg-store-hover/30"
-                          : "border-store-border-strong hover:border-store-fg"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="rate"
-                        className="sr-only"
-                        checked={selectedRate?.label === r.label}
-                        onChange={() => setSelectedRate(r)}
-                      />
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[13.5px] text-store-fg font-medium">
-                            {r.label}
-                          </p>
-                          {r.etd && (
-                            <p className="text-[11.5px] text-store-fg-muted mt-0.5">
-                              Est. {r.etd}
-                            </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {rates.map((r) => {
+                    const active = selectedRate?.label === r.label;
+                    return (
+                      <label
+                        key={r.label}
+                        className={`flex items-center gap-2.5 border px-3 py-2.5 cursor-pointer transition-colors ${
+                          active
+                            ? "border-store-accent bg-store-hover/30"
+                            : "border-store-border-strong hover:border-store-fg"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="rate"
+                          className="sr-only"
+                          checked={active}
+                          onChange={() => setSelectedRate(r)}
+                        />
+                        <span
+                          className={`w-4 h-4 flex-shrink-0 border flex items-center justify-center transition-colors ${
+                            active
+                              ? "bg-store-accent border-store-accent"
+                              : "border-store-border-strong bg-transparent"
+                          }`}
+                        >
+                          {active && (
+                            <Check
+                              className="w-3 h-3 text-white"
+                              strokeWidth={3}
+                            />
                           )}
-                        </div>
-                        <span className="text-[14px] text-store-fg font-semibold whitespace-nowrap">
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[12.5px] text-store-fg font-medium leading-snug truncate">
+                            {r.label}
+                          </span>
+                          {r.etd && (
+                            <span className="block text-[10.5px] text-store-fg-muted leading-snug">
+                              Est. {r.etd}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[12px] text-store-fg font-semibold whitespace-nowrap">
                           Rp {r.price.toLocaleString("id-ID")}
                         </span>
-                      </div>
-                    </label>
-                  ))}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </section>
 
-            {/* ── Store credit ──────────────────────────────── */}
             {maxCredit > 0 && (
               <section>
                 <h2 className="font-serif text-[20px] text-store-fg font-normal mb-4">
@@ -445,7 +504,10 @@ export default function CheckoutClient({
                   max={maxCredit}
                   value={storeCreditUsed}
                   onChange={(e) => {
-                    const v = Math.max(0, Math.min(maxCredit, parseInt(e.target.value) || 0));
+                    const v = Math.max(
+                      0,
+                      Math.min(maxCredit, parseInt(e.target.value) || 0),
+                    );
                     setStoreCreditUsed(v);
                   }}
                   className="w-full max-w-[240px] mt-2 text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono"
@@ -462,32 +524,52 @@ export default function CheckoutClient({
               </h2>
 
               <div className="space-y-4 pb-5 border-b border-store-border">
-                {cart.map((c, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="w-14 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
-                      {c.image && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={c.image}
-                          alt={c.name}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
+                {cart.map((c, i) => {
+                  const lineTotal = rentalLineTotal(c);
+                  const days = c.eventDays || 1;
+                  return (
+                    <div key={i} className="flex gap-3">
+                      <div className="w-14 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                        {c.image && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={c.image}
+                            alt={c.name}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12.5px] text-store-fg leading-snug">
+                          {c.sku}-{c.name}
+                        </p>
+                        {days > 1 && (
+                          <p className="text-[11.5px] text-store-fg-muted mt-0.5">
+                            Rp {c.price.toLocaleString("id-ID")} × {days} days
+                          </p>
+                        )}
+                        <p className="text-[12px] text-store-fg font-medium mt-0.5">
+                          Rp {lineTotal.toLocaleString("id-ID")}
+                        </p>
+                        {c.eventStart && c.eventEnd && (
+                          <p className="text-[11px] text-store-fg-subtle mt-0.5">
+                            {fmtShortDate(c.eventStart)}
+                            {c.eventStart !== c.eventEnd
+                              ? ` – ${fmtShortDate(c.eventEnd)}`
+                              : ""}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12.5px] text-store-fg leading-snug">
-                        {c.sku}-{c.name}
-                      </p>
-                      <p className="text-[11.5px] text-store-fg-muted mt-0.5">
-                        Rp {c.price.toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="py-5 space-y-2.5 text-[13px]">
-                <Row label="Subtotal" value={`Rp ${subtotal.toLocaleString("id-ID")}`} />
+                <Row
+                  label="Subtotal"
+                  value={`Rp ${subtotal.toLocaleString("id-ID")}`}
+                />
                 <Row
                   label="Refundable Deposit"
                   value={`Rp ${totalDeposit.toLocaleString("id-ID")}`}
@@ -509,7 +591,9 @@ export default function CheckoutClient({
               </div>
 
               <div className="pt-5 border-t border-store-border flex items-baseline justify-between mb-6">
-                <span className="font-serif text-[18px] text-store-fg">Total</span>
+                <span className="font-serif text-[18px] text-store-fg">
+                  Total
+                </span>
                 <span className="text-[20px] text-store-fg font-semibold">
                   Rp {grandTotal.toLocaleString("id-ID")}
                 </span>
@@ -536,8 +620,9 @@ export default function CheckoutClient({
               </button>
 
               <p className="text-[11px] text-store-fg-muted text-center mt-4 leading-relaxed">
-                You&apos;ll be redirected to Xendit to complete your payment securely.
-                Your order will be confirmed once payment is received.
+                You&apos;ll be redirected to Xendit to complete your payment
+                securely. Your order will be confirmed once payment is
+                received.
               </p>
             </div>
           </div>

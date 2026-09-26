@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import {
   readRentalCart,
   writeRentalCart,
+  rentalCartSubtotal,
   type RentalCartItem,
 } from "@/lib/storefront/cart";
 
@@ -45,7 +46,8 @@ export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props)
     writeRentalCart(next);
   };
 
-  const subtotal = items.reduce((s, i) => s + i.price, 0);
+  // Subtotal = Σ(unit price × event days) per line.
+  const subtotal = rentalCartSubtotal(items);
 
   if (!isOpen) return null;
 
@@ -119,6 +121,9 @@ function CartRow({
   item: RentalCartItem;
   onRemove: () => void;
 }) {
+  const days = item.eventDays || 1;
+  const lineTotal = item.price * days;
+
   return (
     <div className="flex gap-4 sm:gap-5">
       <div className="w-20 sm:w-24 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
@@ -132,8 +137,13 @@ function CartRow({
         <h3 className="font-serif text-[14.5px] sm:text-[16px] text-store-fg leading-snug mb-1.5">
           {item.sku}-{item.name}
         </h3>
+        {days > 1 && (
+          <p className="text-[11.5px] text-store-fg-muted mb-0.5">
+            Rp {item.price.toLocaleString("id-ID")} × {days} days
+          </p>
+        )}
         <p className="text-[13.5px] sm:text-[14px] text-store-fg font-semibold mb-3">
-          Rp {item.price.toLocaleString("id-ID")}
+          Rp {lineTotal.toLocaleString("id-ID")}
         </p>
         <div className="space-y-0.5 text-[11.5px] sm:text-[12px] text-store-fg-muted">
           <p>Rental Date&nbsp;&nbsp;{fmtDateRange(item.rentalStart, item.rentalEnd)}</p>

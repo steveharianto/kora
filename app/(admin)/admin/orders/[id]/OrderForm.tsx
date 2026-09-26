@@ -29,6 +29,7 @@ import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import AddressMapPicker from "@/components/AddressMapPicker";
+import { OUTBOUND_COURIER_LABELS } from "@/lib/courierMap";
 
 // Locale-safe date formatter — matches server and client output byte-for-byte.
 function formatLogDate(iso?: string | null) {
@@ -198,6 +199,7 @@ export default function OrderForm({
     price: number | null;
   } | null>(null);
   const [bookingError, setBookingError] = useState<string>("");
+  const [canRetryAsInstant, setCanRetryAsInstant] = useState(false);
   const [copiedWaybill, setCopiedWaybill] = useState(false);
 
   // Date override escape hatch. Off by default — pickup/return stay derived
@@ -205,7 +207,6 @@ export default function OrderForm({
   const [datesOverridden, setDatesOverridden] = useState(false);
 
   // SSR-safe origin gate: empty on server → empty on first client render → match.
-  // Populated in useEffect after hydration, so origin-dependent links appear post-mount.
   const [mountedOrigin, setMountedOrigin] = useState("");
   useEffect(() => {
     setMountedOrigin(window.location.origin);
@@ -311,6 +312,13 @@ export default function OrderForm({
     .includes("self pickup");
   const usesShipping = !isSelfPickup;
 
+  // KTP verification state — drives the courier button gate and the hold banner.
+  const isKtpVerified = activeCustomer?.status === "Verified";
+  const needsKtpAction =
+    Boolean(activeCustomer?.id) &&
+    !isKtpVerified &&
+    ["Draft", "Ordered"].includes(formData.status);
+
   const isAddressLocked = useMemo(
     () =>
       isWebsite ||
@@ -319,8 +327,6 @@ export default function OrderForm({
     [isWebsite, formData.status, formData.packing_slip_id],
   );
 
-  // Booking window — only enforced for website orders. Manual admins book at
-  // will because they're operating the showroom on behalf of a walk-in.
   const daysUntilPickup = useMemo(() => {
     if (!formData.pickup_date) return null;
     const [py, pm, pd] = formData.pickup_date.split("-").map(Number);
@@ -331,10 +337,9 @@ export default function OrderForm({
     return Math.round((pickup.getTime() - today.getTime()) / 86400000);
   }, [formData.pickup_date]);
 
-  const canBookAtAll =
-    isWebsite
-      ? daysUntilPickup !== null && daysUntilPickup <= bookingWindowDays
-      : daysUntilPickup !== null;
+  const canBookAtAll = isWebsite
+    ? daysUntilPickup !== null && daysUntilPickup <= bookingWindowDays
+    : daysUntilPickup !== null;
   const canBookNow = isWebsite
     ? daysUntilPickup !== null && daysUntilPickup <= 0
     : daysUntilPickup !== null && daysUntilPickup <= 0;
@@ -384,7 +389,6 @@ export default function OrderForm({
     })),
   );
 
-  // Courier lead time — ignored for showroom pickup (self pickup).
   const leadTimeDays = useMemo(() => {
     if (isSelfPickup) return 0;
     if (!formData.postal_code) return 1;
@@ -399,10 +403,6 @@ export default function OrderForm({
     return match ? Number(match.days) : 1;
   }, [formData.postal_code, deliveryLeadTimes, isSelfPickup]);
 
-  // ── Date derivation ───────────────────────────────────────────────────────
-  // Mirrors CheckoutClient exactly:
-  //   Pickup = Event Date − lead days (self pickup → lead = 0)
-  //   Return = Event Date + event days + 1
   const recomputeDates = (
     eventStartDate: string,
     eventDays: number,
@@ -442,8 +442,6 @@ export default function OrderForm({
     };
   };
 
-  // Initial override detection — if the stored dates diverge from the derived
-  // formula, respect the admin's original intent by starting with override on.
   useEffect(() => {
     if (!initialOrder.event_start_date) return;
     const derived = recomputeDates(
@@ -532,7 +530,6 @@ export default function OrderForm({
     });
   };
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleAddLine = () =>
     setProducts([
       ...products,
@@ -670,6 +667,7 @@ export default function OrderForm({
   const handleOpenBookingModal = () => {
     setBookingStep("preview");
     setBookingError("");
+    setCanRetryAsInstant(false);
     setBookingResult(null);
   };
 
@@ -678,19 +676,25 @@ export default function OrderForm({
     setBookingStep("closed");
   };
 
-  const handleConfirmBooking = async () => {
+  const handleConfirmBooking = async (forceInstant = false) => {
     setBookingStep("booking");
     setBookingError("");
+    setCanRetryAsInstant(false);
+
     const res = await dispatchOrderViaBiteship(formData.id, {
       note: bookingNote,
+      forceInstant,
     });
-    if (res?.error) {
+
+    if ("error" in res) {
       setBookingError(res.error);
+      setCanRetryAsInstant(Boolean(res.retryAsInstant));
       setBookingStep("error");
       return;
     }
+
     setBookingResult({
-      waybill: res.waybill!,
+      waybill: res.waybill,
       trackingUrl: res.trackingUrl || null,
       courierCompany: res.courierCompany || "",
       courierType: res.courierType || "",
@@ -926,17 +930,23 @@ export default function OrderForm({
               type="button"
               onClick={handleOpenBookingModal}
               disabled={
-                loading || !isComplete || !canBookAtAll || alreadyDispatched
+                loading ||
+                !isComplete ||
+                !canBookAtAll ||
+                alreadyDispatched ||
+                !isKtpVerified
               }
               title={
-                alreadyDispatched
-                  ? `Already dispatched (${formData.packing_slip_id})`
-                  : !canBookAtAll && bookingWindowOpensOn
-                    ? `Bookable from ${bookingWindowOpensOn} (${bookingWindowDays} days before pickup)`
-                    : undefined
+                !isKtpVerified
+                  ? "Customer KTP not verified — open the customer page to verify before booking."
+                  : alreadyDispatched
+                    ? `Already dispatched (${formData.packing_slip_id})`
+                    : !canBookAtAll && bookingWindowOpensOn
+                      ? `Bookable from ${bookingWindowOpensOn} (${bookingWindowDays} days before pickup)`
+                      : undefined
               }
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                canBookAtAll && !alreadyDispatched
+                canBookAtAll && !alreadyDispatched && isKtpVerified
                   ? "bg-wine text-white hover:bg-[#181E15]"
                   : "bg-[#EFEBE2] text-muted"
               }`}
@@ -944,13 +954,15 @@ export default function OrderForm({
               <Truck className="w-3.5 h-3.5" />
               {alreadyDispatched
                 ? "Already Booked"
-                : !canBookAtAll
-                  ? bookingWindowOpensOn
-                    ? `Book from ${bookingWindowOpensOn}`
-                    : "Book Biteship"
-                  : canBookNow
-                    ? "Book Biteship Now"
-                    : "Book Biteship"}
+                : !isKtpVerified
+                  ? "KTP Verification Required"
+                  : !canBookAtAll
+                    ? bookingWindowOpensOn
+                      ? `Book from ${bookingWindowOpensOn}`
+                      : "Book Biteship"
+                    : canBookNow
+                      ? "Book Biteship Now"
+                      : "Book Biteship"}
             </button>
           )}
 
@@ -1011,6 +1023,35 @@ export default function OrderForm({
       {errorMsg && (
         <div className="mb-4 p-3 text-xs bg-bad-bg border border-[#D9A79C] text-bad rounded-lg">
           {errorMsg}
+        </div>
+      )}
+
+      {/* KTP hold banner — surfaces the courier-block and offers a one-click
+          jump to the customer profile where KTP can be approved or reset. */}
+      {needsKtpAction && (
+        <div className="mb-4 p-3.5 bg-[#FDF3DE] border border-[#F1DFB7] rounded-xl flex items-center gap-3 justify-between flex-wrap">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#977028]" />
+            <div className="min-w-0 text-xs text-[#84661E]">
+              <p className="font-semibold">
+                KTP verification required — this order can&apos;t be dispatched
+                until the customer&apos;s KTP is verified.
+              </p>
+              <p className="text-[11px] mt-0.5 text-[#84661E]/90">
+                Current status:{" "}
+                <span className="font-medium">
+                  {activeCustomer?.status || "Not Submitted"}
+                </span>
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/admin/customers/${activeCustomer.id}`}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#84661E] text-white rounded-lg text-[11px] font-semibold hover:bg-[#6d5417] transition"
+          >
+            Verify KTP
+            <ExternalLink className="w-3 h-3" />
+          </Link>
         </div>
       )}
 
@@ -1126,7 +1167,6 @@ export default function OrderForm({
               </div>
             </div>
 
-            {/* Schedule — mirrors the customer checkout flow */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
@@ -1234,7 +1274,6 @@ export default function OrderForm({
               )}
             </div>
 
-            {/* Escape hatch — off by default so the derived flow is the happy path */}
             {!isWebsite && !isAddressLocked && (
               <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
                 <input
@@ -1404,11 +1443,20 @@ export default function OrderForm({
                   {!isWebsite && (
                     <option value="Self pickup">Self pickup (Diambil)</option>
                   )}
-                  <option value="JNE - REG">JNE - REG</option>
-                  <option value="JNE - YES">JNE - YES</option>
-                  <option value="SiCepat - REG">SiCepat - REG</option>
-                  <option value="Gosend - Instant">Gosend - Instant</option>
-                  <option value="Paxel - Medium">Paxel - Medium</option>
+                  {OUTBOUND_COURIER_LABELS.map((label) => (
+                    <option key={label} value={label}>
+                      {label}
+                    </option>
+                  ))}
+                  {formData.pick_up_method &&
+                    formData.pick_up_method !== "Self pickup" &&
+                    !OUTBOUND_COURIER_LABELS.includes(
+                      formData.pick_up_method,
+                    ) && (
+                      <option value={formData.pick_up_method}>
+                        {formData.pick_up_method} (legacy)
+                      </option>
+                    )}
                 </select>
               </div>
 
@@ -1839,7 +1887,7 @@ export default function OrderForm({
                   </button>
                   <button
                     type="button"
-                    onClick={handleConfirmBooking}
+                    onClick={() => handleConfirmBooking(false)}
                     className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer flex items-center gap-1.5"
                   >
                     <Truck className="w-3.5 h-3.5" />
@@ -1979,9 +2027,21 @@ export default function OrderForm({
                   >
                     Book Manually Instead
                   </button>
+
+                  {canRetryAsInstant && (
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmBooking(true)}
+                      className="px-4 py-2 border border-wine bg-wine-soft text-wine-ink rounded-lg text-xs font-semibold hover:bg-wine hover:text-white transition cursor-pointer"
+                      title="Re-book with delivery_type: now — the courier will pick up today"
+                    >
+                      Try as Instant
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    onClick={handleConfirmBooking}
+                    onClick={() => handleConfirmBooking(false)}
                     className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer"
                   >
                     Retry
