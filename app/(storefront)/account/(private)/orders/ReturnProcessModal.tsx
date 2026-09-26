@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ArrowLeft } from "lucide-react";
+import { X, ArrowLeft, Calendar } from "lucide-react";
 import {
   requestReturn,
   submitSelfReturn,
 } from "@/app/actions/customerReturns";
 import ConfirmationModal from "@/components/storefront/ConfirmationModal";
 
-type Step = "choose" | "self-form" | "submitting" | "done";
+type Step = "choose" | "kora-form" | "self-form" | "submitting" | "done";
 
 interface Props {
   isOpen: boolean;
@@ -28,9 +28,14 @@ const COURIERS = [
 function todayISO() {
   return new Date().toISOString().split("T")[0];
 }
+function tomorrowISO() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0];
+}
 function maxDateISO() {
   const d = new Date();
-  d.setDate(d.getDate() + 7);
+  d.setDate(d.getDate() + 14);
   return d.toISOString().split("T")[0];
 }
 
@@ -44,6 +49,7 @@ export default function ReturnProcessModal({
   const [courier, setCourier] = useState("");
   const [returnDate, setReturnDate] = useState(todayISO());
   const [trackingNumber, setTrackingNumber] = useState("");
+  const [pickupDate, setPickupDate] = useState(tomorrowISO());
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -52,6 +58,7 @@ export default function ReturnProcessModal({
       setCourier("");
       setReturnDate(todayISO());
       setTrackingNumber("");
+      setPickupDate(tomorrowISO());
       setError("");
     }
   }, [isOpen]);
@@ -67,14 +74,24 @@ export default function ReturnProcessModal({
     };
   }, [isOpen, onClose]);
 
-  const handleKoraHelps = async () => {
+  const handleKoraHelpsClick = () => {
+    setError("");
+    setStep("kora-form");
+  };
+
+  const handleKoraSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!orderId) return;
+    if (!pickupDate) {
+      setError("Please select a pickup date.");
+      return;
+    }
     setStep("submitting");
     setError("");
-    const res = await requestReturn(orderId);
+    const res = await requestReturn(orderId, { pickupDate });
     if (res.error) {
       setError(res.error);
-      setStep("choose");
+      setStep("kora-form");
       return;
     }
     setStep("done");
@@ -113,6 +130,15 @@ export default function ReturnProcessModal({
     );
   }
 
+  const stepTitle =
+    step === "kora-form"
+      ? "Schedule Your Pickup"
+      : step === "self-form"
+        ? "Return by Yourself"
+        : "Return Process";
+
+  const canGoBack = step === "kora-form" || step === "self-form";
+
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-[80]" onClick={onClose} aria-hidden />
@@ -127,7 +153,7 @@ export default function ReturnProcessModal({
             <X className="w-6 h-6" strokeWidth={1.5} />
           </button>
 
-          {step === "self-form" && (
+          {canGoBack && (
             <button
               type="button"
               onClick={() => {
@@ -142,7 +168,7 @@ export default function ReturnProcessModal({
           )}
 
           <h2 className="font-serif text-[28px] sm:text-[36px] text-store-accent text-center pt-12 pb-12 font-normal">
-            {step === "self-form" ? "Return by Yourself" : "Return Process"}
+            {stepTitle}
           </h2>
 
           <div className="px-6 sm:px-12 pb-14">
@@ -156,9 +182,9 @@ export default function ReturnProcessModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-[840px] mx-auto">
                 <ChoiceCard
                   title="Kora Helps You"
-                  body="We'll arrange a convenient pick-up for your return. Simply schedule a time, and our team will collect it from your doorstep."
+                  body="We'll arrange a convenient pick-up for your return. Simply choose a date, and our team will collect it from your doorstep."
                   icon={<KoraHelpsIcon />}
-                  onClick={handleKoraHelps}
+                  onClick={handleKoraHelpsClick}
                 />
                 <ChoiceCard
                   title="Return It Yourself"
@@ -167,6 +193,53 @@ export default function ReturnProcessModal({
                   onClick={() => setStep("self-form")}
                 />
               </div>
+            )}
+
+            {step === "kora-form" && (
+              <form
+                onSubmit={handleKoraSubmit}
+                className="max-w-[600px] mx-auto space-y-6"
+              >
+                <p className="text-center text-[13px] text-store-fg-muted mb-6">
+                  Pick the date you&apos;d like our team to collect the return
+                  from your address. Our courier partner will arrive on that
+                  day.
+                </p>
+
+                <div>
+                  <label className="block text-[12.5px] text-store-fg-muted mb-2">
+                    Pickup Date
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      required
+                      min={tomorrowISO()}
+                      max={maxDateISO()}
+                      value={pickupDate}
+                      onChange={(e) => setPickupDate(e.target.value)}
+                      className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 pr-10 focus:outline-none focus:border-store-accent"
+                    />
+                    <Calendar
+                      className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                      strokeWidth={1.6}
+                    />
+                  </div>
+                  <p className="text-[11px] text-store-fg-muted mt-1.5">
+                    Pickups available from tomorrow up to 14 days ahead. Our
+                    team will confirm the pickup window via WhatsApp.
+                  </p>
+                </div>
+
+                <div className="pt-6 flex justify-center">
+                  <button
+                    type="submit"
+                    className="px-12 py-3.5 bg-store-accent text-white text-[11px] tracking-[0.22em] uppercase font-medium hover:bg-store-accent-hover transition-colors cursor-pointer"
+                  >
+                    Confirm Pickup
+                  </button>
+                </div>
+              </form>
             )}
 
             {step === "self-form" && (

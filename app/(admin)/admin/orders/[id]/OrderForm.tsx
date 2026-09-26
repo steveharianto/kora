@@ -646,9 +646,43 @@ export default function OrderForm({
     setLoading(false);
   };
 
+  /**
+   * Persists the form first when transitioning out of Draft, then applies
+   * the target status. This is the difference between "posting an order"
+   * actually writing the customer / products / dates to the DB, versus the
+   * bare status flip that used to wipe the customer.
+   *
+   * For self-pickup the caller passes "Active" directly — no courier step,
+   * order lands ready to track the return.
+   */
   const handleStatusTransition = async (newStatus: string) => {
     setLoading(true);
     setErrorMsg("");
+
+    if (formData.status === "Draft") {
+      // saveOrder() writes everything atomically and applies the side effects
+      // for the new status (item reservation, fitting eviction, credit
+      // deduction, auto-return on Active).
+      const res = await saveOrder({
+        ...formData,
+        status: newStatus,
+        shipping_fee: isSelfPickup ? 0 : formData.shipping_fee,
+        customer_id: selectedCustomerId,
+        products,
+      });
+      if (res?.error) {
+        setErrorMsg(res.error);
+        setLoading(false);
+        return;
+      }
+      setFormData((p) => ({ ...p, status: newStatus }));
+      router.refresh();
+      setLoading(false);
+      return;
+    }
+
+    // Non-draft transitions (In Shipping → Active, → Cancelled, etc.) only
+    // touch the status column — the status-only action is safe there.
     const res = await updateOrderStatus(formData.id, newStatus);
     if (res?.error) setErrorMsg(res.error);
     else {
@@ -868,11 +902,18 @@ export default function OrderForm({
           {isDraft && (
             <button
               type="button"
-              onClick={() => handleStatusTransition("Ordered")}
+              onClick={() =>
+                handleStatusTransition(isSelfPickup ? "Active" : "Ordered")
+              }
               disabled={loading || !isComplete}
+              title={
+                isSelfPickup
+                  ? "Self pickup — skips shipping and marks the order Active immediately"
+                  : "Post order and reserve inventory"
+              }
               className="px-3.5 py-1.5 bg-ink text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer"
             >
-              Post Order
+              {isSelfPickup ? "Post & Activate" : "Post Order"}
             </button>
           )}
 

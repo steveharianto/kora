@@ -79,7 +79,7 @@ function OrderCard({
     <div className="border border-store-border p-5 sm:p-7">
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <span className="text-[11.5px] tracking-[0.14em] uppercase text-store-fg-muted">
-          ORDERNO{order.id}
+          ORDER NO {order.id}
         </span>
         <span
           className={`text-[10px] tracking-[0.14em] uppercase font-medium px-2.5 py-1 ${meta.bg} ${meta.text}`}

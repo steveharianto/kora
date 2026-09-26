@@ -2,10 +2,159 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "./auth";
-import { createBiteshipOrder } from "@/lib/biteship";
+import { createBiteshipOrder, getBiteshipRates } from "@/lib/biteship";
 import { revalidatePath } from "next/cache";
-import { resolveReturnCourier } from "@/lib/courierMap";
 import { formatRupiah } from "@/lib/utils";
+
+/* ── Courier rate lookup for reverse pickups ─────────────────────── */
+
+const RETURN_COURIER_QUERY =
+  "jne,sicepat,gojek,paxel,grab,anteraja,ninja,pos,tiki,lion";
+
+const COURIER_LABELS: Record<string, string> = {
+  "jne|reg": "JNE — REG",
+  "jne|yes": "JNE — YES",
+  "sicepat|reg": "SiCepat — REG",
+  "sicepat|best": "SiCepat — BEST",
+  "gojek|instant": "GoSend — Instant",
+  "gojek|sameday": "GoSend — Same Day",
+  "paxel|small": "Paxel — Small",
+  "paxel|medium": "Paxel — Medium",
+  "paxel|large": "Paxel — Large",
+  "paxel|regular": "Paxel — Regular",
+  "paxel|instant": "Paxel — Instant",
+  "grab|instant": "GrabExpress — Instant",
+  "grab|sameday": "GrabExpress — Same Day",
+  "anteraja|reg": "Anteraja — REG",
+  "anteraja|sameday": "Anteraja — Same Day",
+  "ninja|standard": "Ninja Xpress — Standard",
+  "pos|reg": "Pos Indonesia — Reguler",
+  "tiki|reg": "TIKI — REG",
+  "lion|reg": "Lion Parcel — REG",
+};
+
+function labelForCourier(company: string, type: string): string {
+  const key = `${company.toLowerCase()}|${type.toLowerCase()}`;
+  if (COURIER_LABELS[key]) return COURIER_LABELS[key];
+  const comp = company.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const typ = type.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return `${comp} — ${typ}`;
+}
+
+export interface ReturnRateOption {
+  label: string;
+  price: number;
+  etd: string;
+  courierCompany: string;
+  courierType: string;
+}
+
+/**
+ * Fetches live reverse-pickup rates for a return — origin is the customer's
+ * address, destination is the showroom. Mirrors the checkout quote flow so
+ * the admin sees the same courier list the customer saw at checkout.
+ */
+export async function getReturnShippingRates(
+  returnId: string,
+): Promise<{ success?: boolean; options?: ReturnRateOption[]; error?: string }> {
+  const admin = await getCurrentAdmin();
+  if (!admin) return { error: "Unauthorized." };
+
+  const supabase = await createClient();
+
+  const { data: ret } = await supabase
+    .from("returns")
+    .select(
+      `
+      id, pickup_street_address, pickup_city, pickup_postal_code,
+      pickup_latitude, pickup_longitude,
+      orders ( id, order_products ( item_sku, quantity, items ( name ) ) )
+    `,
+    )
+    .eq("id", returnId)
+    .single();
+
+  if (!ret) return { error: "Return record not found." };
+
+  if (!ret.pickup_postal_code) {
+    return {
+      error:
+        "Customer pickup address has no postal code — add one to the return before booking a courier.",
+    };
+  }
+
+  const { data: shippingSettings } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "shipping")
+    .single();
+
+  const showroom = shippingSettings?.value?.dispatch_addresses?.primary;
+  if (!showroom?.postal_code) {
+    return { error: "Showroom return destination is not configured." };
+  }
+
+  const defaultWeight = Number(
+    shippingSettings?.value?.default_item_weight_g ?? 800,
+  );
+  const overrides: Record<string, number> =
+    shippingSettings?.value?.item_weight_overrides ?? {};
+
+  const orderProducts: any[] = (ret.orders as any)?.order_products || [];
+  const items = orderProducts.map((p) => ({
+    name: `Return: ${p.items?.name || p.item_sku}`,
+    value: 500000,
+    quantity: p.quantity || 1,
+    weight: overrides[p.item_sku] ?? defaultWeight,
+  }));
+  if (items.length === 0) {
+    items.push({
+      name: "KORA Rental Return",
+      value: 500000,
+      quantity: 1,
+      weight: defaultWeight,
+    });
+  }
+
+  const res = await getBiteshipRates({
+    origin_postal_code: String(ret.pickup_postal_code),
+    destination_postal_code: String(showroom.postal_code),
+    couriers: RETURN_COURIER_QUERY,
+    items,
+    origin_coordinate:
+      ret.pickup_latitude != null && ret.pickup_longitude != null
+        ? {
+            latitude: Number(ret.pickup_latitude),
+            longitude: Number(ret.pickup_longitude),
+          }
+        : undefined,
+    destination_coordinate:
+      showroom.latitude != null && showroom.longitude != null
+        ? {
+            latitude: Number(showroom.latitude),
+            longitude: Number(showroom.longitude),
+          }
+        : undefined,
+  });
+
+  if (!res.success || !res.rates) {
+    return { error: res.error || "Could not fetch courier rates." };
+  }
+
+  const options: ReturnRateOption[] = res.rates.map((r) => ({
+    label: labelForCourier(r.courier_company, r.courier_type),
+    price: r.price,
+    etd: r.etd || r.duration || "",
+    courierCompany: r.courier_company,
+    courierType: r.courier_type,
+  }));
+
+  options.sort((a, b) => a.price - b.price);
+
+  return { success: true, options };
+}
+
+/* ── Create return request ───────────────────────────────────────── */
 
 export async function createReturnRequest(payload: {
   order_id: string;
@@ -18,6 +167,7 @@ export async function createReturnRequest(payload: {
   pickup_postal_code?: string;
   pickup_latitude?: number | null;
   pickup_longitude?: number | null;
+  pickup_date?: string | null;
 }) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
@@ -93,6 +243,7 @@ export async function createReturnRequest(payload: {
     pickup_postal_code: address.postal_code,
     pickup_latitude: address.latitude ?? null,
     pickup_longitude: address.longitude ?? null,
+    pickup_date: payload.pickup_date || null,
     deposit_held: depositHeld,
     refund_amount: depositHeld,
   });
@@ -112,10 +263,28 @@ export async function createReturnRequest(payload: {
   return { success: true, returnId };
 }
 
+/* ── Book reverse courier via Biteship ───────────────────────────── */
+
+/* ── Book reverse courier via Biteship ───────────────────────────── */
+
+export type DispatchReturnResult =
+  | {
+      success: true;
+      waybill: string;
+      trackingUrl: string | null;
+      price: number | null;
+    }
+  | {
+      error: string;
+      /** True when the failure is "courier can't do scheduled" — UI offers Try as Instant. */
+      retryAsInstant?: boolean;
+    };
+
 export async function dispatchReturnViaBiteship(
   returnId: string,
-  courierChoice?: string,
-) {
+  courier: { company: string; type: string },
+  options?: { forceInstant?: boolean },
+): Promise<DispatchReturnResult> {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
   if (!admin) return { error: "Unauthorized: Session not found." };
@@ -147,33 +316,36 @@ export async function dispatchReturnViaBiteship(
     typeof rawShowroom === "object" && rawShowroom !== null
       ? rawShowroom
       : null;
-  if (
-    !showroom?.street_address ||
-    !showroom?.latitude ||
-    !showroom?.longitude
-  ) {
+  if (!showroom?.street_address || !showroom?.latitude || !showroom?.longitude) {
     return { error: "Showroom return destination is not fully configured." };
   }
 
-  let codes;
-  try {
-    codes = resolveReturnCourier(
-      courierChoice || ret.courier_company || "paxel - regular",
-    );
-  } catch (e: any) {
-    return { error: e.message };
-  }
-
-  if (["gojek", "grab"].includes(codes.company)) {
-    if (
-      ret.pickup_latitude === null ||
+  if (
+    ["gojek", "grab"].includes(courier.company) &&
+    (ret.pickup_latitude === null ||
       ret.pickup_latitude === undefined ||
       ret.pickup_longitude === null ||
-      ret.pickup_longitude === undefined
-    ) {
-      return { error: "Instant courier requires customer pickup coordinates." };
-    }
+      ret.pickup_longitude === undefined)
+  ) {
+    return { error: "Instant courier requires customer pickup coordinates." };
   }
+
+  // Decide delivery_type from the customer's chosen pickup_date.
+  //
+  //   pickup_date = today or earlier  → "now"       (immediate pickup)
+  //   pickup_date = future            → "scheduled" (advance booking)
+  //   forceInstant = true             → "now"       (admin override — some
+  //                                                  couriers reject scheduled)
+  const todayStr = new Date().toISOString().split("T")[0];
+  const requestedDate = ret.pickup_date
+    ? String(ret.pickup_date).split("T")[0]
+    : null;
+  const isImmediateDate = !requestedDate || requestedDate <= todayStr;
+  const wantsScheduled = !isImmediateDate && !options?.forceInstant;
+  const deliveryType: "now" | "scheduled" = wantsScheduled
+    ? "scheduled"
+    : "now";
+  const deliveryDate = wantsScheduled ? requestedDate : undefined;
 
   const items = (ret.orders?.order_products || []).map((p: any) => ({
     name: `Return: ${p.items?.name || p.item_sku}`,
@@ -211,34 +383,65 @@ export async function dispatchReturnViaBiteship(
         longitude: Number(showroom.longitude),
       },
     },
-    courier_company: codes.company,
-    courier_type: codes.type,
-    delivery_type: "now",
+    courier_company: courier.company,
+    courier_type: courier.type,
+    delivery_type: deliveryType,
+    delivery_date: deliveryDate,
     reference_id: `RET-${ret.order_id}`,
     items,
     note: `KORA Return ${ret.order_id} - Studio Receiving`,
   });
 
-  if (!biteshipRes.success)
-    return { error: biteshipRes.error || "Failed to dispatch courier." };
+  if (!biteshipRes.success) {
+    const rawError = biteshipRes.error || "";
+
+    // Same "can't do scheduled" detection as the outbound flow — some
+    // couriers (GoSend, GrabExpress, most instant tiers) reject advance
+    // bookings with this exact message.
+    const scheduledBlocked =
+      /not available for scheduled delivery/i.test(rawError) ||
+      /scheduled delivery/i.test(rawError);
+
+    let friendlyError = rawError;
+    if (scheduledBlocked) {
+      friendlyError =
+        `${courier.company.toUpperCase()} — ${courier.type.toUpperCase()} doesn't accept advance bookings (pickup scheduled for ${requestedDate}). ` +
+        `Either click "Try as Instant" below to dispatch right now, or pick a different courier that supports scheduled pickups (JNE, SiCepat, Paxel, Anteraja, Ninja, POS, TIKI).`;
+    }
+
+    console.error("[Biteship] Return dispatch failed:", {
+      returnId,
+      courier: `${courier.company}/${courier.type}`,
+      deliveryType,
+      pickupDate: requestedDate,
+      error: rawError,
+    });
+
+    return {
+      error: friendlyError,
+      retryAsInstant: scheduledBlocked,
+    };
+  }
 
   const resi =
     biteshipRes.waybill_id ||
     biteshipRes.tracking_id ||
     `RET-WYB-${Date.now()}`;
+  const trackingUrl =
+    biteshipRes.courier?.link ||
+    (biteshipRes.tracking_id
+      ? `https://track.biteship.com/${biteshipRes.tracking_id}`
+      : null);
+
   const { error: upErr } = await supabase
     .from("returns")
     .update({
       status: "Shipping",
-      courier_company: codes.company,
-      courier_type: codes.type,
+      courier_company: courier.company,
+      courier_type: courier.type,
       waybill_id: resi,
       biteship_order_id: biteshipRes.id || null,
-      tracking_url:
-        biteshipRes.courier?.link ||
-        (biteshipRes.tracking_id
-          ? `https://track.biteship.com/${biteshipRes.tracking_id}`
-          : null),
+      tracking_url: trackingUrl,
       shipped_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -253,13 +456,28 @@ export async function dispatchReturnViaBiteship(
     action_type: "BITESHIP_RETURN_DISPATCH",
     field_name: "waybill_id",
     new_value: resi,
-    details: { courier: codes.company, type: codes.type },
+    details: {
+      courier: courier.company,
+      type: courier.type,
+      delivery_type: deliveryType,
+      delivery_date: deliveryDate ?? null,
+      customer_pickup_date: requestedDate,
+      forced_instant: Boolean(options?.forceInstant),
+      price: biteshipRes.price ?? null,
+    },
   });
 
   revalidatePath("/admin/returns");
   revalidatePath(`/admin/returns/${returnId}`);
-  return { success: true, waybill: resi };
+  return {
+    success: true,
+    waybill: resi,
+    trackingUrl,
+    price: biteshipRes.price ?? null,
+  };
 }
+
+/* ── Save manual resi ────────────────────────────────────────────── */
 
 export async function saveReturnResi(
   returnId: string,
@@ -271,12 +489,6 @@ export async function saveReturnResi(
   if (!admin) return { error: "Unauthorized: Session not found." };
   if (!resi.trim())
     return { error: "Return Resi / Waybill number cannot be empty." };
-
-  try {
-    resolveReturnCourier(courier);
-  } catch (e: any) {
-    return { error: e.message };
-  }
 
   const { error } = await supabase
     .from("returns")
@@ -304,6 +516,8 @@ export async function saveReturnResi(
   revalidatePath(`/admin/returns/${returnId}`);
   return { success: true };
 }
+
+/* ── Mark received ───────────────────────────────────────────────── */
 
 export async function markReturnReceived(returnId: string) {
   const supabase = await createClient();
@@ -334,6 +548,8 @@ export async function markReturnReceived(returnId: string) {
   revalidatePath(`/admin/returns/${returnId}`);
   return { success: true };
 }
+
+/* ── Start QC ────────────────────────────────────────────────────── */
 
 export async function startReturnQc(returnId: string) {
   const supabase = await createClient();
@@ -379,6 +595,8 @@ export async function startReturnQc(returnId: string) {
   return { success: true };
 }
 
+/* ── Release deposit ─────────────────────────────────────────────── */
+
 export async function releaseDepositAndCompleteReturn(
   returnId: string,
   payload: {
@@ -406,7 +624,6 @@ export async function releaseDepositAndCompleteReturn(
   if (!payload.refund_destination)
     return { error: "Refund destination is required." };
 
-  // Pull the customer alongside the order so we can notify on release.
   const { data: ret, error: retErr } = await supabase
     .from("returns")
     .select(
@@ -516,7 +733,6 @@ export async function releaseDepositAndCompleteReturn(
     },
   });
 
-  // --- WhatsApp notification: deposit_refunded -----------------------------
   const customer = (ret as any).customers as
     | { first_name?: string; last_name?: string; phone?: string }
     | undefined;
@@ -565,6 +781,8 @@ export async function releaseDepositAndCompleteReturn(
   return { success: true };
 }
 
+/* ── Log note ────────────────────────────────────────────────────── */
+
 export async function addReturnNote(returnId: string, note: string) {
   if (!note.trim()) return { error: "Note cannot be empty." };
   const supabase = await createClient();
@@ -586,9 +804,8 @@ export async function addReturnNote(returnId: string, note: string) {
   return { success: true };
 }
 
-// -----------------------------------------------------------------------------
-// Remind customer (WA) — routed through the Fonnte-backed emitWa hub
-// -----------------------------------------------------------------------------
+/* ── Remind customer ─────────────────────────────────────────────── */
+
 export async function remindReturnCustomer(returnId: string) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
@@ -596,9 +813,7 @@ export async function remindReturnCustomer(returnId: string) {
 
   const { data: ret } = await supabase
     .from("returns")
-    .select(
-      "*, customers(first_name, last_name, phone), orders(id, return_date)",
-    )
+    .select("*, customers(first_name, last_name, phone), orders(id, return_date)")
     .eq("id", returnId)
     .single();
   if (!ret) return { error: "Return not found." };
