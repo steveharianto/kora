@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   updateFittingStatus,
   recordAfterHoursFeePayment,
-  markFittingReminderSent,
   convertFittingToOrder,
   addFittingNote,
   markFittingRefunded,
 } from '@/app/actions/fittings';
 import { formatRupiah } from '@/lib/utils';
-import { MessageCircle, AlertTriangle, BadgeDollarSign, Send } from 'lucide-react';
+import { AlertTriangle, BadgeDollarSign } from 'lucide-react';
+import NotificationPicker from '@/components/admin/NotificationPicker';
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
@@ -46,13 +46,6 @@ export default function FittingDetailForm({
   );
   const [convertMethod, setConvertMethod] = useState('Self pickup');
 
-  // Reminder send state (automated via Fonnte)
-  const [reminderBusy, setReminderBusy] = useState(false);
-  const [reminderFlash, setReminderFlash] = useState<{
-    type: 'ok' | 'err';
-    text: string;
-  } | null>(null);
-
   const customerName =
     `${initialFitting.customers?.first_name || ''} ${initialFitting.customers?.last_name || ''}`.trim() ||
     'Customer';
@@ -63,34 +56,6 @@ export default function FittingDetailForm({
   const dress1 = fittingItems.find((fi) => fi.slot_number === 1);
   const dress2 = fittingItems.find((fi) => fi.slot_number === 2);
   const dress3 = fittingItems.find((fi) => fi.slot_number === 3);
-
-  // Manual fallback: pre-filled wa.me link so the admin can open the customer's
-  // WhatsApp thread and send the reminder by hand (e.g. to attach a photo, or
-  // if Fonnte delivery fails). Does NOT touch reminder_sent_at — that's owned
-  // by the automated send below.
-  const whatsAppUrl = useMemo(() => {
-    if (!customerPhone) return '';
-    const rawPhone = String(customerPhone).replace(/\D/g, '');
-    const phone = rawPhone.startsWith('0') ? `62${rawPhone.slice(1)}` : rawPhone;
-    const defaultTpl =
-      'Hi [CUSTOMER_NAME], just a reminder about your fitting session on [FITTING_DATE] at [FITTING_TIME]. See you soon!';
-    const rawTpl =
-      notificationTemplates?.fitting_reminder?.template || defaultTpl;
-    const timeFormatted = initialFitting.slot
-      ? String(initialFitting.slot).slice(0, 5)
-      : '10:00';
-    const message = rawTpl
-      .replace(/\[CUSTOMER_NAME\]/g, customerName)
-      .replace(/\[FITTING_DATE\]/g, formatDate(initialFitting.date))
-      .replace(/\[FITTING_TIME\]/g, timeFormatted);
-    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-  }, [
-    customerPhone,
-    customerName,
-    initialFitting.date,
-    initialFitting.slot,
-    notificationTemplates,
-  ]);
 
   const handleStatusChange = async (newStatus: string) => {
     setLoading(true);
@@ -106,35 +71,6 @@ export default function FittingDetailForm({
     if (res?.error) setErrorMsg(res.error);
     else router.refresh();
     setLoading(false);
-  };
-
-  // Automated reminder via Fonnte
-  const handleSendReminder = async () => {
-    if (!customerPhone) {
-      setReminderFlash({
-        type: 'err',
-        text: 'Customer has no phone number on file.',
-      });
-      return;
-    }
-
-    setReminderBusy(true);
-    setReminderFlash(null);
-
-    const res = await markFittingReminderSent(initialFitting.id);
-
-    setReminderBusy(false);
-
-    if (res?.error || res?.sent === false) {
-      setReminderFlash({
-        type: 'err',
-        text: res?.error || 'Could not send the WhatsApp reminder.',
-      });
-      return;
-    }
-
-    setReminderFlash({ type: 'ok', text: 'Reminder sent via WhatsApp.' });
-    router.refresh();
   };
 
   const handleConvertToOrder = async () => {
@@ -233,49 +169,13 @@ export default function FittingDetailForm({
             </button>
           )}
 
-          {/* Automated send via Fonnte */}
-          <button
-            type="button"
-            onClick={handleSendReminder}
-            disabled={reminderBusy || !customerPhone}
-            title={
-              !customerPhone
-                ? 'Customer has no phone number'
-                : 'Send WhatsApp reminder via Fonnte'
-            }
-            className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            <Send className="w-3.5 h-3.5 text-wine-ink" />
-            {reminderBusy ? 'Sending…' : 'Send WA reminder'}
-          </button>
-
-          {/* Quick manual open — wa.me deep link, pre-filled from template */}
-          {whatsAppUrl && (
-            <a
-              href={whatsAppUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="Open WhatsApp thread and send manually"
-              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1.5"
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#25D366]" />
-              Open WhatsApp
-            </a>
-          )}
+          <NotificationPicker
+            entity="fitting"
+            entityId={initialFitting.id}
+            onSent={() => router.refresh()}
+          />
         </div>
       </div>
-
-      {reminderFlash && (
-        <div
-          className={`mb-3 p-2.5 text-xs rounded-lg border ${
-            reminderFlash.type === 'ok'
-              ? 'bg-ok-bg border-[#CAD3C5] text-ok'
-              : 'bg-bad-bg border-[#D9A79C] text-bad'
-          }`}
-        >
-          {reminderFlash.text}
-        </div>
-      )}
 
       {errorMsg && (
         <div className="mb-4 p-3 bg-bad-bg border border-bad/30 text-bad text-xs rounded-lg">

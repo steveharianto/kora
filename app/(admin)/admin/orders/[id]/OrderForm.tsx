@@ -8,7 +8,6 @@ import {
   Copy,
   Check,
   ExternalLink,
-  MessageCircle,
   Truck,
   Plus,
   Lock,
@@ -29,6 +28,7 @@ import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import AddressMapPicker from "@/components/AddressMapPicker";
+import NotificationPicker from "@/components/admin/NotificationPicker";
 import { OUTBOUND_COURIER_LABELS } from "@/lib/courierMap";
 
 // Locale-safe date formatter — matches server and client output byte-for-byte.
@@ -205,12 +205,6 @@ export default function OrderForm({
   // Date override escape hatch. Off by default — pickup/return stay derived
   // from Event Date + Event Days, matching the customer checkout flow.
   const [datesOverridden, setDatesOverridden] = useState(false);
-
-  // SSR-safe origin gate: empty on server → empty on first client render → match.
-  const [mountedOrigin, setMountedOrigin] = useState("");
-  useEffect(() => {
-    setMountedOrigin(window.location.origin);
-  }, []);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -736,38 +730,6 @@ export default function OrderForm({
     router.refresh();
   };
 
-  const whatsAppInvoiceUrl = useMemo(() => {
-    if (!mountedOrigin) return "";
-    if (!activeCustomer?.phone) return "";
-
-    let p = String(activeCustomer.phone).replace(/\D/g, "");
-    if (p.startsWith("0")) p = "62" + p.slice(1);
-
-    const name =
-      `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""}`.trim() ||
-      "Customer";
-
-    const defaultTpl =
-      "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].";
-    const tpl = notificationTemplates?.order_posted?.template || defaultTpl;
-
-    const url = `${mountedOrigin}/admin/orders/${formData.id}/invoice`;
-
-    const message = tpl
-      .replace(/\[CUSTOMER_NAME\]/g, name)
-      .replace(/\[ORDER_ID\]/g, formData.id)
-      .replace(/\[INVOICE_LINK\]/g, url)
-      .replace(/\[TOTAL\]/g, formatRupiah(grandTotal));
-
-    return `https://wa.me/${p}?text=${encodeURIComponent(message)}`;
-  }, [
-    mountedOrigin,
-    activeCustomer,
-    formData.id,
-    notificationTemplates,
-    grandTotal,
-  ]);
-
   const handleSaveQuickCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCustomerForm.first_name || !newCustomerForm.phone) {
@@ -996,18 +958,11 @@ export default function OrderForm({
             Invoice
           </Link>
 
-          {whatsAppInvoiceUrl && (
-            <a
-              href={whatsAppInvoiceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1 text-[#25D366]"
-              title="Send Invoice to Customer WhatsApp"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              WA Invoice
-            </a>
-          )}
+          <NotificationPicker
+            entity="order"
+            entityId={formData.id}
+            onSent={() => router.refresh()}
+          />
 
           <button
             type="button"

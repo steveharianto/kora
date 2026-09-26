@@ -10,13 +10,17 @@ import {
   startReturnQc,
   releaseDepositAndCompleteReturn,
   addReturnNote,
-  remindReturnCustomer,
 } from "@/app/actions/returns";
 import { formatRupiah } from "@/lib/utils";
 import {
-  Copy, Check, ExternalLink, MessageCircle, Truck, Lock, AlertTriangle, Send,
+  Copy,
+  Check,
+  ExternalLink,
+  Truck,
+  Lock,
 } from "lucide-react";
 import RupiahInput from "@/components/RupiahInput";
+import NotificationPicker from "@/components/admin/NotificationPicker";
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "—";
@@ -134,14 +138,6 @@ export default function ReturnDetailForm({
     );
   }, [initialReturn, customerName, showroom, order, orderProducts]);
 
-  const whatsAppUrl = useMemo(() => {
-    if (!customer.phone) return "";
-    const rawPhone = String(customer.phone).replace(/\D/g, "");
-    const phone = rawPhone.startsWith("0") ? `62${rawPhone.slice(1)}` : rawPhone;
-    const msg = `Hi ${customerName}, here are your return instructions for order ${order.id}. Please pack the garment securely with original hangers and garment bag.`;
-    return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-  }, [customer.phone, customerName, order.id]);
-
   const handleCopySlip = () => {
     navigator.clipboard.writeText(manifestText);
     setCopiedSlip(true);
@@ -183,15 +179,6 @@ export default function ReturnDetailForm({
     const res = await startReturnQc(initialReturn.id);
     if (res.error) setErrorMsg(res.error);
     else router.refresh();
-    setLoading(false);
-  };
-
-  const handleRemind = async () => {
-    setLoading(true);
-    setErrorMsg("");
-    const res = await remindReturnCustomer(initialReturn.id);
-    if (res?.error) setErrorMsg(res.error);
-    else if (res?.waUrl) window.open(res.waUrl, "_blank");
     setLoading(false);
   };
 
@@ -263,29 +250,11 @@ export default function ReturnDetailForm({
             {status}
           </span>
 
-          {!isCompleted && customer.phone && (
-            <button
-              type="button"
-              onClick={handleRemind}
-              disabled={loading}
-              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Send className="w-3.5 h-3.5 text-wine-ink" />
-              Remind customer
-            </button>
-          )}
-
-          {whatsAppUrl && (
-            <a
-              href={whatsAppUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] flex items-center gap-1.5"
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#25D366]" />
-              WhatsApp customer
-            </a>
-          )}
+          <NotificationPicker
+            entity="return"
+            entityId={initialReturn.id}
+            onSent={() => router.refresh()}
+          />
         </div>
       </div>
 

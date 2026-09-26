@@ -14,6 +14,7 @@ import {
 import { formatRupiah } from "@/lib/utils";
 import AddressMapPicker from "@/components/AddressMapPicker";
 import RupiahInput from "@/components/RupiahInput";
+import NotificationPicker from "@/components/admin/NotificationPicker";
 
 export default function CustomerDetailClient({
   customer,
@@ -266,6 +267,14 @@ export default function CustomerDetailClient({
               WhatsApp
             </button>
           )}
+
+          <NotificationPicker
+            entity="customer"
+            entityId={customer.id}
+            buttonLabel="Send Notification"
+            className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#25D366] hover:bg-[#F4FBF5] transition cursor-pointer inline-flex items-center gap-1.5"
+            onSent={() => router.refresh()}
+          />
 
           <button
             type="button"
