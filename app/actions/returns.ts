@@ -103,6 +103,7 @@ export async function getReturnShippingRates(
   const orderProducts: any[] = (ret.orders as any)?.order_products || [];
   const items = orderProducts.map((p) => ({
     name: `Return: ${p.items?.name || p.item_sku}`,
+    description: `KORA return — ${p.item_sku}`,
     value: 500000,
     quantity: p.quantity || 1,
     weight: overrides[p.item_sku] ?? defaultWeight,
@@ -110,31 +111,30 @@ export async function getReturnShippingRates(
   if (items.length === 0) {
     items.push({
       name: "KORA Rental Return",
+      description: "Return pickup",
       value: 500000,
       quantity: 1,
       weight: defaultWeight,
     });
   }
 
+  // Coordinates are sent FLAT (origin_latitude/origin_longitude) — this is
+  // the rates endpoint's format, distinct from the orders endpoint's nested
+  // origin_coordinate object. Missing this is why instant couriers like
+  // Paxel disappear from the response.
   const res = await getBiteshipRates({
     origin_postal_code: String(ret.pickup_postal_code),
     destination_postal_code: String(showroom.postal_code),
     couriers: RETURN_COURIER_QUERY,
     items,
-    origin_coordinate:
-      ret.pickup_latitude != null && ret.pickup_longitude != null
-        ? {
-            latitude: Number(ret.pickup_latitude),
-            longitude: Number(ret.pickup_longitude),
-          }
-        : undefined,
-    destination_coordinate:
-      showroom.latitude != null && showroom.longitude != null
-        ? {
-            latitude: Number(showroom.latitude),
-            longitude: Number(showroom.longitude),
-          }
-        : undefined,
+    origin_latitude:
+      ret.pickup_latitude != null ? Number(ret.pickup_latitude) : undefined,
+    origin_longitude:
+      ret.pickup_longitude != null ? Number(ret.pickup_longitude) : undefined,
+    destination_latitude:
+      showroom.latitude != null ? Number(showroom.latitude) : undefined,
+    destination_longitude:
+      showroom.longitude != null ? Number(showroom.longitude) : undefined,
   });
 
   if (!res.success || !res.rates) {
@@ -265,8 +265,6 @@ export async function createReturnRequest(payload: {
 
 /* ── Book reverse courier via Biteship ───────────────────────────── */
 
-/* ── Book reverse courier via Biteship ───────────────────────────── */
-
 export type DispatchReturnResult =
   | {
       success: true;
@@ -321,13 +319,16 @@ export async function dispatchReturnViaBiteship(
   }
 
   if (
-    ["gojek", "grab"].includes(courier.company) &&
+    ["gojek", "grab", "paxel"].includes(courier.company) &&
     (ret.pickup_latitude === null ||
       ret.pickup_latitude === undefined ||
       ret.pickup_longitude === null ||
       ret.pickup_longitude === undefined)
   ) {
-    return { error: "Instant courier requires customer pickup coordinates." };
+    return {
+      error:
+        "This instant courier requires customer pickup coordinates. Update the return's pickup address to include them.",
+    };
   }
 
   // Decide delivery_type from the customer's chosen pickup_date.
@@ -349,6 +350,7 @@ export async function dispatchReturnViaBiteship(
 
   const items = (ret.orders?.order_products || []).map((p: any) => ({
     name: `Return: ${p.items?.name || p.item_sku}`,
+    description: `KORA return — ${p.item_sku}`,
     value: 500000,
     quantity: p.quantity || 1,
     weight: shippingSettings?.value?.default_item_weight_g ?? 1000,
@@ -395,9 +397,6 @@ export async function dispatchReturnViaBiteship(
   if (!biteshipRes.success) {
     const rawError = biteshipRes.error || "";
 
-    // Same "can't do scheduled" detection as the outbound flow — some
-    // couriers (GoSend, GrabExpress, most instant tiers) reject advance
-    // bookings with this exact message.
     const scheduledBlocked =
       /not available for scheduled delivery/i.test(rawError) ||
       /scheduled delivery/i.test(rawError);

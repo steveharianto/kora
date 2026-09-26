@@ -61,8 +61,10 @@ function labelForCourier(company: string, type: string): string {
 
 export async function getCheckoutShippingRates(input: {
   destinationPostalCode: string;
-  /** Coordinates of the selected delivery address. Required for instant
-   *  couriers like Paxel, Gosend, GrabExpress to be priced by Biteship. */
+  /**
+   * Coordinates of the selected delivery address. Required for instant
+   * couriers like Paxel, Gosend, GrabExpress to be priced by Biteship.
+   */
   destinationLatitude?: number | null;
   destinationLongitude?: number | null;
   itemSkus: string[];
@@ -103,6 +105,7 @@ export async function getCheckoutShippingRates(input: {
 
   const packageItems = (items || []).map((i: any) => ({
     name: i.name,
+    description: `KORA rental — ${i.sku}`,
     value: Number(i.rental_price) || 500000,
     quantity: 1,
     weight: overrides[i.sku] ?? defaultWeight,
@@ -113,21 +116,19 @@ export async function getCheckoutShippingRates(input: {
   }
 
   // Origin coordinate — required by Biteship for instant courier pricing.
-  const originCoordinate =
-    origin.latitude != null && origin.longitude != null
-      ? {
-          latitude: Number(origin.latitude),
-          longitude: Number(origin.longitude),
-        }
-      : undefined;
+  const originLat =
+    origin.latitude != null ? Number(origin.latitude) : undefined;
+  const originLng =
+    origin.longitude != null ? Number(origin.longitude) : undefined;
 
   // Destination coordinate — from the customer's selected address.
-  const destinationCoordinate =
-    input.destinationLatitude != null && input.destinationLongitude != null
-      ? {
-          latitude: Number(input.destinationLatitude),
-          longitude: Number(input.destinationLongitude),
-        }
+  const destLat =
+    input.destinationLatitude != null
+      ? Number(input.destinationLatitude)
+      : undefined;
+  const destLng =
+    input.destinationLongitude != null
+      ? Number(input.destinationLongitude)
       : undefined;
 
   const res = await getBiteshipRates({
@@ -135,8 +136,10 @@ export async function getCheckoutShippingRates(input: {
     destination_postal_code: input.destinationPostalCode,
     couriers: COURIER_QUERY,
     items: packageItems,
-    origin_coordinate: originCoordinate,
-    destination_coordinate: destinationCoordinate,
+    origin_latitude: originLat,
+    origin_longitude: originLng,
+    destination_latitude: destLat,
+    destination_longitude: destLng,
   });
 
   if (!res.success || !res.rates) {
@@ -182,10 +185,8 @@ export async function createWebsiteOrder(input: {
   items: {
     sku: string;
     quantity: number;
-    /** Per-event-day rental price in IDR. */
     price: number;
     deposit: number;
-    /** Number of event days for this item. Multiplies `price`. */
     eventDays: number;
   }[];
   eventStartDate: string;
@@ -256,10 +257,7 @@ export async function createWebsiteOrder(input: {
       const days = Math.max(1, Number(i.eventDays) || 1);
       const qty = Math.max(1, Number(i.quantity) || 1);
 
-      // Line total = unit price × event days × quantity.
       const lineSubtotal = serverUnitPrice * days * qty;
-
-      // Deposit tracks the item's value (unit price), not the rental length.
       const deposit = serverUnitPrice > 1000000 ? 250000 : 150000;
 
       totalPrice += lineSubtotal;

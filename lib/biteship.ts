@@ -207,15 +207,28 @@ export async function getBiteshipTracking(
 
 /* ── Rate quotes ─────────────────────────────────────────────────── */
 
+/**
+ * Request shape for the rates endpoint.
+ *
+ * IMPORTANT — the rates endpoint uses FLAT coordinate fields, unlike the
+ * orders endpoint which nests them under origin_coordinate / destination_coordinate.
+ * Instant couriers (Paxel, Gojek, Grab, Lalamove, Borzo) will silently
+ * disappear from the response if coordinates aren't provided in this exact
+ * shape. See Biteship API reference: /docs/api/rates/retrieve.
+ */
 export interface BiteshipRateRequest {
-  origin_postal_code: string;
-  destination_postal_code: string;
+  origin_postal_code?: string;
+  destination_postal_code?: string;
   couriers: string;
   items: BiteshipItem[];
-  /** Required for instant couriers (Paxel, Gojek, Grab, Lalamove, Borzo). */
-  origin_coordinate?: { latitude: number; longitude: number };
-  /** Required for instant couriers. */
-  destination_coordinate?: { latitude: number; longitude: number };
+  /**
+   * Required for instant couriers (Paxel, Gojek, Grab, Lalamove, Borzo).
+   * Send as flat numbers — NOT as a nested { latitude, longitude } object.
+   */
+  origin_latitude?: number;
+  origin_longitude?: number;
+  destination_latitude?: number;
+  destination_longitude?: number;
 }
 
 export interface BiteshipRateOption {
@@ -230,21 +243,50 @@ export interface BiteshipRateOption {
 export async function getBiteshipRates(
   payload: BiteshipRateRequest,
 ): Promise<{ success: boolean; rates?: BiteshipRateOption[]; error?: string }> {
+  // Only include coordinate keys when both halves of the pair are present —
+  // sending a lone latitude without longitude trips Biteship's validation.
+  const hasOriginCoord =
+    payload.origin_latitude != null && payload.origin_longitude != null;
+  const hasDestCoord =
+    payload.destination_latitude != null && payload.destination_longitude != null;
+
+  const body: Record<string, any> = {
+    couriers: payload.couriers,
+    items: payload.items,
+  };
+
+  if (payload.origin_postal_code) {
+    body.origin_postal_code = payload.origin_postal_code;
+  }
+  if (payload.destination_postal_code) {
+    body.destination_postal_code = payload.destination_postal_code;
+  }
+  if (hasOriginCoord) {
+    body.origin_latitude = Number(payload.origin_latitude);
+    body.origin_longitude = Number(payload.origin_longitude);
+  }
+  if (hasDestCoord) {
+    body.destination_latitude = Number(payload.destination_latitude);
+    body.destination_longitude = Number(payload.destination_longitude);
+  }
+
+  // Dev-only visibility so you can verify what actually reaches Biteship.
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[Biteship] rate request", {
+      couriers: payload.couriers,
+      origin_postal_code: body.origin_postal_code ?? null,
+      destination_postal_code: body.destination_postal_code ?? null,
+      origin_latitude: body.origin_latitude ?? null,
+      origin_longitude: body.origin_longitude ?? null,
+      destination_latitude: body.destination_latitude ?? null,
+      destination_longitude: body.destination_longitude ?? null,
+      itemCount: payload.items.length,
+    });
+  }
+
   const res = await biteshipFetch(`${BITESHIP_API_URL}/rates/couriers`, {
     method: "POST",
-    body: JSON.stringify({
-      origin_postal_code: payload.origin_postal_code,
-      destination_postal_code: payload.destination_postal_code,
-      couriers: payload.couriers,
-      items: payload.items,
-      // Forward coordinates when present — instant couriers won't quote without them.
-      ...(payload.origin_coordinate
-        ? { origin_coordinate: payload.origin_coordinate }
-        : {}),
-      ...(payload.destination_coordinate
-        ? { destination_coordinate: payload.destination_coordinate }
-        : {}),
-    }),
+    body: JSON.stringify(body),
   });
 
   if (res.error) return { success: false, error: res.error };
