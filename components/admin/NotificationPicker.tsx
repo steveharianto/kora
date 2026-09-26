@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Paperclip,
+  FileText,
 } from "lucide-react";
 import {
   listNotificationsForEntity,
@@ -27,13 +29,12 @@ import type { Entity } from "@/lib/notifications/registry";
 interface Props {
   entity: Entity;
   entityId: string;
-  /** Defaults to "WhatsApp". */
   buttonLabel?: string;
-  /** Override the trigger button styling (e.g. match bigger page buttons). */
   className?: string;
-  /** Fired after any successful send so the parent can router.refresh(). */
   onSent?: () => void;
 }
+
+type SendStage = "idle" | "generating" | "sending";
 
 function formatRel(iso: string): string {
   const d = new Date(iso);
@@ -62,18 +63,21 @@ export default function NotificationPicker({
   const [preview, setPreview] = useState<NotificationPreview | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [stage, setStage] = useState<SendStage>("idle");
   const [flash, setFlash] = useState<{
     type: "ok" | "err";
     text: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [attachEnabled, setAttachEnabled] = useState(true);
 
   const currentItem = useMemo(
     () => items.find((i) => i.kind === kind) || null,
     [items, kind],
   );
   const requiresReason = currentItem?.requiresReasonInput ?? false;
+  const supportsAttachment = currentItem?.hasAttachment ?? false;
+  const busy = stage !== "idle";
 
   /* Reset transient state when closing */
   useEffect(() => {
@@ -82,6 +86,7 @@ export default function NotificationPicker({
       setPreview(null);
       setReason("");
       setCopied(false);
+      setStage("idle");
     }
   }, [isOpen]);
 
@@ -92,7 +97,7 @@ export default function NotificationPicker({
     return () => clearTimeout(t);
   }, [flash]);
 
-  /* Load the list of notifications on open */
+  /* Load list on open */
   useEffect(() => {
     if (!isOpen) return;
     let alive = true;
@@ -108,7 +113,12 @@ export default function NotificationPicker({
     };
   }, [isOpen, entity, entityId]);
 
-  /* Load / refresh preview whenever kind or reason changes (debounced) */
+  /* Default the attach toggle on for kinds that support it */
+  useEffect(() => {
+    if (supportsAttachment) setAttachEnabled(true);
+  }, [kind, supportsAttachment]);
+
+  /* Refresh preview on kind / reason change (debounced) */
   useEffect(() => {
     if (!isOpen || !kind) return;
     let alive = true;
@@ -136,9 +146,9 @@ export default function NotificationPicker({
     if (!preview) return false;
     if (!preview.to) return false;
     if (preview.missing.length > 0) return false;
-    if (sending) return false;
+    if (busy) return false;
     return true;
-  }, [preview, sending]);
+  }, [preview, busy]);
 
   const handleCopy = async () => {
     if (!preview?.text) return;
@@ -153,7 +163,6 @@ export default function NotificationPicker({
 
   const handleSend = async () => {
     if (!kind) return;
-    setSending(true);
     setFlash(null);
 
     const overrides: Record<string, string> = {};
@@ -161,13 +170,23 @@ export default function NotificationPicker({
       overrides.REJECTION_REASON = reason.trim();
     }
 
-    const res = await sendNotificationNow(entity, entityId, kind, overrides);
-    setSending(false);
+    // Staged progress: PDF generation runs before the actual send.
+    setStage(supportsAttachment && attachEnabled ? "generating" : "sending");
+
+    const res = await sendNotificationNow(entity, entityId, kind, overrides, {
+      attach: supportsAttachment && attachEnabled,
+    });
+
+    setStage("idle");
 
     if (res.sent) {
-      setFlash({ type: "ok", text: "Sent via Fonnte." });
+      setFlash({
+        type: "ok",
+        text: res.attachmentSent
+          ? "Sent via Fonnte with PDF attached."
+          : "Sent via Fonnte.",
+      });
 
-      // Refresh both the list (for lastSentAt chips) and the preview.
       const [list, prev] = await Promise.all([
         listNotificationsForEntity(entity, entityId),
         previewNotification(entity, entityId, kind, overrides),
@@ -180,10 +199,15 @@ export default function NotificationPicker({
         type: "err",
         text: res.error || "Fonnte send failed.",
       });
-      // Refresh preview so lastSent info reflects the failed attempt.
       const prev = await previewNotification(entity, entityId, kind, overrides);
       setPreview(prev);
     }
+  };
+
+  const sendButtonLabel = () => {
+    if (stage === "generating") return "Generating PDF…";
+    if (stage === "sending") return "Sending…";
+    return "Send via Fonnte";
   };
 
   return (
@@ -216,8 +240,8 @@ export default function NotificationPicker({
               </div>
               <button
                 type="button"
-                onClick={() => !sending && setIsOpen(false)}
-                disabled={sending}
+                onClick={() => !busy && setIsOpen(false)}
+                disabled={busy}
                 className="text-muted hover:text-ink p-1 cursor-pointer disabled:opacity-50"
                 aria-label="Close"
               >
@@ -246,12 +270,14 @@ export default function NotificationPicker({
                     <select
                       value={kind}
                       onChange={(e) => setKind(e.target.value)}
-                      disabled={sending}
+                      disabled={busy}
                       className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none appearance-none pr-9 cursor-pointer"
                     >
                       {items.map((it) => {
                         const sentLabel = it.lastSentAt
-                          ? `sent ${formatRel(it.lastSentAt)}${it.lastSentStatus === "failed" ? " (failed)" : ""}`
+                          ? `sent ${formatRel(it.lastSentAt)}${
+                              it.lastSentStatus === "failed" ? " (failed)" : ""
+                            }`
                           : "never sent";
                         return (
                           <option key={it.kind} value={it.kind}>
@@ -271,7 +297,7 @@ export default function NotificationPicker({
                 )}
               </div>
 
-              {/* Reason input for kinds that need it */}
+              {/* Reason input */}
               {requiresReason && (
                 <div>
                   <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1 font-medium">
@@ -281,7 +307,7 @@ export default function NotificationPicker({
                     rows={2}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    disabled={sending}
+                    disabled={busy}
                     placeholder="Explain what needs fixing — this appears in the message."
                     className="w-full text-xs border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:opacity-60"
                   />
@@ -350,6 +376,29 @@ export default function NotificationPicker({
                 </div>
               </div>
 
+              {/* Attachment row */}
+              {supportsAttachment && preview?.attachmentFilename && (
+                <label className="flex items-center gap-2.5 p-2.5 border border-line rounded-lg bg-[#FDFCFA] cursor-pointer hover:bg-[#F6F4EF] transition select-none">
+                  <input
+                    type="checkbox"
+                    checked={attachEnabled}
+                    onChange={(e) => setAttachEnabled(e.target.checked)}
+                    disabled={busy}
+                    className="rounded border-line text-wine focus:ring-wine"
+                  />
+                  <FileText className="w-4 h-4 text-wine-ink flex-shrink-0" strokeWidth={1.8} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-medium text-ink flex items-center gap-1.5">
+                      <Paperclip className="w-3 h-3 text-muted" />
+                      Attach {preview.attachmentLabel || "file"}
+                    </div>
+                    <div className="text-[11px] text-muted font-mono truncate">
+                      {preview.attachmentFilename}
+                    </div>
+                  </div>
+                </label>
+              )}
+
               {/* Last-sent info */}
               {preview?.lastSentAt && (
                 <div className="flex items-center gap-1.5 text-[11px] text-muted">
@@ -386,7 +435,7 @@ export default function NotificationPicker({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  disabled={!preview?.text}
+                  disabled={!preview?.text || busy}
                   className="px-3 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                 >
                   {copied ? (
@@ -413,12 +462,12 @@ export default function NotificationPicker({
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-wine text-white rounded-lg text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 min-w-[140px] justify-center"
               >
-                {sending ? (
+                {busy ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Sending…
+                    {sendButtonLabel()}
                   </>
                 ) : (
                   <>

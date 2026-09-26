@@ -8,22 +8,29 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 export interface EmitWaInput {
   entity: 'order' | 'return' | 'fitting' | 'customer';
   entityId: string;
-  /** Matches the notification template key in app_settings.notifications */
   kind: string;
   vars: Record<string, string>;
   to: string;
   fallbackTemplate?: string;
+  /**
+   * Optional file to attach. Pass `base64` (preferred) or `url` (fallback).
+   * Fonnte silently drops attachments fetched from signed URLs — always
+   * pass base64 when you have the bytes in memory.
+   */
+  attachment?: {
+    base64?: string;
+    url?: string;
+    filename: string;
+  } | null;
 }
 
 export interface EmitWaResult {
-  /** Deep-link an admin can open to send manually if the auto-send fails. */
   waUrl: string;
-  /** True when Fonnte accepted the send. */
   sent: boolean;
-  /** Populated when sent === false. */
   error?: string;
-  /** Fully rendered message that was dispatched. */
   renderedMessage: string;
+  /** True when an attachment was passed (not a guarantee it was delivered). */
+  attachmentAttempted?: boolean;
 }
 
 export interface LastSentInfo {
@@ -108,16 +115,25 @@ export async function emitWa(
   const phone = normalizePhone(input.to);
   const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(rendered)}`;
 
-  // Attempt Fonnte delivery. Never throws — always returns a result object.
-  const sendRes = await sendFonnteMessage({ target: phone, message: rendered });
+  const sendRes = await sendFonnteMessage({
+    target: phone,
+    message: rendered,
+    attachment: input.attachment ?? null,
+  });
 
-  // Log the attempt (sent or failed) into the audit trail so the
-  // "WA Sent" badges and lastSentMap() keep working unchanged.
   await markNotification(supabase, admin, input.entity, input.entityId, input.kind, {
     waUrl,
     sent: sendRes.success,
     error: sendRes.error,
     fonnteId: sendRes.id,
+    // Audit trail stores url + filename (never the raw base64 — bloat).
+    attachment: input.attachment
+      ? {
+          url: input.attachment.url ?? null,
+          filename: input.attachment.filename,
+          mode: input.attachment.base64 ? 'base64' : 'url',
+        }
+      : null,
   });
 
   return {
@@ -125,16 +141,12 @@ export async function emitWa(
     sent: sendRes.success,
     error: sendRes.error,
     renderedMessage: rendered,
+    attachmentAttempted: Boolean(input.attachment),
   };
 }
 
 /* ── Last-sent lookup (drives UI badges) ─────────────────────────── */
 
-/**
- * Returns a map of { kind → lastSentInfo } for the given entity + kinds.
- * Uses admin_audit_logs (action_type = 'WA_DISPATCHED', field_name = kind).
- * The most recent row per kind wins.
- */
 export async function lastSentMap(
   supabase: SupabaseClient,
   entityType: string,
@@ -154,7 +166,6 @@ export async function lastSentMap(
 
   const map: Record<string, LastSentInfo> = {};
   for (const row of data || []) {
-    // First hit per kind wins (results already sorted DESC).
     if (!map[row.field_name]) {
       const details = (row.details || {}) as any;
       map[row.field_name] = {

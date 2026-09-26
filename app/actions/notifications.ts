@@ -3,8 +3,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentAdmin } from './auth';
-import { emitWa, renderTemplate } from '@/lib/notifications';
-import { lastSentMap } from '@/lib/notifications';
+import { emitWa, renderTemplate, lastSentMap } from '@/lib/notifications';
+import { generateInvoiceAttachment } from './invoice';
 import {
   getDef,
   defsForEntity,
@@ -21,6 +21,8 @@ export interface NotificationListItem {
   description?: string;
   autoTriggered: boolean;
   requiresReasonInput: boolean;
+  hasAttachment: boolean;
+  attachmentLabel?: string;
   lastSentAt: string | null;
   lastSentStatus: 'sent' | 'failed' | null;
   lastSentError: string | null;
@@ -28,22 +30,27 @@ export interface NotificationListItem {
 
 export interface NotificationPreview {
   kind: string;
-  /** Normalized destination phone, or null when missing. */
   to: string | null;
   text: string;
-  /** Manual fallback link (wa.me). Null when no phone. */
   waUrl: string | null;
-  /** Required vars that couldn't be resolved from the entity. */
   missing: { key: string; label: string }[];
+  hasAttachment: boolean;
+  attachmentLabel?: string;
+  attachmentFilename: string | null;
   lastSentAt: string | null;
   lastSentStatus: 'sent' | 'failed' | null;
   error?: string;
+}
+
+export interface SendOptions {
+  attach?: boolean;
 }
 
 export interface SendResult {
   sent: boolean;
   waUrl: string | null;
   error?: string;
+  attachmentSent?: boolean;
 }
 
 /* ── List ─────────────────────────────────────────────────────────── */
@@ -73,6 +80,8 @@ export async function listNotificationsForEntity(
         description: d.description,
         autoTriggered: Boolean(d.autoTriggered),
         requiresReasonInput: Boolean(d.requiresReasonInput),
+        hasAttachment: Boolean(d.hasAttachment),
+        attachmentLabel: d.attachmentLabel,
         lastSentAt: info?.at ?? null,
         lastSentStatus: info ? (info.sent ? 'sent' : 'failed') : null,
         lastSentError: info?.error ?? null,
@@ -195,14 +204,10 @@ export async function previewNotification(
   overrides: Record<string, string> = {},
 ): Promise<NotificationPreview> {
   const admin = await getCurrentAdmin();
-  if (!admin) {
-    return emptyPreview(kind, 'Unauthorized');
-  }
+  if (!admin) return emptyPreview(kind, 'Unauthorized');
 
   const def = getDef(kind);
-  if (!def) {
-    return emptyPreview(kind, `Unknown notification "${kind}"`);
-  }
+  if (!def) return emptyPreview(kind, `Unknown notification "${kind}"`);
 
   const ctx = await fetchEntityContext(entity, entityId);
   (ctx as any).overrides = overrides;
@@ -212,7 +217,6 @@ export async function previewNotification(
 
   const supabase = await createClient();
 
-  // Pull the effective template (settings override or fallback).
   const { data: settings } = await supabase
     .from('app_settings')
     .select('value')
@@ -237,6 +241,12 @@ export async function previewNotification(
     text,
     waUrl,
     missing,
+    hasAttachment: Boolean(def.hasAttachment),
+    attachmentLabel: def.attachmentLabel,
+    attachmentFilename:
+      def.hasAttachment && entity === 'order'
+        ? `KORA-Invoice-${entityId}.pdf`
+        : null,
     lastSentAt: info?.at ?? null,
     lastSentStatus: info ? (info.sent ? 'sent' : 'failed') : null,
   };
@@ -249,6 +259,8 @@ function emptyPreview(kind: string, error: string): NotificationPreview {
     text: '',
     waUrl: null,
     missing: [],
+    hasAttachment: false,
+    attachmentFilename: null,
     lastSentAt: null,
     lastSentStatus: null,
     error,
@@ -262,19 +274,30 @@ export async function sendNotificationNow(
   entityId: string,
   kind: string,
   overrides: Record<string, string> = {},
+  options: SendOptions = {},
 ): Promise<SendResult> {
   const admin = await getCurrentAdmin();
   if (!admin) return { sent: false, waUrl: null, error: 'Unauthorized' };
 
   const def = getDef(kind);
-  if (!def) return { sent: false, waUrl: null, error: `Unknown notification "${kind}"` };
+  if (!def) {
+    return {
+      sent: false,
+      waUrl: null,
+      error: `Unknown notification "${kind}"`,
+    };
+  }
 
   const ctx = await fetchEntityContext(entity, entityId);
   (ctx as any).overrides = overrides;
 
   const rawPhone = getPhoneForEntity(entity, ctx);
   if (!rawPhone) {
-    return { sent: false, waUrl: null, error: 'Customer has no phone number on file.' };
+    return {
+      sent: false,
+      waUrl: null,
+      error: 'Customer has no phone number on file.',
+    };
   }
 
   const { vars, missing } = resolveVars(def, ctx, rawPhone);
@@ -282,8 +305,48 @@ export async function sendNotificationNow(
     return {
       sent: false,
       waUrl: null,
-      error: `Missing required field(s): ${missing.map((m) => m.label).join(', ')}.`,
+      error: `Missing required field(s): ${missing
+        .map((m) => m.label)
+        .join(', ')}.`,
     };
+  }
+
+  /* ── Attachment (PDF generation) ──────────────────────────────── */
+  //
+  // We always pass BOTH the signed URL (for archival) and the base64 bytes
+  // (for Fonnte delivery). Fonnte's `url` fetcher silently drops signed
+  // Supabase URLs — the `file` param with base64 bypasses that entirely.
+  let attachment:
+    | { url: string; base64: string; filename: string }
+    | null = null;
+
+  if (def.hasAttachment && options.attach) {
+    if (entity !== 'order') {
+      return {
+        sent: false,
+        waUrl: null,
+        error: 'Attachments are only supported for order notifications.',
+      };
+    }
+    try {
+      const att = await generateInvoiceAttachment(entityId);
+      attachment = {
+        url: att.url,
+        base64: att.base64,
+        filename: att.filename,
+      };
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          `[Notification] Invoice PDF generated · ${att.size} bytes · ${att.path}`,
+        );
+      }
+    } catch (e: any) {
+      return {
+        sent: false,
+        waUrl: null,
+        error: `Could not generate invoice PDF: ${e?.message || 'unknown error'}`,
+      };
+    }
   }
 
   const supabase = await createClient();
@@ -297,14 +360,23 @@ export async function sendNotificationNow(
       to: rawPhone,
       vars,
       fallbackTemplate: def.fallbackTemplate,
+      attachment,
     });
-    result = { sent: res.sent, waUrl: res.waUrl, error: res.error };
+    result = {
+      sent: res.sent,
+      waUrl: res.waUrl,
+      error: res.error,
+      attachmentSent: Boolean(attachment) && res.sent,
+    };
   } catch (e: any) {
-    result = { sent: false, waUrl: null, error: e?.message || 'Send failed.' };
+    result = {
+      sent: false,
+      waUrl: null,
+      error: e?.message || 'Send failed.',
+    };
   }
 
-  // Preserve the original fitting-reminder side effect: timestamp
-  // reminder_sent_at so the "REMINDER DUE" badge clears.
+  // Preserve the fitting-reminder side effect so the list badge clears.
   if (entity === 'fitting' && kind === 'fitting_reminder') {
     await supabase
       .from('fittings')
@@ -312,7 +384,7 @@ export async function sendNotificationNow(
       .eq('id', entityId);
   }
 
-  // Best-effort cache invalidation for detail / list pages.
+  // Cache invalidation for detail / list pages.
   if (entity === 'order') {
     revalidatePath('/admin/orders');
     revalidatePath(`/admin/orders/${entityId}`);
