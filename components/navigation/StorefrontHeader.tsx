@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Search, User, ShoppingBag } from "lucide-react";
 import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
@@ -65,9 +66,17 @@ export default function StorefrontHeader({
         <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between">
           <Link
             href="/"
-            className="font-serif text-[28px] sm:text-[32px] tracking-[0.06em] text-[#485642] hover:opacity-90 transition-opacity font-normal"
+            aria-label="KORA — Home"
+            className="hover:opacity-85 transition-opacity inline-flex items-center"
           >
-            KORA
+            <Image
+              src="/logo.png"
+              alt="KORA"
+              width={160}
+              height={48}
+              priority
+              className="h-9 sm:h-11 w-auto"
+            />
           </Link>
 
           <nav className="hidden md:flex items-center gap-8 text-[12px] tracking-[0.14em] text-[#3B4736] font-medium uppercase">

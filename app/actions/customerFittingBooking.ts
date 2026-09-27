@@ -22,6 +22,19 @@ export interface FittingBookingSession {
   skus: string[];
 }
 
+/**
+ * Metadata captured from a Xendit invoice lookup.
+ * Shared by both the webhook path and the client / admin verification paths.
+ */
+export interface FittingPaymentMeta {
+  invoice_id?: string;
+  status?: string;
+  paid_amount?: number;
+  paid_at?: string;
+  payment_method?: string;
+  payment_channel?: string;
+}
+
 /* ── Create booking (inserts fittings + optional Xendit invoice) ─── */
 
 export async function createFittingBooking(sessions: FittingBookingSession[]) {
@@ -200,13 +213,7 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
 
 export async function markFittingBookingPaid(
   bookingId: string,
-  meta: {
-    invoice_id?: string;
-    status?: string;
-    paid_amount?: number;
-    paid_at?: string;
-    payment_channel?: string;
-  },
+  meta: FittingPaymentMeta,
 ) {
   const supabase = await createClient();
 
