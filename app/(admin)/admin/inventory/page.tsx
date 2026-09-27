@@ -4,6 +4,8 @@ import { formatRupiah } from "@/lib/utils";
 import { getCurrentAdmin } from "@/app/actions/auth";
 import { History, X } from "lucide-react";
 
+const HISTORICAL_PLACEHOLDER_PREFIX = "[Historical Placeholder]";
+
 function StatusPill({ status }: { status: string }) {
   const styles: Record<string, string> = {
     Available: "bg-ok-bg text-ok",
@@ -33,15 +35,13 @@ export default async function InventoryPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const currentTab = resolvedSearchParams.tab || "all";
-  // Historical mode reveals archived items alongside the active catalog.
+  // Historical mode reveals archived items AND placeholder imports.
   const showHistorical = resolvedSearchParams.historical === "1";
 
   const supabase = await createClient();
   const currentAdmin = await getCurrentAdmin();
   const isSuperAdmin = currentAdmin?.role === "superadmin";
 
-  // Base query. When `showHistorical` is off, we filter archived items at
-  // the DB layer so they never touch the page; when on, they're included.
   let query = supabase
     .from("items")
     .select(
@@ -63,8 +63,12 @@ export default async function InventoryPage({
     )
     .order("created_at", { ascending: false });
 
+  // Default view: hide archived items *and* historical placeholders.
+  // Both are "not part of the active catalog" — the toggle reveals both.
   if (!showHistorical) {
-    query = query.eq("is_archived", false);
+    query = query
+      .eq("is_archived", false)
+      .not("name", "ilike", `${HISTORICAL_PLACEHOLDER_PREFIX}%`);
   }
 
   const { data: items, error } = await query;
@@ -73,16 +77,20 @@ export default async function InventoryPage({
     console.error("Error fetching inventory:", error);
   }
 
-  // Filter logic
   const allItems = items || [];
 
-  const activeItems = allItems.filter((i) => !i.is_archived);
+  const isHistoricalPlaceholder = (i: any) =>
+    typeof i.name === "string" &&
+    i.name.startsWith(HISTORICAL_PLACEHOLDER_PREFIX);
+
+  const activeItems = allItems.filter(
+    (i) => !i.is_archived && !isHistoricalPlaceholder(i),
+  );
   const archivedItems = allItems.filter((i) => i.is_archived);
+  const placeholderItems = allItems.filter(isHistoricalPlaceholder);
 
   const pendingItems = activeItems.filter((i) => i.pending_action !== null);
 
-  // "Needs Attention" is a workflow queue — archived items never appear
-  // here because nobody is going to fix their data.
   const needsAttentionItems = activeItems.filter(
     (i) =>
       // @ts-ignore
@@ -97,7 +105,6 @@ export default async function InventoryPage({
     displayItems = pendingItems;
   }
 
-  // Build href for the toggle so tab state is preserved.
   const toggleHref = (() => {
     const params = new URLSearchParams();
     if (currentTab !== "all") params.set("tab", currentTab);
@@ -106,7 +113,6 @@ export default async function InventoryPage({
     return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
   })();
 
-  // Build href for tab links so historical state is preserved.
   const tabHref = (tab: string) => {
     const params = new URLSearchParams();
     if (tab !== "all") params.set("tab", tab);
@@ -114,6 +120,8 @@ export default async function InventoryPage({
     const qs = params.toString();
     return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
   };
+
+  const hiddenCount = archivedItems.length + placeholderItems.length;
 
   return (
     <div>
@@ -179,18 +187,15 @@ export default async function InventoryPage({
           </Link>
         </div>
 
-        {/* Historical toggle — display-only filter, orthogonal to tabs */}
         <Link
           href={toggleHref}
           className={`flex items-center gap-1.5 pb-2.5 text-xs font-medium transition-colors ${
-            showHistorical
-              ? "text-wine-ink"
-              : "text-muted hover:text-ink"
+            showHistorical ? "text-wine-ink" : "text-muted hover:text-ink"
           }`}
           title={
             showHistorical
-              ? "Hide archived items from the list"
-              : "Show archived items (kept for historical order integrity)"
+              ? "Hide archived and placeholder items from the list"
+              : "Show archived items and historical placeholders"
           }
         >
           {showHistorical ? (
@@ -198,26 +203,39 @@ export default async function InventoryPage({
               <X className="w-3.5 h-3.5" strokeWidth={1.8} />
               Hide Historical
               <span className="bg-wine-soft text-wine-ink text-[10px] px-1.5 py-0.5 rounded-full ml-1">
-                {archivedItems.length}
+                {hiddenCount}
               </span>
             </>
           ) : (
             <>
               <History className="w-3.5 h-3.5" strokeWidth={1.8} />
               Show Historical
+              {hiddenCount > 0 && (
+                <span className="bg-[#EFEBE2] text-muted text-[10px] px-1.5 py-0.5 rounded-full ml-1">
+                  {hiddenCount}
+                </span>
+              )}
             </>
           )}
         </Link>
       </div>
 
-      {/* Historical mode banner — nudges the admin to understand what they're seeing */}
+      {/* Historical mode banner */}
       {showHistorical && (
         <div className="mb-4 p-3 bg-[#FBF8EF] border border-[#E8DFC2] text-[#84661E] rounded-lg text-xs flex items-start gap-2">
           <History className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>
-            <strong>Historical view.</strong> Archived items are included — they
-            remain in the catalog only to preserve past order lines and reports.
-            They are not bookable and do not appear on the storefront.
+            <strong>Historical view.</strong> Archived items and placeholder
+            imports are included — they exist only to preserve past order lines
+            and reports. They are not bookable and do not appear on the
+            storefront.
+            {placeholderItems.length > 0 && (
+              <>
+                {" "}
+                ({placeholderItems.length} placeholder
+                {placeholderItems.length === 1 ? "" : "s"} shown)
+              </>
+            )}
           </span>
         </div>
       )}
@@ -267,72 +285,79 @@ export default async function InventoryPage({
                   </td>
                 </tr>
               ) : (
-                displayItems?.map((item) => (
-                  <tr
-                    key={item.sku}
-                    className={`hover:bg-[#FBFAF6] ${
-                      item.is_archived ? "opacity-60" : ""
-                    }`}
-                  >
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top font-bold">
-                      <Link
-                        href={`/admin/inventory/${item.sku}`}
-                        className="hover:underline text-wine-ink hover:text-black"
-                      >
-                        {item.sku}
-                      </Link>
-                      {item.pending_action && (
-                        <span className="ml-2 bg-warn-bg text-warn-ink text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
-                          {item.pending_action} Req
-                        </span>
-                      )}
-                      {item.is_archived && (
-                        <span className="ml-2 bg-[#EFEBE2] text-muted text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
-                          Archived
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      {item.name}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      {/* @ts-ignore - joining relation */}
-                      {item.brand?.name || "—"}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      {/* @ts-ignore - joining relation */}
-                      {item.type?.name || "—"}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      {item.size || "—"}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top text-right">
-                      {item.rental_price
-                        ? formatRupiah(item.rental_price)
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      {item.buffer_override !== null ? (
-                        <>
-                          {item.buffer_override}{" "}
-                          <span className="text-wine-ink bg-wine-soft px-1.5 py-0.5 rounded text-[10.5px] font-semibold uppercase tracking-wider ml-1">
-                            OVR
+                displayItems?.map((item) => {
+                  const isPlaceholder = isHistoricalPlaceholder(item);
+                  const dim = item.is_archived || isPlaceholder;
+                  return (
+                    <tr
+                      key={item.sku}
+                      className={`hover:bg-[#FBFAF6] ${dim ? "opacity-60" : ""}`}
+                    >
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top font-bold">
+                        <Link
+                          href={`/admin/inventory/${item.sku}`}
+                          className="hover:underline text-wine-ink hover:text-black"
+                        >
+                          {item.sku}
+                        </Link>
+                        {item.pending_action && (
+                          <span className="ml-2 bg-warn-bg text-warn-ink text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
+                            {item.pending_action} Req
                           </span>
-                        </>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      <StatusPill status={item.website_status} />
-                    </td>
-                    <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      <StatusPill
-                        status={item.is_archived ? "Archived" : item.status}
-                      />
-                    </td>
-                  </tr>
-                ))
+                        )}
+                        {item.is_archived && (
+                          <span className="ml-2 bg-[#EFEBE2] text-muted text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
+                            Archived
+                          </span>
+                        )}
+                        {isPlaceholder && !item.is_archived && (
+                          <span className="ml-2 bg-[#EFEBE2] text-muted text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
+                            Placeholder
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        {item.name}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        {/* @ts-ignore - joining relation */}
+                        {item.brand?.name || "—"}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        {/* @ts-ignore - joining relation */}
+                        {item.type?.name || "—"}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        {item.size || "—"}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top text-right">
+                        {item.rental_price
+                          ? formatRupiah(item.rental_price)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        {item.buffer_override !== null ? (
+                          <>
+                            {item.buffer_override}{" "}
+                            <span className="text-wine-ink bg-wine-soft px-1.5 py-0.5 rounded text-[10.5px] font-semibold uppercase tracking-wider ml-1">
+                              OVR
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        <StatusPill status={item.website_status} />
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
+                        <StatusPill
+                          status={item.is_archived ? "Archived" : item.status}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
