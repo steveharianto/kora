@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getCurrentAdmin } from '@/app/actions/auth';
 import { notFound } from 'next/navigation';
 import ReturnDetailForm from './ReturnDetailForm';
 
@@ -15,9 +16,9 @@ export default async function ReturnDetailPage({
   }
 
   const supabase = await createClient();
+  const currentAdmin = await getCurrentAdmin();
 
-  // 1. Fetch return record (look up by return ID or order ID)
-  const [returnRes, settingsRes, auditRes] = await Promise.all([
+  const [returnRes, settingsRes, auditRes, adminsRes] = await Promise.all([
     supabase
       .from('returns')
       .select(`
@@ -48,7 +49,16 @@ export default async function ReturnDetailPage({
       .maybeSingle(),
 
     supabase.from('app_settings').select('key, value').in('key', ['shipping', 'rental_rules', 'notifications']),
-    supabase.from('admin_audit_logs').select('*').or(`entity_id.eq.${id},entity_id.eq.RET-${id}`).order('created_at', { ascending: false }),
+    supabase
+      .from('admin_audit_logs')
+      .select('*')
+      .or(`entity_id.eq.${id},entity_id.eq.RET-${id}`)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('admins')
+      .select('id, name, role')
+      .eq('is_active', true)
+      .order('name'),
   ]);
 
   if (!returnRes.data) {
@@ -68,6 +78,8 @@ export default async function ReturnDetailPage({
         rentalRules={settingsMap.rental_rules || {}}
         notificationTemplates={settingsMap.notifications || {}}
         auditLogs={auditRes.data || []}
+        admins={adminsRes.data || []}
+        currentAdmin={currentAdmin}
       />
     </div>
   );

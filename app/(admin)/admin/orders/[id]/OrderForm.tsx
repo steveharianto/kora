@@ -20,7 +20,6 @@ import {
 import {
   saveOrder,
   updateOrderStatus,
-  addOrderNote,
   createCustomerAddress,
 } from "@/app/actions/orders";
 import { createCustomer } from "@/app/actions/customers";
@@ -29,6 +28,7 @@ import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import AddressMapPicker from "@/components/AddressMapPicker";
 import NotificationPicker from "@/components/admin/NotificationPicker";
+import EntityChat from "@/components/admin/EntityChat";
 import { OUTBOUND_COURIER_LABELS } from "@/lib/courierMap";
 
 // Locale-safe date formatter — matches server and client output byte-for-byte.
@@ -152,12 +152,12 @@ export default function OrderForm({
   notificationTemplates,
   bookingWindowDays = 3,
   auditLogs,
+  admins = [],
   currentAdmin,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [noteText, setNoteText] = useState("");
   const [copiedResi, setCopiedResi] = useState(false);
   const waybillInputRef = useRef<HTMLInputElement>(null);
 
@@ -660,9 +660,6 @@ export default function OrderForm({
     setErrorMsg("");
 
     if (formData.status === "Draft") {
-      // saveOrder() writes everything atomically and applies the side effects
-      // for the new status (item reservation, fitting eviction, credit
-      // deduction, auto-return on Active).
       const res = await saveOrder({
         ...formData,
         status: newStatus,
@@ -681,8 +678,6 @@ export default function OrderForm({
       return;
     }
 
-    // Non-draft transitions (In Shipping → Active, → Cancelled, etc.) only
-    // touch the status column — the status-only action is safe there.
     const res = await updateOrderStatus(formData.id, newStatus);
     if (res?.error) setErrorMsg(res.error);
     else {
@@ -754,14 +749,6 @@ export default function OrderForm({
     navigator.clipboard.writeText(bookingResult.waybill);
     setCopiedWaybill(true);
     setTimeout(() => setCopiedWaybill(false), 2000);
-  };
-
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    await addOrderNote(formData.id, noteText);
-    setNoteText("");
-    router.refresh();
   };
 
   const handleSaveQuickCustomer = async (e: React.FormEvent) => {
@@ -1710,59 +1697,48 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* Notes + Activity */}
+      {/* Notes (chat) + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
-          <h3 className="font-serif text-[18px] font-normal mb-1">
-            Log Note{" "}
-            <span className="text-[12px] text-muted font-sans">
-              - internal team only
-            </span>
-          </h3>
-          <form onSubmit={handleAddNote} className="mt-2 flex-1 flex flex-col">
-            <textarea
-              rows={3}
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Note for the team..."
-              className="w-full text-xs border border-line rounded-lg p-2.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine"
-            />
-            <div className="flex justify-end mt-2">
-              <button
-                type="submit"
-                className="px-3.5 py-1 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF] cursor-pointer"
-              >
-                Post
-              </button>
-            </div>
-          </form>
+        <div className="bg-card border border-line rounded-[10px] p-5">
+          <EntityChat
+            entity="order"
+            entityId={formData.id}
+            currentAdmin={currentAdmin}
+            admins={admins}
+            logs={auditLogs.filter((l: any) =>
+              l.action_type?.endsWith("_CHAT"),
+            )}
+          />
         </div>
 
-        <div className="bg-card border border-line rounded-[10px] p-5 h-56 overflow-y-auto">
+        <div className="bg-card border border-line rounded-[10px] p-5 h-96 overflow-y-auto">
           <h3 className="font-serif text-[18px] font-normal mb-3">
             Activity log
           </h3>
-          {auditLogs.length === 0 ? (
+          {auditLogs.filter((l: any) => !l.action_type?.endsWith("_CHAT"))
+            .length === 0 ? (
             <p className="text-xs text-muted">No changes recorded yet.</p>
           ) : (
             <ul className="space-y-2.5 text-xs">
-              {auditLogs.map((log: any) => (
-                <li
-                  key={log.id}
-                  className="border-b border-line pb-1.5 last:border-none"
-                >
-                  <span className="font-semibold">{log.admin_name}</span>:{" "}
-                  {log.action_type}{" "}
-                  {log.new_value && (
-                    <span className="text-wine-ink font-medium">
-                      ({log.new_value})
+              {auditLogs
+                .filter((l: any) => !l.action_type?.endsWith("_CHAT"))
+                .map((log: any) => (
+                  <li
+                    key={log.id}
+                    className="border-b border-line pb-1.5 last:border-none"
+                  >
+                    <span className="font-semibold">{log.admin_name}</span>:{" "}
+                    {log.action_type}{" "}
+                    {log.new_value && (
+                      <span className="text-wine-ink font-medium">
+                        ({log.new_value})
+                      </span>
+                    )}
+                    <span className="text-muted ml-1">
+                      · {formatLogDate(log.created_at)}
                     </span>
-                  )}
-                  <span className="text-muted ml-1">
-                    · {formatLogDate(log.created_at)}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                ))}
             </ul>
           )}
         </div>

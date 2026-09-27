@@ -7,13 +7,19 @@ import {
   updateFittingStatus,
   recordAfterHoursFeePayment,
   convertFittingToOrder,
-  addFittingNote,
   markFittingRefunded,
   verifyFittingPaymentAdmin,
 } from '@/app/actions/fittings';
 import { formatRupiah } from '@/lib/utils';
-import { AlertTriangle, BadgeDollarSign, RefreshCw, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  BadgeDollarSign,
+  RefreshCw,
+  Loader2,
+  ShoppingBag,
+} from 'lucide-react';
 import NotificationPicker from '@/components/admin/NotificationPicker';
+import EntityChat from '@/components/admin/EntityChat';
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—';
@@ -36,12 +42,13 @@ export default function FittingDetailForm({
   allItems,
   notificationTemplates,
   auditLogs,
+  admins = [],
+  currentAdmin = null,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [noteText, setNoteText] = useState('');
   const [feeMethod, setFeeMethod] = useState(
     initialFitting.fee_payment_method || 'Cash',
   );
@@ -120,14 +127,6 @@ export default function FittingDetailForm({
     }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    await addFittingNote(initialFitting.id, noteText);
-    setNoteText('');
-    router.refresh();
-  };
-
   return (
     <div>
       <Link
@@ -202,6 +201,44 @@ export default function FittingDetailForm({
             entityId={initialFitting.id}
             onSent={() => router.refresh()}
           />
+
+          {/* Convert-to-order — inline fulfilment method picker */}
+          <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-line">
+            <label className="text-[10px] uppercase tracking-wider text-muted font-medium">
+              Fulfilment
+            </label>
+            <select
+              value={convertMethod}
+              onChange={(e) => setConvertMethod(e.target.value)}
+              disabled={converting}
+              className="text-xs border border-line rounded-lg px-2 py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:opacity-50 cursor-pointer"
+            >
+              {COURIER_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleConvertToOrder}
+              disabled={converting || initialFitting.status === 'Cancelled'}
+              title="Create a new manual order draft from this fitting"
+              className="px-3.5 py-1.5 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+            >
+              {converting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Creating…
+                </>
+              ) : (
+                <>
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  Post Order
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -453,88 +490,51 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-16">
-        <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
-          <h3 className="font-serif text-[18px] font-normal mb-1">
-            Log Note{' '}
-            <span className="text-[12px] text-muted font-sans">
-              — internal team only
-            </span>
-          </h3>
-          <form onSubmit={handleAddNote} className="mt-2 flex-1 flex flex-col">
-            <textarea
-              rows={3}
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Note for the team..."
-              className="w-full text-xs border border-line rounded-lg p-2.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none"
-            />
-            <div className="flex justify-end mt-2">
-              <button
-                type="submit"
-                className="px-3.5 py-1 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF] cursor-pointer"
-              >
-                Post
-              </button>
-            </div>
-          </form>
+      {/* Team notes (chat) + activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-card border border-line rounded-[10px] p-5">
+          <EntityChat
+            entity="fitting"
+            entityId={initialFitting.id}
+            currentAdmin={currentAdmin}
+            admins={admins}
+            logs={auditLogs.filter((l: any) =>
+              l.action_type?.endsWith('_CHAT'),
+            )}
+          />
         </div>
-        <div className="bg-card border border-line rounded-[10px] p-5 h-56 overflow-y-auto">
+        <div className="bg-card border border-line rounded-[10px] p-5 h-96 overflow-y-auto">
           <h3 className="font-serif text-[18px] font-normal mb-3">
             Activity log
           </h3>
-          {auditLogs.length === 0 ? (
+          {auditLogs.filter((l: any) => !l.action_type?.endsWith('_CHAT'))
+            .length === 0 ? (
             <p className="text-xs text-muted">
               No activity logged for this session yet.
             </p>
           ) : (
             <ul className="space-y-2.5 text-xs">
-              {auditLogs.map((log: any) => (
-                <li
-                  key={log.id}
-                  className="border-b border-line pb-1.5 last:border-none"
-                >
-                  <span className="font-semibold">{log.admin_name}</span>:{' '}
-                  {log.action_type}{' '}
-                  {log.new_value && (
-                    <span className="text-wine-ink font-medium">
-                      ({log.new_value})
+              {auditLogs
+                .filter((l: any) => !l.action_type?.endsWith('_CHAT'))
+                .map((log: any) => (
+                  <li
+                    key={log.id}
+                    className="border-b border-line pb-1.5 last:border-none"
+                  >
+                    <span className="font-semibold">{log.admin_name}</span>:{' '}
+                    {log.action_type}{' '}
+                    {log.new_value && (
+                      <span className="text-wine-ink font-medium">
+                        ({log.new_value})
+                      </span>
+                    )}
+                    <span className="text-muted ml-1">
+                      · {formatDate(log.created_at)}
                     </span>
-                  )}
-                  <span className="text-muted ml-1">
-                    · {formatDate(log.created_at)}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                ))}
             </ul>
           )}
-        </div>
-      </div>
-
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-        <div className="bg-[#1A1F16] text-white rounded-full pl-3 pr-2 py-1.5 shadow-xl flex items-center gap-2">
-          <label className="text-[10px] uppercase tracking-wider text-white/70 font-medium">
-            Fulfilment
-          </label>
-          <select
-            value={convertMethod}
-            onChange={(e) => setConvertMethod(e.target.value)}
-            className="bg-transparent text-white text-xs font-semibold border-none focus:outline-none cursor-pointer pr-1"
-          >
-            {COURIER_OPTIONS.map((opt) => (
-              <option key={opt} value={opt} className="text-ink bg-white">
-                {opt}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleConvertToOrder}
-            disabled={converting || initialFitting.status === 'Cancelled'}
-            className="bg-white text-[#1A1F16] px-4 py-1.5 rounded-full text-xs font-semibold hover:bg-[#ECEBE4] transition flex items-center gap-2 disabled:opacity-40 cursor-pointer"
-          >
-            {converting ? 'Creating Order Draft...' : 'Post the order first'}
-          </button>
         </div>
       </div>
     </div>

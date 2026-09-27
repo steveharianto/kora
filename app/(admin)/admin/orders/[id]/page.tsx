@@ -19,6 +19,7 @@ export default async function OrderDetailPage({
     shippingSettingsRes,
     notificationSettingsRes,
     auditRes,
+    adminsRes,
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -52,6 +53,11 @@ export default async function OrderDetailPage({
       .select('*')
       .eq('entity_id', id)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('admins')
+      .select('id, name, role')
+      .eq('is_active', true)
+      .order('name'),
   ]);
 
   if (orderRes.error || !orderRes.data) notFound();
@@ -70,6 +76,7 @@ export default async function OrderDetailPage({
         notificationTemplates={notificationTemplates}
         bookingWindowDays={bookingWindowDays}
         auditLogs={auditRes.data || []}
+        admins={adminsRes.data || []}
         currentAdmin={currentAdmin}
       />
     </div>

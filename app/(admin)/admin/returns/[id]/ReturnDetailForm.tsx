@@ -9,7 +9,6 @@ import {
   markReturnReceived,
   startReturnQc,
   releaseDepositAndCompleteReturn,
-  addReturnNote,
   getReturnShippingRates,
   type ReturnRateOption,
 } from "@/app/actions/returns";
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 import RupiahInput from "@/components/RupiahInput";
 import NotificationPicker from "@/components/admin/NotificationPicker";
+import EntityChat from "@/components/admin/EntityChat";
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "—";
@@ -47,12 +47,13 @@ export default function ReturnDetailForm({
   rentalRules,
   notificationTemplates,
   auditLogs,
+  admins = [],
+  currentAdmin = null,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [copiedSlip, setCopiedSlip] = useState(false);
-  const [noteText, setNoteText] = useState("");
 
   const order = initialReturn.orders || {};
   const customer = initialReturn.customers || {};
@@ -291,14 +292,6 @@ export default function ReturnDetailForm({
     if (res.error) setErrorMsg(res.error);
     else router.refresh();
     setLoading(false);
-  };
-
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    await addReturnNote(initialReturn.id, noteText);
-    setNoteText("");
-    router.refresh();
   };
 
   const canBookCourier =
@@ -715,33 +708,33 @@ export default function ReturnDetailForm({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
-          <h3 className="font-serif text-[18px] font-normal mb-1">
-            Log Note <span className="text-[12px] text-muted font-sans">— internal team only</span>
-          </h3>
-          <form onSubmit={handleAddNote} className="mt-2 flex-1 flex flex-col">
-            <textarea rows={3} value={noteText} onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Note for the team..."
-              className="w-full text-xs border border-line rounded-lg p-2.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none" />
-            <div className="flex justify-end mt-2">
-              <button type="submit" className="px-3.5 py-1 bg-card border border-line text-xs rounded-lg hover:bg-[#F6F4EF] cursor-pointer">Post</button>
-            </div>
-          </form>
+        <div className="bg-card border border-line rounded-[10px] p-5">
+          <EntityChat
+            entity="return"
+            entityId={initialReturn.id}
+            currentAdmin={currentAdmin}
+            admins={admins}
+            logs={auditLogs.filter((l: any) =>
+              l.action_type?.endsWith("_CHAT"),
+            )}
+          />
         </div>
 
-        <div className="bg-card border border-line rounded-[10px] p-5 h-56 overflow-y-auto">
+        <div className="bg-card border border-line rounded-[10px] p-5 h-96 overflow-y-auto">
           <h3 className="font-serif text-[18px] font-normal mb-3">Activity log</h3>
-          {auditLogs.length === 0 ? (
+          {auditLogs.filter((l: any) => !l.action_type?.endsWith("_CHAT")).length === 0 ? (
             <p className="text-xs text-muted">No activity logged for this return yet.</p>
           ) : (
             <ul className="space-y-2.5 text-xs">
-              {auditLogs.map((log: any) => (
-                <li key={log.id} className="border-b border-line pb-1.5 last:border-none">
-                  <span className="font-semibold">{log.admin_name}</span>: {log.action_type}{" "}
-                  {log.new_value && <span className="text-wine-ink font-medium">({log.new_value})</span>}
-                  <span className="text-muted ml-1">· {formatDate(log.created_at)}</span>
-                </li>
-              ))}
+              {auditLogs
+                .filter((l: any) => !l.action_type?.endsWith("_CHAT"))
+                .map((log: any) => (
+                  <li key={log.id} className="border-b border-line pb-1.5 last:border-none">
+                    <span className="font-semibold">{log.admin_name}</span>: {log.action_type}{" "}
+                    {log.new_value && <span className="text-wine-ink font-medium">({log.new_value})</span>}
+                    <span className="text-muted ml-1">· {formatDate(log.created_at)}</span>
+                  </li>
+                ))}
             </ul>
           )}
         </div>
@@ -776,7 +769,6 @@ export default function ReturnDetailForm({
                   </button>
                 </div>
                 <div className="p-5 space-y-4 text-xs">
-                  {/* From: customer */}
                   <div>
                     <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
                       Pickup From
@@ -793,7 +785,6 @@ export default function ReturnDetailForm({
                     </div>
                   </div>
 
-                  {/* To: showroom */}
                   <div>
                     <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
                       Deliver To
@@ -807,7 +798,6 @@ export default function ReturnDetailForm({
                     </div>
                   </div>
 
-                  {/* Pickup date (read-only) */}
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
                       <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
@@ -831,7 +821,6 @@ export default function ReturnDetailForm({
                     </div>
                   </div>
 
-                  {/* Courier rates */}
                   <div className="pt-1">
                     <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1.5">
                       Courier
@@ -901,7 +890,6 @@ export default function ReturnDetailForm({
                     )}
                   </div>
 
-                  {/* Items */}
                   <div className="pt-1">
                     <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-1.5">
                       Items ({orderProducts.length})
@@ -926,7 +914,6 @@ export default function ReturnDetailForm({
                     </div>
                   </div>
 
-                  {/* Note */}
                   <div className="pt-1">
                     <label className="block text-[10px] tracking-wider uppercase text-muted font-bold mb-1">
                       Note to Courier
