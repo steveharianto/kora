@@ -3,6 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "./auth";
 import { getNextManualOrderId } from "./orders";
+import {
+  markFittingBookingPaid,
+} from "./customerFittingBooking";
+import { getXenditInvoiceByExternalId } from "@/lib/xendit";
 import { revalidatePath } from "next/cache";
 
 export async function getNextFittingId(): Promise<string> {
@@ -345,9 +349,67 @@ export async function recordAfterHoursFeePayment(
   return { success: true };
 }
 
-// -----------------------------------------------------------------------------
-// Send reminder → timestamp the row, then dispatch `fitting_reminder` via Fonnte
-// -----------------------------------------------------------------------------
+/**
+ * Admin-triggered verification. Looks up the booking's Xendit invoice by
+ * external_id and, if settled, flips all fittings in the booking to Paid.
+ *
+ * Use when the webhook has been missed (dev testing, production hiccups,
+ * Xendit retry backoff) but the customer already paid.
+ */
+export async function verifyFittingPaymentAdmin(fittingId: string) {
+  const supabase = await createClient();
+  const admin = await getCurrentAdmin();
+  if (!admin) return { error: "Unauthorized: Session not found." };
+
+  const { data: fitting } = await supabase
+    .from("fittings")
+    .select("id, booking_id, fee_payment_status")
+    .eq("id", fittingId)
+    .maybeSingle();
+
+  if (!fitting) return { error: "Fitting not found." };
+
+  if (fitting.fee_payment_status === "Paid") {
+    return { success: true, alreadyPaid: true };
+  }
+
+  if (!fitting.booking_id) {
+    return {
+      error:
+        "This fitting has no Xendit booking reference. It was likely created manually — record the payment manually instead.",
+    };
+  }
+
+  const lookup = await getXenditInvoiceByExternalId(fitting.booking_id);
+  if (!lookup.success || !lookup.invoice) {
+    return { error: lookup.error || "Invoice not found on Xendit." };
+  }
+
+  const inv = lookup.invoice;
+  const isPaid = inv.status === "PAID" || inv.status === "SETTLED";
+  if (!isPaid) {
+    return {
+      error: `Xendit reports invoice status "${inv.status}" — not yet paid.`,
+    };
+  }
+
+  const res = await markFittingBookingPaid(fitting.booking_id, {
+    invoice_id: inv.id,
+    status: inv.status,
+    paid_amount: inv.paid_amount,
+    paid_at: inv.paid_at || inv.updated,
+    payment_method: inv.payment_method,
+    payment_channel: inv.payment_channel,
+  });
+
+  if (res.error) return { error: res.error };
+
+  revalidatePath("/admin/fittings");
+  revalidatePath(`/admin/fittings/${fittingId}`);
+
+  return { success: true };
+}
+
 export async function markFittingReminderSent(fittingId: string) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
@@ -361,8 +423,6 @@ export async function markFittingReminderSent(fittingId: string) {
 
   if (!fitting) return { error: "Fitting not found." };
 
-  // Timestamp regardless of whether the WA send succeeds so the "REMINDER DUE"
-  // badge clears (the admin can always re-send later via the same button).
   await supabase
     .from("fittings")
     .update({ reminder_sent_at: new Date().toISOString() })
@@ -408,9 +468,6 @@ export async function markFittingReminderSent(fittingId: string) {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Convert to order — accepts optional pick_up_method; default Self pickup
-// -----------------------------------------------------------------------------
 export async function convertFittingToOrder(
   fittingId: string,
   options?: { pick_up_method?: string },

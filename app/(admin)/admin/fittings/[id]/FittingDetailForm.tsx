@@ -9,9 +9,10 @@ import {
   convertFittingToOrder,
   addFittingNote,
   markFittingRefunded,
+  verifyFittingPaymentAdmin,
 } from '@/app/actions/fittings';
 import { formatRupiah } from '@/lib/utils';
-import { AlertTriangle, BadgeDollarSign } from 'lucide-react';
+import { AlertTriangle, BadgeDollarSign, RefreshCw, Loader2 } from 'lucide-react';
 import NotificationPicker from '@/components/admin/NotificationPicker';
 
 function formatDate(dateStr?: string | null) {
@@ -46,6 +47,13 @@ export default function FittingDetailForm({
   );
   const [convertMethod, setConvertMethod] = useState('Self pickup');
 
+  // Payment verification state
+  const [verifying, setVerifying] = useState(false);
+  const [verifyFlash, setVerifyFlash] = useState<{
+    type: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+
   const customerName =
     `${initialFitting.customers?.first_name || ''} ${initialFitting.customers?.last_name || ''}`.trim() ||
     'Customer';
@@ -71,6 +79,26 @@ export default function FittingDetailForm({
     if (res?.error) setErrorMsg(res.error);
     else router.refresh();
     setLoading(false);
+  };
+
+  const handleVerifyPayment = async () => {
+    setVerifying(true);
+    setVerifyFlash(null);
+    const res = await verifyFittingPaymentAdmin(initialFitting.id);
+    setVerifying(false);
+
+    if (res?.error) {
+      setVerifyFlash({ type: 'err', text: res.error });
+      return;
+    }
+
+    setVerifyFlash({
+      type: 'ok',
+      text: res?.alreadyPaid
+        ? 'Already marked as Paid.'
+        : 'Xendit confirmed the payment — status updated to Paid.',
+    });
+    router.refresh();
   };
 
   const handleConvertToOrder = async () => {
@@ -350,6 +378,42 @@ export default function FittingDetailForm({
                 />
               </div>
             </div>
+
+            {/* Payment verification strip — shown whenever fee is Unpaid */}
+            {initialFitting.is_after_hours &&
+              initialFitting.fee_payment_status === 'Unpaid' && (
+                <div className="mb-3 p-3 bg-[#FDFCFA] border border-line rounded-lg space-y-2">
+                  <p className="text-[11px] text-muted leading-relaxed">
+                    If the customer paid via Xendit but this shows Unpaid, the
+                    webhook may not have landed yet. Check with Xendit now:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleVerifyPayment}
+                    disabled={verifying}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-wine-soft text-wine-ink border border-wine/30 rounded-lg text-[11px] font-semibold hover:bg-wine hover:text-white transition cursor-pointer disabled:opacity-50"
+                  >
+                    {verifying ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    {verifying ? 'Checking Xendit…' : 'Verify payment with Xendit'}
+                  </button>
+                  {verifyFlash && (
+                    <div
+                      className={`text-[11px] font-medium rounded-md px-2 py-1 ${
+                        verifyFlash.type === 'ok'
+                          ? 'bg-ok-bg text-ok'
+                          : 'bg-bad-bg text-bad'
+                      }`}
+                    >
+                      {verifyFlash.text}
+                    </div>
+                  )}
+                </div>
+              )}
+
             {initialFitting.is_after_hours &&
               initialFitting.fee_payment_status !== 'Paid' && (
                 <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
@@ -389,7 +453,6 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      {/* Team notes + activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-16">
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col">
           <h3 className="font-serif text-[18px] font-normal mb-1">
@@ -448,7 +511,6 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      {/* FLOATING CONVERT PILL — courier select */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
         <div className="bg-[#1A1F16] text-white rounded-full pl-3 pr-2 py-1.5 shadow-xl flex items-center gap-2">
           <label className="text-[10px] uppercase tracking-wider text-white/70 font-medium">

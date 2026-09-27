@@ -17,19 +17,23 @@ function addDays(s: string, n: number): string {
   return toISO(d);
 }
 
+/** Today's date in Asia/Jakarta, as YYYY-MM-DD. */
+function todayJakartaISO(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
+    new Date(),
+  );
+}
+
 /* ── Availability map for a single SKU, one month ──────────────────── */
 
 /**
  * Returns a per-day free/busy map for the requested month.
  *
- * NEW SEMANTICS (per-day): a day D is `true` if the SKU is NOT committed to
- * any active order on that specific calendar day (existing order windows are
- * expanded by the item-type turnaround buffer). This lets the caller validate
- * arbitrary-length rental windows (delivery → event day(s) → rest → return)
- * by checking that every day in the proposed range returns `true`.
- *
- * Previously this function answered "can a *fixed 4-day* rental start on
- * day D?" — that no longer fits since event days are now variable length.
+ * A day D is `true` if the SKU is NOT committed to any active order on that
+ * specific calendar day (existing order windows are expanded by the item-type
+ * turnaround buffer). This lets the caller validate arbitrary-length rental
+ * windows (delivery → event day(s) → rest → return) by checking that every
+ * day in the proposed range returns `true`.
  */
 export async function getSkuAvailabilityMap(
   sku: string,
@@ -65,8 +69,6 @@ export async function getSkuAvailabilityMap(
   const bufferDays =
     item.buffer_override ?? (item.types as any)?.default_buffer_days ?? 2;
 
-  // Widen the fetch window so a conflict order whose pickup is far before the
-  // visible month but whose buffered return extends into it still appears.
   const fetchStart = addDays(monthStart, -(bufferDays + 30));
   const fetchEnd = addDays(monthEnd, bufferDays + 30);
 
@@ -78,7 +80,6 @@ export async function getSkuAvailabilityMap(
     .gte("orders.return_date", fetchStart)
     .lte("orders.pickup_date", fetchEnd);
 
-  // Pre-compute blocked intervals [startMs, endMs] once
   const blockedIntervals: { start: number; end: number }[] = [];
   for (const c of conflicts || []) {
     const o = (c as any).orders;
@@ -115,11 +116,20 @@ export interface WeekSlot {
   fee: number;
 }
 export type WeekGrid = Record<string, WeekSlot[]>; // keyed YYYY-MM-DD
+
+/**
+ * Weekly grid of fitting slots.
+ *
+ * H-1 rule: a fitting must be booked at least one day in advance. Days
+ * whose date is today or earlier are returned as an empty array, so the
+ * picker can't render (and thus can't select) them.
+ */
 export async function getWeekSlots(
   weekStart: string,
   excludeFittingId?: string,
 ): Promise<WeekGrid> {
   const supabase = await createClient();
+  const todayStr = todayJakartaISO();
 
   const { data: settings } = await supabase
     .from("app_settings")
@@ -147,6 +157,13 @@ export async function getWeekSlots(
   const grid: WeekGrid = {};
   for (let i = 0; i < 7; i++) {
     const dateStr = addDays(weekStart, i);
+
+    // H-1 guard: today and every earlier day is unbookable.
+    if (dateStr <= todayStr) {
+      grid[dateStr] = [];
+      continue;
+    }
+
     const dt = parseISO(dateStr);
     const dow = dt.getDay(); // 0=Sun
 

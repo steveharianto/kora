@@ -2,10 +2,17 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentCustomer } from "./customerAuth";
-import { createXenditInvoice } from "@/lib/xendit";
+import { createXenditInvoice, getXenditInvoiceByExternalId } from "@/lib/xendit";
 import { revalidatePath } from "next/cache";
 
 const BLOCKING_STATUSES = ["Cancelled", "Conflict Evicted", "No Show"];
+
+/** Today's date in Asia/Jakarta, as YYYY-MM-DD. */
+function todayJakartaISO(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
+    new Date(),
+  );
+}
 
 export interface FittingBookingSession {
   date: string;
@@ -25,8 +32,16 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     return { error: "No fitting sessions to book." };
   }
 
+  const todayStr = todayJakartaISO();
+
   for (const s of sessions) {
     if (!s.date || !s.slot) return { error: "Session date/slot missing." };
+    if (s.date <= todayStr) {
+      return {
+        error:
+          "Fitting sessions must be booked at least one day in advance. Please pick tomorrow or a later date.",
+      };
+    }
     if (!s.skus || s.skus.length === 0) {
       return { error: "Each session needs at least one piece." };
     }
@@ -37,7 +52,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
 
   const supabase = await createClient();
 
-  // ── Validate slot availability (live) ──────────────────────────
   for (const s of sessions) {
     const { data: conflict } = await supabase
       .from("fittings")
@@ -54,7 +68,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     }
   }
 
-  // ── Reserve next FIT ids atomically ────────────────────────────
   const { data: lastFit } = await supabase
     .from("fittings")
     .select("id")
@@ -91,7 +104,9 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     };
   });
 
-  const { error: fitErr } = await supabase.from("fittings").insert(fittingRows);
+  const { error: fitErr } = await supabase
+    .from("fittings")
+    .insert(fittingRows);
   if (fitErr) return { error: fitErr.message };
 
   const itemRows = sessions.flatMap((s, i) =>
@@ -108,7 +123,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
       .insert(itemRows);
 
     if (itemErr) {
-      // Rollback the fittings we just created
       await supabase
         .from("fittings")
         .delete()
@@ -117,7 +131,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     }
   }
 
-  // ── If there's a fee, create a single Xendit invoice ───────────
   if (hasPayment) {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     const sessionCount = sessions.length;
@@ -169,7 +182,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     return { success: true, bookingId, invoiceUrl: invoice.invoice_url };
   }
 
-  // Free booking — done immediately
   await supabase.from("admin_audit_logs").insert({
     admin_id: null,
     admin_name: "Website Fitting Booking",
@@ -207,9 +219,9 @@ export async function markFittingBookingPaid(
     return { error: "No fittings found for booking." };
   }
 
-  // Idempotency — Xendit can retry
   const allPaid = fittings.every(
-    (f: any) => f.fee_payment_status === "Paid" || f.fee_payment_status === "n/a",
+    (f: any) =>
+      f.fee_payment_status === "Paid" || f.fee_payment_status === "n/a",
   );
   if (allPaid) return { success: true, alreadyProcessed: true };
 
@@ -245,4 +257,68 @@ export async function markFittingBookingPaid(
   revalidatePath("/admin/fittings");
 
   return { success: true };
+}
+
+/* ── Client-side verification (mirrors the order success verifier) ─── */
+
+/**
+ * Polls Xendit directly to confirm payment for a booking, then flips the
+ * fittings to Paid if the invoice is settled.
+ *
+ * Called from the fittings page when it loads with `?booking=FB-...`,
+ * giving the customer an immediate confirmation even if the webhook
+ * hasn't landed yet (dev environments, transient delivery failures, or
+ * Xendit retry backoff).
+ */
+export async function verifyAndConfirmFittingBooking(bookingId: string) {
+  if (!bookingId) return { error: "booking_id is required." };
+
+  const supabase = await createClient();
+
+  // Idempotency: if already paid, nothing to do.
+  const { data: existing } = await supabase
+    .from("fittings")
+    .select("fee_payment_status")
+    .eq("booking_id", bookingId);
+
+  if (!existing || existing.length === 0) {
+    return { error: "No fittings found for this booking." };
+  }
+
+  const stillUnpaid = existing.some(
+    (f: any) => f.fee_payment_status === "Unpaid",
+  );
+  if (!stillUnpaid) {
+    return { success: true, alreadyProcessed: true };
+  }
+
+  // Look up the invoice by external_id (== bookingId) on Xendit.
+  const lookup = await getXenditInvoiceByExternalId(bookingId);
+  if (!lookup.success || !lookup.invoice) {
+    return { error: lookup.error || "Invoice not found on Xendit." };
+  }
+
+  const inv = lookup.invoice;
+  const isPaid = inv.status === "PAID" || inv.status === "SETTLED";
+
+  if (!isPaid) {
+    return {
+      success: true,
+      paid: false,
+      status: inv.status,
+    };
+  }
+
+  const res = await markFittingBookingPaid(bookingId, {
+    invoice_id: inv.id,
+    status: inv.status,
+    paid_amount: inv.paid_amount,
+    paid_at: inv.paid_at || inv.updated,
+    payment_method: inv.payment_method,
+    payment_channel: inv.payment_channel,
+  });
+
+  if (res.error) return { error: res.error };
+
+  return { success: true, paid: true, status: inv.status };
 }

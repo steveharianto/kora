@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentCustomer } from "@/app/actions/customerAuth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import FittingBookingVerifier from "./FittingBookingVerifier";
 
 export const metadata = {
   title: "Fitting Sessions | KORA",
@@ -16,7 +17,13 @@ const STATUS_STYLES: Record<string, string> = {
   "No Show": "bg-red-100 text-red-800",
 };
 
-export default async function FittingsPage() {
+export default async function FittingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ booking?: string }>;
+}) {
+  const { booking } = await searchParams;
+
   const customer = await getCurrentCustomer();
   if (!customer) redirect("/account/login");
 
@@ -38,6 +45,8 @@ export default async function FittingsPage() {
       <h2 className="font-serif text-[28px] sm:text-[32px] text-store-fg font-normal">
         Fitting Sessions
       </h2>
+
+      {booking && <FittingBookingVerifier bookingId={booking} />}
 
       {list.length === 0 ? (
         <div className="py-16 text-center">

@@ -46,9 +46,26 @@ function startOfWeekMonday(dateStr: string) {
   return toISO(d);
 }
 
-export default function WeekSlotPicker({ value, onChange, excludeFittingId }: Props) {
+/**
+ * Fittings must be booked at least H-1 (tomorrow). If the current week has
+ * no bookable day left (e.g. today is Sunday, or Saturday with slots past),
+ * open the picker on next week instead of rendering an entirely-empty grid.
+ */
+function getInitialWeekStart(): string {
   const todayStr = toISO(new Date());
-  const [weekStart, setWeekStart] = useState(startOfWeekMonday(todayStr));
+  const thisWeek = startOfWeekMonday(todayStr);
+  const hasFutureDay = Array.from({ length: 7 }, (_, i) =>
+    addDays(thisWeek, i),
+  ).some((d) => d > todayStr);
+  return hasFutureDay ? thisWeek : addDays(thisWeek, 7);
+}
+
+export default function WeekSlotPicker({
+  value,
+  onChange,
+  excludeFittingId,
+}: Props) {
+  const [weekStart, setWeekStart] = useState(getInitialWeekStart);
   const [grid, setGrid] = useState<WeekGrid>({});
   const [loading, setLoading] = useState(false);
 
@@ -123,15 +140,22 @@ export default function WeekSlotPicker({ value, onChange, excludeFittingId }: Pr
 
       <div className="flex flex-wrap items-center gap-5 text-[11px] text-store-fg-muted mt-6">
         <span className="flex items-center gap-2">
-          <span className="w-3.5 h-3.5 bg-[#C5C5C5] inline-block" /> Unavailable Session
+          <span className="w-3.5 h-3.5 bg-[#C5C5C5] inline-block" /> Unavailable
+          Session
         </span>
         <span className="flex items-center gap-2">
-          <span className="w-3.5 h-3.5 bg-store-accent inline-block" /> Selected Session
+          <span className="w-3.5 h-3.5 bg-store-accent inline-block" /> Selected
+          Session
         </span>
         <span className="text-store-fg-subtle">
           * : After Working Hours (additional fee: 100k/item)
         </span>
       </div>
+
+      <p className="text-[11px] text-store-fg-muted mt-3">
+        Earliest available session is tomorrow (H-1). Same-day bookings are not
+        offered.
+      </p>
 
       {loading && (
         <div className="absolute inset-0 bg-store-bg/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none" />

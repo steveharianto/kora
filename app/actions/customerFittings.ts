@@ -13,6 +13,13 @@ const BLOCKING_STATUSES = [
   "No Show",
 ];
 
+/** Today's date in Asia/Jakarta, as YYYY-MM-DD. */
+function todayJakartaISO(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
+    new Date(),
+  );
+}
+
 /* ── Cancel ─────────────────────────────────────────────────────── */
 
 export async function cancelFitting(fittingId: string) {
@@ -23,7 +30,9 @@ export async function cancelFitting(fittingId: string) {
 
   const { data: fitting } = await supabase
     .from("fittings")
-    .select("id, date, slot, status, customer_id, fee_payment_status, after_hours_fee")
+    .select(
+      "id, date, slot, status, customer_id, fee_payment_status, after_hours_fee",
+    )
     .eq("id", fittingId)
     .eq("customer_id", session.id)
     .maybeSingle();
@@ -88,6 +97,16 @@ export async function rescheduleFitting(
 
   if (!data.date || !data.slot) {
     return { error: "New date and time are required." };
+  }
+
+  // H-1 rule: mirrored from createFittingBooking so a reschedule can't
+  // move a session into today or earlier.
+  const todayStr = todayJakartaISO();
+  if (data.date <= todayStr) {
+    return {
+      error:
+        "Fitting sessions must be scheduled at least one day in advance. Please pick tomorrow or a later date.",
+    };
   }
 
   const supabase = await createClient();
