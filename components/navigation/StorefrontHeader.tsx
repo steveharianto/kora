@@ -9,6 +9,7 @@ import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
 import IdVerificationModal from "@/components/storefront/IdVerificationModal";
+import SearchPanel from "./SearchPanel";
 import {
   getCurrentCustomer,
   type CustomerSession,
@@ -21,6 +22,7 @@ export default function StorefrontHeader({
 }) {
   const router = useRouter();
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openCart, setOpenCart] = useState<"rental" | "fitting" | null>(null);
   const [openKtpModal, setOpenKtpModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -33,8 +35,6 @@ export default function StorefrontHeader({
   const handleCheckout = async () => {
     setOpenCart(null);
 
-    // Re-verify the session on click — the layout-provided prop may be
-    // stale if the cookie expired in another tab.
     const current = await getCurrentCustomer();
 
     if (!current) {
@@ -55,7 +55,6 @@ export default function StorefrontHeader({
     router.push("/checkout");
   };
 
-  // "Daphne" or "Daphne Kirana" — trailing space trimmed when no last name.
   const displayName = customer
     ? `${customer.firstName} ${customer.lastName || ""}`.trim()
     : null;
@@ -135,17 +134,15 @@ export default function StorefrontHeader({
           </nav>
 
           <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
-            <Link
-              href="/search"
+            <button
+              type="button"
               aria-label="Search"
-              className="hover:text-[#1F261C] transition-colors"
+              onClick={() => setIsSearchOpen(true)}
+              className="hover:text-[#1F261C] transition-colors cursor-pointer"
             >
               <Search className="w-[18px] h-[18px] stroke-[1.8]" />
-            </Link>
+            </button>
 
-            {/* Account — shows the customer's name beside the icon when
-                logged in. Hidden below the sm breakpoint to keep the
-                mobile header from crowding. */}
             <Link
               href="/account"
               aria-label={
@@ -190,6 +187,11 @@ export default function StorefrontHeader({
         </div>
       </header>
 
+      <SearchPanel
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+      />
+
       <RentalCartDrawer
         isOpen={openCart === "rental"}
         onClose={() => setOpenCart(null)}
@@ -213,3 +215,4 @@ export default function StorefrontHeader({
     </>
   );
 }
+  

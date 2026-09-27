@@ -38,7 +38,7 @@ function todayJakartaISO(): string {
 export async function getSkuAvailabilityMap(
   sku: string,
   year: number,
-  month: number, // 1-12
+  month: number,
 ): Promise<Record<string, boolean>> {
   const supabase = await createClient();
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -109,20 +109,19 @@ export async function getSkuAvailabilityMap(
 /* ── Weekly fitting-slot grid ──────────────────────────────────────── */
 
 export interface WeekSlot {
-  slot: string; // "10:00"
-  end: string; // "11:00"
+  slot: string;
+  end: string;
   available: boolean;
   isAfterHours: boolean;
   fee: number;
 }
-export type WeekGrid = Record<string, WeekSlot[]>; // keyed YYYY-MM-DD
+export type WeekGrid = Record<string, WeekSlot[]>;
 
 /**
  * Weekly grid of fitting slots.
  *
  * H-1 rule: a fitting must be booked at least one day in advance. Days
- * whose date is today or earlier are returned as an empty array, so the
- * picker can't render (and thus can't select) them.
+ * whose date is today or earlier are returned as an empty array.
  */
 export async function getWeekSlots(
   weekStart: string,
@@ -165,7 +164,7 @@ export async function getWeekSlots(
     }
 
     const dt = parseISO(dateStr);
-    const dow = dt.getDay(); // 0=Sun
+    const dow = dt.getDay();
 
     if (dow === 0) {
       grid[dateStr] = [];
@@ -242,4 +241,155 @@ export async function getAccessoriesForLook(excludeSku: string, limit = 3) {
       image: imgs[0]?.image_url || null,
     };
   });
+}
+
+/* ── Header search auto-suggest ────────────────────────────────────── */
+
+export interface SearchProductHit {
+  sku: string;
+  name: string;
+  brand: string;
+  rentalPrice: number;
+  coverImage: string | null;
+  snippet: string;
+}
+
+export interface SearchPageHit {
+  title: string;
+  subtitle: string;
+  href: string;
+}
+
+const SITE_PAGES: Array<{
+  title: string;
+  subtitle: string;
+  href: string;
+  keywords: string;
+}> = [
+  {
+    title: "Home",
+    subtitle: "New arrivals, editorial picks, and how to rent.",
+    href: "/",
+    keywords: "home index main landing",
+  },
+  {
+    title: "Shop",
+    subtitle: "Browse the full collection — dresses, accessories, traditional.",
+    href: "/shop",
+    keywords: "shop all browse collection catalog dresses accessories",
+  },
+  {
+    title: "New Arrivals",
+    subtitle: "Fresh in, ready to rent.",
+    href: "/shop?filter=new",
+    keywords: "new arrival latest fresh just added",
+  },
+  {
+    title: "Available This Week",
+    subtitle: "Pieces ready for your next event.",
+    href: "/shop?filter=available-now",
+    keywords: "available this week ready now",
+  },
+  {
+    title: "How to Rent",
+    subtitle: "Designer dresses, five simple steps.",
+    href: "/how-to-rent",
+    keywords: "how rent guide steps process deposit refund",
+  },
+  {
+    title: "About Kora",
+    subtitle: "For the girl with a full calendar.",
+    href: "/about",
+    keywords: "about story brand showroom contact",
+  },
+  {
+    title: "Terms & Conditions",
+    subtitle: "Rental terms, deposit and refund policy.",
+    href: "/terms",
+    keywords: "terms conditions legal policy rules",
+  },
+];
+
+/**
+ * Powers the header search panel. Returns up to 6 product hits plus up to
+ * 4 static page suggestions. Runs two product queries — one on the item
+ * row itself (name/sku/description), one on brand names — and merges the
+ * results, deduped by SKU.
+ */
+export async function searchProductsAndPages(query: string) {
+  const raw = (query || "").trim();
+  if (raw.length < 2) return { products: [], pages: [] };
+
+  // Strip PostgREST-illegal characters used in the .or() filter syntax.
+  const safeQ = raw.replace(/[%,()]/g, "");
+  if (safeQ.length < 2) return { products: [], pages: [] };
+
+  const supabase = await createClient();
+
+  const itemSelect = `
+    sku, name, description, rental_price,
+    brands ( name ),
+    item_images ( image_url, display_order )
+  `;
+
+  const [directRes, brandsRes] = await Promise.all([
+    supabase
+      .from("items")
+      .select(itemSelect)
+      .eq("website_status", "Published")
+      .eq("is_archived", false)
+      .or(
+        `name.ilike.%${safeQ}%,sku.ilike.%${safeQ}%,description.ilike.%${safeQ}%`,
+      )
+      .limit(6),
+    supabase.from("brands").select("id").ilike("name", `%${safeQ}%`),
+  ]);
+
+  const brandIds = (brandsRes.data || []).map((b: any) => b.id);
+
+  let brandItems: any[] = [];
+  if (brandIds.length > 0) {
+    const { data } = await supabase
+      .from("items")
+      .select(itemSelect)
+      .eq("website_status", "Published")
+      .eq("is_archived", false)
+      .in("brand_id", brandIds)
+      .limit(6);
+    brandItems = data || [];
+  }
+
+  const seen = new Set<string>();
+  const merged = [...(directRes.data || []), ...brandItems].filter((p: any) => {
+    if (seen.has(p.sku)) return false;
+    seen.add(p.sku);
+    return true;
+  });
+
+  const products: SearchProductHit[] = merged.slice(0, 6).map((p: any) => {
+    const imgs = (p.item_images || []).sort(
+      (a: any, b: any) => a.display_order - b.display_order,
+    );
+    const desc = (p.description || "").replace(/\s+/g, " ").trim();
+    return {
+      sku: p.sku,
+      name: p.name,
+      brand: p.brands?.name || "",
+      rentalPrice: Number(p.rental_price) || 0,
+      coverImage: imgs[0]?.image_url || null,
+      snippet: desc.length > 90 ? `${desc.slice(0, 90)}…` : desc,
+    };
+  });
+
+  const lowerQ = safeQ.toLowerCase();
+  const pages: SearchPageHit[] = SITE_PAGES.filter(
+    (p) =>
+      p.title.toLowerCase().includes(lowerQ) ||
+      p.subtitle.toLowerCase().includes(lowerQ) ||
+      p.keywords.includes(lowerQ),
+  )
+    .slice(0, 4)
+    .map(({ title, subtitle, href }) => ({ title, subtitle, href }));
+
+  return { products, pages };
 }
