@@ -70,12 +70,12 @@ export default function StorefrontHeader({
             className="hover:opacity-85 transition-opacity inline-flex items-center"
           >
             <Image
-              src="/logo.png"
+              src="/images/logo.png"
               alt="KORA"
               width={160}
               height={48}
               priority
-              className="h-9 sm:h-11 w-auto"
+              className="h-6 sm:h-7 w-auto"
             />
           </Link>
 

@@ -1,98 +1,114 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function StorefrontFooter() {
   return (
-    <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-14 pb-10 px-6 sm:px-12 border-t border-[#54644C]">
+    <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-16 pb-8 px-6 sm:px-12 border-t border-[#54644C]">
       <div className="max-w-[1512px] mx-auto">
-        {/* Main Grid Columns */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-16">
-          {/* Logo & Emblem */}
-          <div className="md:col-span-4 flex items-start gap-3">
-            <span className="font-serif text-[42px] sm:text-[50px] tracking-[0.04em] leading-none font-normal">
-              KORA
-            </span>
-            {/* Handcrafted Emblem Motif */}
-            <svg
-              className="w-10 h-10 stroke-current fill-none stroke-[1.2] opacity-90 translate-y-1"
-              viewBox="0 0 40 40"
+        {/* Main columns */}
+        <div className="grid grid-cols-2 md:grid-cols-12 gap-x-8 gap-y-10 pb-12">
+          {/* Logo */}
+          <div className="col-span-2 md:col-span-3">
+            <Link
+              href="/"
+              aria-label="KORA — Home"
+              className="inline-block hover:opacity-90 transition-opacity"
             >
-              <circle cx="20" cy="20" r="14" strokeDasharray="1 2" />
-              <path d="M20 6 C16 14, 16 26, 20 34 M20 6 C24 14, 24 26, 20 34" />
-              <path d="M6 20 C14 16, 26 16, 34 20 M6 20 C14 24, 26 24, 34 20" />
-            </svg>
+              <Image
+                src="/images/logo2.png"
+                alt="KORA"
+                width={160}
+                height={48}
+                className="h-7 sm:h-8 w-auto"
+              />
+            </Link>
           </div>
 
-          {/* Location & Working Hours */}
-          <div className="md:col-span-3 space-y-8 text-xs leading-relaxed text-[#ECEBE4]/85">
-            <div>
-              <h4 className="font-serif text-[18px] text-[#ECEBE4] mb-2 font-normal">
-                Location
-              </h4>
-              <p>
-                Jl. Darmawangsa VI No. 42 Pulo,
-                <br />
-                Kebayoran Baru, South Jakarta 12160
-              </p>
-            </div>
-
-            <div>
-              <h4 className="font-serif text-[18px] text-[#ECEBE4] mb-2 font-normal">
-                Working Hours
-              </h4>
-              <p>
-                Monday–Friday: 10 AM – 5 PM
-                <br />
-                Saturday: 10 AM – 1 PM
-              </p>
-            </div>
+          {/* Location */}
+          <div className="col-span-1 md:col-span-2">
+            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
+              Location
+            </h4>
+            <p className="text-[11.5px] text-[#ECEBE4]/75 leading-relaxed">
+              Jl. Darmawangsa VI No. 42 Pulo,
+              <br />
+              Kebayoran Baru, South Jakarta 12160
+            </p>
           </div>
 
-          {/* Navigation Links */}
-          <div className="md:col-span-2 space-y-3 text-xs tracking-wider uppercase">
-            <h4 className="font-serif text-[18px] text-[#ECEBE4] mb-3 normal-case font-normal">
+          {/* Working Hours */}
+          <div className="col-span-1 md:col-span-2">
+            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
+              Working Hours
+            </h4>
+            <p className="text-[11.5px] text-[#ECEBE4]/75 leading-relaxed">
+              Monday–Friday: 10 AM – 5 PM
+              <br />
+              Saturday: 10 AM – 1 PM
+            </p>
+          </div>
+
+          {/* Navigation */}
+          <div className="col-span-1 md:col-span-2">
+            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
               Navigation
             </h4>
-            <ul className="space-y-2 text-[#ECEBE4]/80 text-[11px]">
+            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
               <li>
-                <Link href="/shop?filter=new" className="hover:text-white transition">
+                <Link
+                  href="/shop?filter=new"
+                  className="hover:text-white transition-colors"
+                >
                   New Arrivals
                 </Link>
               </li>
               <li>
-                <Link href="/shop?category=dresses" className="hover:text-white transition">
+                <Link
+                  href="/shop?category=dresses"
+                  className="hover:text-white transition-colors"
+                >
                   Dresses
                 </Link>
               </li>
               <li>
-                <Link href="/shop?category=accessories" className="hover:text-white transition">
+                <Link
+                  href="/shop?category=accessories"
+                  className="hover:text-white transition-colors"
+                >
                   Accessories
                 </Link>
               </li>
               <li>
-                <Link href="/how-to-rent" className="hover:text-white transition">
+                <Link
+                  href="/how-to-rent"
+                  className="hover:text-white transition-colors"
+                >
                   How to Rent
                 </Link>
               </li>
               <li>
-                <Link href="/about" className="hover:text-white transition">
+                <Link
+                  href="/about"
+                  className="hover:text-white transition-colors"
+                >
                   About Kora
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Social Channels */}
-          <div className="md:col-span-2 space-y-3 text-xs tracking-wider uppercase">
-            <h4 className="font-serif text-[18px] text-[#ECEBE4] mb-3 normal-case font-normal">
+          {/* Social */}
+          <div className="col-span-1 md:col-span-2">
+            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
               Social
             </h4>
-            <ul className="space-y-2 text-[#ECEBE4]/80 text-[11px]">
+            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
               <li>
                 <a
                   href="https://instagram.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-white transition"
+                  className="hover:text-white transition-colors"
                 >
                   Instagram
                 </a>
@@ -102,7 +118,7 @@ export default function StorefrontFooter() {
                   href="https://tiktok.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-white transition"
+                  className="hover:text-white transition-colors"
                 >
                   TikTok
                 </a>
@@ -112,7 +128,7 @@ export default function StorefrontFooter() {
                   href="https://wa.me/6281234567890"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-white transition"
+                  className="hover:text-white transition-colors"
                 >
                   WhatsApp
                 </a>
@@ -120,7 +136,7 @@ export default function StorefrontFooter() {
               <li>
                 <a
                   href="mailto:contact@kora.com"
-                  className="hover:text-white transition"
+                  className="hover:text-white transition-colors"
                 >
                   Email
                 </a>
@@ -129,24 +145,27 @@ export default function StorefrontFooter() {
           </div>
 
           {/* Legal */}
-          <div className="md:col-span-1 space-y-3 text-xs tracking-wider uppercase">
-            <h4 className="font-serif text-[18px] text-[#ECEBE4] mb-3 normal-case font-normal">
+          <div className="col-span-2 md:col-span-1">
+            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
               Legal
             </h4>
-            <ul className="space-y-2 text-[#ECEBE4]/80 text-[11px]">
+            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
               <li>
-                <Link href="/terms" className="hover:text-white transition">
-                  Terms & Conditions
+                <Link
+                  href="/terms"
+                  className="hover:text-white transition-colors"
+                >
+                  Terms &amp; Conditions
                 </Link>
               </li>
             </ul>
           </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="pt-8 border-t border-[#76886D] flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#ECEBE4]/70">
+        {/* Bottom bar */}
+        <div className="pt-6 border-t border-[#76886D] flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#ECEBE4]/70">
           <p>Copyright © 2026 KORA</p>
-          <p className="mt-2 sm:mt-0 tracking-wider">Website by KLETOS</p>
+          <p className="tracking-wider">Website by KLETOS</p>
         </div>
       </div>
     </footer>
