@@ -12,6 +12,7 @@ interface Item {
   name: string;
   brand: string;
   size: string;
+  sizeBucket: string | null;
   color: string;
   rentalPrice: number;
   status: string;
@@ -23,7 +24,7 @@ interface Item {
 
 interface Props {
   items: Item[];
-  facets: { brands: string[]; sizes: string[]; colors: string[] };
+  facets: { brands: string[]; sizeBuckets: string[]; colors: string[] };
   initial: {
     q: string;
     category: string;
@@ -50,6 +51,9 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const [fittingSession, setFittingSession] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  // NOTE: `size` here holds *bucket* values (XS / S / M / L / XL / Free Size)
+  // — the URL param name stays `size` for continuity but the semantics
+  // changed when we switched to canonical bucketing.
   const [filters, setFilters] = useState<FilterState>({
     brands: initial.brand ? initial.brand.split(",").filter(Boolean) : [],
     sizes: initial.size ? initial.size.split(",").filter(Boolean) : [],
@@ -109,11 +113,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
     if (category) list = list.filter((i) => i.category === category);
 
     if (presetFilter === "new") {
-      // Already sorted by date_added desc from server, but ensure stable.
       list.sort((a, b) => (b.dateAdded || "").localeCompare(a.dateAdded || ""));
-    } else if (presetFilter === "available-now") {
-      // "Available this week" — for now same as the server `status='Available'` filter.
-      // Phase 2: intersect with fitting-session availability.
     }
 
     if (query) {
@@ -131,8 +131,9 @@ export default function ShopClient({ items, facets, initial }: Props) {
       list = list.filter((i) => set.has(i.brand));
     }
     if (filters.sizes.length) {
-      const set = new Set(filters.sizes.map((s) => s.toUpperCase()));
-      list = list.filter((i) => set.has((i.size || "").toUpperCase()));
+      // Match against the derived bucket, not the raw size string.
+      const set = new Set(filters.sizes);
+      list = list.filter((i) => i.sizeBucket && set.has(i.sizeBucket));
     }
     if (filters.colors.length) {
       const set = new Set(filters.colors.map((c) => c.toLowerCase()));
@@ -165,22 +166,35 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
-  // Heading + subtitle switch on category.
   const { heading, subtitle } = useMemo(() => {
-    if (category === "traditional") return { heading: "Traditional", subtitle: "Kebaya, kaftan, and heritage pieces." };
-    if (category === "accessories") return { heading: "Accessories", subtitle: "The finishing touches." };
-    if (presetFilter === "new") return { heading: "New Arrivals", subtitle: "Fresh in, ready to rent." };
-    if (presetFilter === "available-now") return { heading: "Available This Week", subtitle: "Got an event coming up? These pieces are ready for you." };
+    if (category === "traditional")
+      return { heading: "Traditional", subtitle: "Kebaya, kaftan, and heritage pieces." };
+    if (category === "accessories")
+      return { heading: "Accessories", subtitle: "The finishing touches." };
+    if (presetFilter === "new")
+      return { heading: "New Arrivals", subtitle: "Fresh in, ready to rent." };
+    if (presetFilter === "available-now")
+      return {
+        heading: "Available This Week",
+        subtitle: "Got an event coming up? These pieces are ready for you.",
+      };
     return { heading: "All Dresses", subtitle: "Every piece, ready to rent." };
   }, [category, presetFilter]);
 
   const activeFilterCount =
-    filters.brands.length + filters.sizes.length + filters.colors.length + filters.occasions.length;
+    filters.brands.length +
+    filters.sizes.length +
+    filters.colors.length +
+    filters.occasions.length;
 
   const applyFilters = (next: FilterState) => {
     setFilters(next);
     setIsFilterOpen(false);
-    syncUrl({ brand: next.brands.join(","), size: next.sizes.join(","), color: next.colors.join(",") });
+    syncUrl({
+      brand: next.brands.join(","),
+      size: next.sizes.join(","),
+      color: next.colors.join(","),
+    });
   };
 
   const clearAll = () => {
@@ -200,7 +214,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
           <p className="text-[13px] text-store-fg-muted mt-2">{subtitle}</p>
         </div>
 
-        {/* ── Toolbar: dates + filter / sort ───────────────────────── */}
+        {/* ── Toolbar ──────────────────────────────────────────────── */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
           <div className="flex flex-col sm:flex-row gap-4">
             <div>
@@ -213,7 +227,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
                   value={rentOnDate}
                   onChange={(e) => setRentOnDate(e.target.value)}
                   className="w-[190px] text-[12px] tracking-wider uppercase bg-transparent border border-store-border-strong px-3 py-2.5 pr-9 text-store-fg focus:outline-none focus:border-store-accent"
-                  placeholder="MM/DD/YYYY"
                 />
                 <Calendar className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
@@ -257,7 +270,13 @@ export default function ShopClient({ items, facets, initial }: Props) {
               )}
             </button>
 
-            <SortDropdown value={sortBy} onChange={(v) => { setSortBy(v); syncUrl({ sort: v }); }} />
+            <SortDropdown
+              value={sortBy}
+              onChange={(v) => {
+                setSortBy(v);
+                syncUrl({ sort: v });
+              }}
+            />
           </div>
         </div>
 

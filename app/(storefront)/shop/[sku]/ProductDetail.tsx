@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { Info } from "lucide-react";
 import AvailabilityModal from "./AvailabilityModal";
 import FittingModal from "./FittingModal";
+import SizeGuideModal from "@/components/storefront/SizeGuideModal";
 import {
   readRentalCart,
   writeRentalCart,
@@ -11,6 +13,7 @@ import {
   writeFittingCart,
   isAfterHoursSlot,
 } from "@/lib/storefront/cart";
+import { deriveSizeBucket } from "@/lib/sizeBucket";
 
 interface Item {
   sku: string;
@@ -57,7 +60,9 @@ const SIZE_LABELS: Array<[string, string]> = [
   ["arm_length", "Arm Length"],
 ];
 
-type TabKey = "description" | "size" | "tnc" | "fitting";
+// "description" removed — the field is unpopulated and the tab just
+// showed the empty-state string. Add it back once descriptions exist.
+type TabKey = "size" | "tnc" | "fitting";
 
 export default function ProductDetail({
   item,
@@ -72,10 +77,13 @@ export default function ProductDetail({
   fittingPrefill: { date: string; slot: string } | null;
   deliveryLeadTimes: LeadTime[];
 }) {
-  const [activeTab, setActiveTab] = useState<TabKey>("description");
+  // Default tab is now Size — the most useful thing to land on when
+  // Description isn't available.
+  const [activeTab, setActiveTab] = useState<TabKey>("size");
   const [activeImg, setActiveImg] = useState(0);
   const [availOpen, setAvailOpen] = useState(false);
   const [fitOpen, setFitOpen] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +91,11 @@ export default function ProductDetail({
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const sizeBucket = deriveSizeBucket({
+    size: item.size,
+    measurements: item.measurements as any,
+  });
 
   const addToRentalCart = (payload: {
     sku: string;
@@ -132,7 +145,7 @@ export default function ProductDetail({
       );
 
       const isAfterHours = isAfterHoursSlot(payload.date, payload.slot);
-      const fee = isAfterHours ? 100000 : 0; // TODO: read from app_settings.fittings.session_rules.after_hours_fee
+      const fee = isAfterHours ? 100000 : 0;
 
       if (existing) {
         if (!existing.items.find((i) => i.sku === payload.sku)) {
@@ -267,41 +280,56 @@ export default function ProductDetail({
               )}
             </div>
 
-            {/* Tabs */}
+            {/* Tabs — Description removed */}
             <div className="border-b border-store-border mb-6">
               <div className="flex gap-8 text-[13px] tracking-[0.02em]">
-                {(["description", "size", "tnc", "fitting"] as TabKey[]).map(
-                  (k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setActiveTab(k)}
-                      className={`pb-3 border-b transition-colors cursor-pointer ${
-                        activeTab === k
-                          ? "border-store-fg text-store-fg"
-                          : "border-transparent text-store-fg-muted hover:text-store-fg"
-                      }`}
-                    >
-                      {k === "description" && "Description"}
-                      {k === "size" && "Size"}
-                      {k === "tnc" && "TnC"}
-                      {k === "fitting" && "Fitting"}
-                    </button>
-                  ),
-                )}
+                {(["size", "tnc", "fitting"] as TabKey[]).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setActiveTab(k)}
+                    className={`pb-3 border-b transition-colors cursor-pointer ${
+                      activeTab === k
+                        ? "border-store-fg text-store-fg"
+                        : "border-transparent text-store-fg-muted hover:text-store-fg"
+                    }`}
+                  >
+                    {k === "size" && "Size"}
+                    {k === "tnc" && "TnC"}
+                    {k === "fitting" && "Fitting"}
+                  </button>
+                ))}
               </div>
             </div>
 
             <div className="text-[13.5px] leading-relaxed text-store-fg-muted">
-              {activeTab === "description" && (
-                <p className="whitespace-pre-line">
-                  {item.description ||
-                    "No description available for this piece yet."}
-                </p>
-              )}
-
               {activeTab === "size" && (
                 <div className="space-y-6">
+                  {/* Bucket callout */}
+                  <div className="flex items-start justify-between gap-4 p-4 border border-store-border-strong bg-[#F1EFE1]">
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] tracking-[0.18em] uppercase text-store-fg-muted mb-1">
+                        Filters as
+                      </div>
+                      <div className="font-serif text-[20px] text-store-fg leading-none">
+                        {sizeBucket ?? "See measurements"}
+                      </div>
+                      {item.size && (
+                        <div className="text-[11.5px] text-store-fg-muted mt-1.5">
+                          Garment label: {item.size}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSizeGuideOpen(true)}
+                      className="flex-shrink-0 inline-flex items-center gap-1.5 text-[10.5px] tracking-[0.14em] uppercase text-store-fg-muted hover:text-store-fg transition-colors cursor-pointer underline underline-offset-4"
+                    >
+                      <Info className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      How we size
+                    </button>
+                  </div>
+
                   <MeasurementBlock
                     label="Outer"
                     data={item.measurements.outer}
@@ -436,6 +464,17 @@ export default function ProductDetail({
         onAdded={(payload) => {
           addToFittingCart(payload);
           setFitOpen(false);
+        }}
+      />
+
+      <SizeGuideModal
+        isOpen={sizeGuideOpen}
+        onClose={() => setSizeGuideOpen(false)}
+        contextItem={{
+          sku: item.sku,
+          name: item.name,
+          size: item.size,
+          measurements: item.measurements as any,
         }}
       />
 

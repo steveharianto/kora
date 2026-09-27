@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X, ChevronDown, Info } from "lucide-react";
+import SizeGuideModal from "@/components/storefront/SizeGuideModal";
 
 export interface FilterState {
   brands: string[];
@@ -13,7 +14,7 @@ export interface FilterState {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  facets: { brands: string[]; sizes: string[]; colors: string[] };
+  facets: { brands: string[]; sizeBuckets: string[]; colors: string[] };
   value: FilterState;
   onApply: (next: FilterState) => void;
   onClearAll: () => void;
@@ -65,8 +66,8 @@ export default function FilterDrawer({
   onClearAll,
 }: Props) {
   const [draft, setDraft] = useState<FilterState>(value);
+  const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
 
-  // Sync draft from applied state on open.
   useEffect(() => {
     if (isOpen) setDraft(value);
   }, [isOpen, value]);
@@ -94,18 +95,17 @@ export default function FilterDrawer({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/30 z-40"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Sheet */}
       <aside className="fixed top-0 right-0 bottom-0 w-full max-w-[520px] bg-store-bg z-50 flex flex-col shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between px-7 pt-7 pb-5">
-          <h2 className="font-serif text-[28px] tracking-[0.02em] text-store-fg">Filter</h2>
+          <h2 className="font-serif text-[28px] tracking-[0.02em] text-store-fg">
+            Filter
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -116,7 +116,6 @@ export default function FilterDrawer({
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-7 pb-6">
           <Section
             title={`Brand (${facets.brands.length})`}
@@ -135,13 +134,27 @@ export default function FilterDrawer({
             </div>
           </Section>
 
+          {/* Size — canonical buckets + info button for the guide */}
           <Section
-            title={`Size (${facets.sizes.length})`}
+            title={`Size (${facets.sizeBuckets.length})`}
             open={openSections.size}
             onToggle={() => toggleSection("size")}
+            action={
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSizeGuideOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] tracking-[0.14em] uppercase text-store-fg-muted hover:text-store-fg transition-colors cursor-pointer"
+              >
+                <Info className="w-3.5 h-3.5" strokeWidth={1.8} />
+                How we size
+              </button>
+            }
           >
             <div className="flex flex-col gap-3">
-              {facets.sizes.map((s) => (
+              {facets.sizeBuckets.map((s) => (
                 <Checkbox
                   key={s}
                   label={s}
@@ -232,11 +245,13 @@ export default function FilterDrawer({
           </Section>
         </div>
 
-        {/* Sticky bottom bar */}
         <div className="border-t border-store-border px-7 py-5 flex gap-3">
           <button
             type="button"
-            onClick={() => { onClearAll(); setDraft({ brands: [], sizes: [], colors: [], occasions: [] }); }}
+            onClick={() => {
+              onClearAll();
+              setDraft({ brands: [], sizes: [], colors: [], occasions: [] });
+            }}
             className="flex-1 py-3.5 border border-store-fg text-[11px] tracking-[0.2em] uppercase font-medium text-store-fg hover:bg-store-hover/40 transition-colors cursor-pointer"
           >
             Clear All
@@ -250,6 +265,12 @@ export default function FilterDrawer({
           </button>
         </div>
       </aside>
+
+      {/* Size guide — mounted above everything so it layers over the drawer */}
+      <SizeGuideModal
+        isOpen={isSizeGuideOpen}
+        onClose={() => setIsSizeGuideOpen(false)}
+      />
     </>
   );
 }
@@ -260,29 +281,34 @@ function Section({
   title,
   open,
   onToggle,
+  action,
   children,
 }: {
   title: string;
   open: boolean;
   onToggle: () => void;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="border-b border-store-border py-6 first:pt-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between text-left cursor-pointer group"
-      >
-        <span className="text-[15px] tracking-[0.06em] uppercase text-store-fg font-normal">
-          {title}
-        </span>
-        <ChevronDown
-          className={`w-4 h-4 text-store-fg-muted transition-transform group-hover:text-store-fg ${
-            open ? "" : "-rotate-90"
-          }`}
-        />
-      </button>
+      <div className="w-full flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2 text-left cursor-pointer group"
+        >
+          <span className="text-[15px] tracking-[0.06em] uppercase text-store-fg font-normal">
+            {title}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-store-fg-muted transition-transform group-hover:text-store-fg ${
+              open ? "" : "-rotate-90"
+            }`}
+          />
+        </button>
+        {action}
+      </div>
       {open && <div className="mt-5">{children}</div>}
     </div>
   );

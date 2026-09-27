@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import ShopClient from "./ShopClient";
+import {
+  deriveSizeBucket,
+  SIZE_BUCKET_ORDER,
+  type SizeBucket,
+} from "@/lib/sizeBucket";
 
 export const metadata = {
   title: "Shop | KORA",
@@ -24,7 +29,8 @@ export default async function ShopPage({
 
   const { data: items } = await supabase
     .from("items")
-    .select(`
+    .select(
+      `
       sku,
       name,
       size,
@@ -34,9 +40,11 @@ export default async function ShopPage({
       status,
       website_status,
       date_added,
+      measurements,
       brands ( name ),
       item_images ( image_url, display_order )
-    `)
+    `,
+    )
     .eq("website_status", "Published")
     .eq("is_archived", false)
     .order("date_added", { ascending: false });
@@ -49,13 +57,20 @@ export default async function ShopPage({
 
     const tags: string[] = (i.tags || []).map((t: string) => t.toLowerCase());
     let derivedCategory = "dresses";
-    if (tags.includes("kebaya") || tags.includes("kaftan")) derivedCategory = "traditional";
+    if (tags.includes("kebaya") || tags.includes("kaftan"))
+      derivedCategory = "traditional";
+
+    const sizeBucket = deriveSizeBucket({
+      size: i.size,
+      measurements: i.measurements,
+    });
 
     return {
       sku: i.sku,
       name: i.name,
       brand: i.brands?.name || "",
       size: i.size || "",
+      sizeBucket,
       color: i.color || "",
       rentalPrice: Number(i.rental_price) || 0,
       status: i.status,
@@ -72,22 +87,24 @@ export default async function ShopPage({
 
   // Facets — computed from the *available* set so counts are honest.
   const brandSet = new Set<string>();
-  const sizeSet = new Set<string>();
+  const sizeBucketSet = new Set<SizeBucket>();
   const colorSet = new Set<string>();
+
   for (const i of availableItems) {
     if (i.brand) brandSet.add(i.brand);
-    if (i.size) sizeSet.add(i.size);
+    if (i.sizeBucket) sizeBucketSet.add(i.sizeBucket);
     if (i.color) colorSet.add(i.color);
   }
 
-  const sizes = Array.from(sizeSet).sort(sortSizes);
+  // Preserve canonical ordering — XS · S · M · L · XL · Free Size
+  const sizeBuckets = SIZE_BUCKET_ORDER.filter((b) => sizeBucketSet.has(b));
   const colors = Array.from(colorSet).sort();
   const brands = Array.from(brandSet).sort();
 
   return (
     <ShopClient
       items={availableItems}
-      facets={{ brands, sizes, colors }}
+      facets={{ brands, sizeBuckets, colors }}
       initial={{
         q: params.q || "",
         category: params.category || "",
@@ -99,15 +116,4 @@ export default async function ShopPage({
       }}
     />
   );
-}
-
-/** Standard sizes first (XS→XXL), then everything else alphabetical. */
-const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-function sortSizes(a: string, b: string) {
-  const ai = SIZE_ORDER.indexOf(a.toUpperCase());
-  const bi = SIZE_ORDER.indexOf(b.toUpperCase());
-  if (ai !== -1 && bi !== -1) return ai - bi;
-  if (ai !== -1) return -1;
-  if (bi !== -1) return 1;
-  return a.localeCompare(b);
 }
