@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
 import { getCurrentAdmin } from "@/app/actions/auth";
+import { History, X } from "lucide-react";
 
 function StatusPill({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -11,6 +12,7 @@ function StatusPill({ status }: { status: string }) {
     Unavailable: "bg-[#EFEBE2] text-muted",
     Published: "bg-ok-bg text-ok",
     Draft: "bg-[#EFEBE2] text-muted",
+    Archived: "bg-[#EFEBE2] text-muted line-through",
   };
 
   const style = styles[status] || "bg-[#EFEBE2] text-muted";
@@ -27,16 +29,20 @@ function StatusPill({ status }: { status: string }) {
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; historical?: string }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const currentTab = resolvedSearchParams.tab || "all";
+  // Historical mode reveals archived items alongside the active catalog.
+  const showHistorical = resolvedSearchParams.historical === "1";
 
   const supabase = await createClient();
   const currentAdmin = await getCurrentAdmin();
   const isSuperAdmin = currentAdmin?.role === "superadmin";
 
-  const { data: items, error } = await supabase
+  // Base query. When `showHistorical` is off, we filter archived items at
+  // the DB layer so they never touch the page; when on, they're included.
+  let query = supabase
     .from("items")
     .select(
       `
@@ -49,36 +55,68 @@ export default async function InventoryPage({
       website_status,
       date_added,
       pending_action,
+      is_archived,
       brand:brands(name),
       type:types(name),
       images:item_images(id)
     `,
     )
-    .eq("is_archived", false)
     .order("created_at", { ascending: false });
+
+  if (!showHistorical) {
+    query = query.eq("is_archived", false);
+  }
+
+  const { data: items, error } = await query;
 
   if (error) {
     console.error("Error fetching inventory:", error);
   }
 
-  // Filter Logic
+  // Filter logic
   const allItems = items || [];
 
-  const pendingItems = allItems.filter((i) => i.pending_action !== null);
+  const activeItems = allItems.filter((i) => !i.is_archived);
+  const archivedItems = allItems.filter((i) => i.is_archived);
 
-  // "Needs Attention" criteria: Missing Brand, Price, Size, or 0 Images
-  const needsAttentionItems = allItems.filter(
+  const pendingItems = activeItems.filter((i) => i.pending_action !== null);
+
+  // "Needs Attention" is a workflow queue — archived items never appear
+  // here because nobody is going to fix their data.
+  const needsAttentionItems = activeItems.filter(
     (i) =>
       // @ts-ignore
       !i.brand?.name || !i.rental_price || !i.size || i.images.length === 0,
   );
 
-  let displayItems = allItems;
-  if (currentTab === "needs-attention") displayItems = needsAttentionItems;
-  if (currentTab === "pending" && isSuperAdmin) displayItems = pendingItems;
+  let displayItems = showHistorical ? allItems : activeItems;
+  if (currentTab === "needs-attention") {
+    displayItems = needsAttentionItems;
+  }
+  if (currentTab === "pending" && isSuperAdmin) {
+    displayItems = pendingItems;
+  }
+
+  // Build href for the toggle so tab state is preserved.
+  const toggleHref = (() => {
+    const params = new URLSearchParams();
+    if (currentTab !== "all") params.set("tab", currentTab);
+    if (!showHistorical) params.set("historical", "1");
+    const qs = params.toString();
+    return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
+  })();
+
+  // Build href for tab links so historical state is preserved.
+  const tabHref = (tab: string) => {
+    const params = new URLSearchParams();
+    if (tab !== "all") params.set("tab", tab);
+    if (showHistorical) params.set("historical", "1");
+    const qs = params.toString();
+    return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
+  };
 
   return (
-    <div className="">
+    <div>
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">
@@ -96,48 +134,93 @@ export default async function InventoryPage({
         </Link>
       </div>
 
-      <div className="flex gap-4 border-b border-line mb-5">
-        <Link
-          href="?tab=needs-attention"
-          className={`pb-2.5 text-sm font-medium transition-colors ${
-            currentTab === "needs-attention"
-              ? "text-wine-ink border-b-2 border-wine"
-              : "text-muted hover:text-ink"
-          }`}
-        >
-          Needs Attention{" "}
-          <span className="bg-[#EFEBE2] text-muted text-[10px] px-1.5 py-0.5 rounded-full ml-1">
-            {needsAttentionItems.length}
-          </span>
-        </Link>
-
-        {isSuperAdmin && (
+      {/* Tabs + Historical toggle row */}
+      <div className="flex items-end justify-between gap-4 border-b border-line mb-5">
+        <div className="flex gap-4">
           <Link
-            href="?tab=pending"
+            href={tabHref("needs-attention")}
             className={`pb-2.5 text-sm font-medium transition-colors ${
-              currentTab === "pending"
+              currentTab === "needs-attention"
                 ? "text-wine-ink border-b-2 border-wine"
                 : "text-muted hover:text-ink"
             }`}
           >
-            Pending Approval{" "}
+            Needs Attention{" "}
             <span className="bg-[#EFEBE2] text-muted text-[10px] px-1.5 py-0.5 rounded-full ml-1">
-              {pendingItems.length}
+              {needsAttentionItems.length}
             </span>
           </Link>
-        )}
 
+          {isSuperAdmin && (
+            <Link
+              href={tabHref("pending")}
+              className={`pb-2.5 text-sm font-medium transition-colors ${
+                currentTab === "pending"
+                  ? "text-wine-ink border-b-2 border-wine"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              Pending Approval{" "}
+              <span className="bg-[#EFEBE2] text-muted text-[10px] px-1.5 py-0.5 rounded-full ml-1">
+                {pendingItems.length}
+              </span>
+            </Link>
+          )}
+
+          <Link
+            href={tabHref("all")}
+            className={`pb-2.5 text-sm font-medium transition-colors ${
+              currentTab === "all"
+                ? "text-wine-ink border-b-2 border-wine"
+                : "text-muted hover:text-ink"
+            }`}
+          >
+            All Items
+          </Link>
+        </div>
+
+        {/* Historical toggle — display-only filter, orthogonal to tabs */}
         <Link
-          href="?tab=all"
-          className={`pb-2.5 text-sm font-medium transition-colors ${
-            currentTab === "all"
-              ? "text-wine-ink border-b-2 border-wine"
+          href={toggleHref}
+          className={`flex items-center gap-1.5 pb-2.5 text-xs font-medium transition-colors ${
+            showHistorical
+              ? "text-wine-ink"
               : "text-muted hover:text-ink"
           }`}
+          title={
+            showHistorical
+              ? "Hide archived items from the list"
+              : "Show archived items (kept for historical order integrity)"
+          }
         >
-          All Items
+          {showHistorical ? (
+            <>
+              <X className="w-3.5 h-3.5" strokeWidth={1.8} />
+              Hide Historical
+              <span className="bg-wine-soft text-wine-ink text-[10px] px-1.5 py-0.5 rounded-full ml-1">
+                {archivedItems.length}
+              </span>
+            </>
+          ) : (
+            <>
+              <History className="w-3.5 h-3.5" strokeWidth={1.8} />
+              Show Historical
+            </>
+          )}
         </Link>
       </div>
+
+      {/* Historical mode banner — nudges the admin to understand what they're seeing */}
+      {showHistorical && (
+        <div className="mb-4 p-3 bg-[#FBF8EF] border border-[#E8DFC2] text-[#84661E] rounded-lg text-xs flex items-start gap-2">
+          <History className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>Historical view.</strong> Archived items are included — they
+            remain in the catalog only to preserve past order lines and reports.
+            They are not bookable and do not appear on the storefront.
+          </span>
+        </div>
+      )}
 
       <div className="bg-card border border-line rounded-[10px] p-1.5 pb-0 overflow-hidden">
         <div className="w-full overflow-x-auto">
@@ -185,7 +268,12 @@ export default async function InventoryPage({
                 </tr>
               ) : (
                 displayItems?.map((item) => (
-                  <tr key={item.sku} className="hover:bg-[#FBFAF6]">
+                  <tr
+                    key={item.sku}
+                    className={`hover:bg-[#FBFAF6] ${
+                      item.is_archived ? "opacity-60" : ""
+                    }`}
+                  >
                     <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top font-bold">
                       <Link
                         href={`/admin/inventory/${item.sku}`}
@@ -196,6 +284,11 @@ export default async function InventoryPage({
                       {item.pending_action && (
                         <span className="ml-2 bg-warn-bg text-warn-ink text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
                           {item.pending_action} Req
+                        </span>
+                      )}
+                      {item.is_archived && (
+                        <span className="ml-2 bg-[#EFEBE2] text-muted text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded">
+                          Archived
                         </span>
                       )}
                     </td>
@@ -234,7 +327,9 @@ export default async function InventoryPage({
                       <StatusPill status={item.website_status} />
                     </td>
                     <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
-                      <StatusPill status={item.status} />
+                      <StatusPill
+                        status={item.is_archived ? "Archived" : item.status}
+                      />
                     </td>
                   </tr>
                 ))
