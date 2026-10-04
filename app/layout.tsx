@@ -1,15 +1,33 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Cormorant, Fustat } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/**
+ * Typography
+ * ──────────────────────────────────────────────────────────────────────
+ * Cormorant Regular  → all serif headings (H1–H5)
+ * Fustat Light/Reg/Semibold → body, labels, H6
+ *
+ * The CSS variables below are remapped to Tailwind's `font-serif` and
+ * `font-sans` in `app/globals.css` — so every `font-serif` / `font-sans`
+ * class in the codebase renders in the KORA design system fonts without
+ * any per-component edits.
+ */
+
+const cormorant = Cormorant({
+  variable: "--font-cormorant",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  display: "swap",
+  fallback: ["Georgia", "Times New Roman", "serif"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const fustat = Fustat({
+  variable: "--font-fustat",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  display: "swap",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
 });
 
 export const metadata: Metadata = {
@@ -25,7 +43,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${cormorant.variable} ${fustat.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

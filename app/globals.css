@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+    /* ── Admin palette ── */
     --color-ink: #221e19;
     --color-muted: #7a7269;
     --color-canvas: #f6f4ef;
@@ -44,22 +45,200 @@
     --color-sand: #e1dfce;
     --color-cream: #ecebe4;
 
-    /* ── Storefront semantic layer (what components actually use) ── */
-    --color-store-bg: #ecebe4; /* page canvas        */
-    --color-store-surface: #ffffff; /* cards, modals      */
-    --color-store-surface-2: #f8f8f8; /* subtle panels      */
-    --color-store-fg: #444444; /* primary text       */
-    --color-store-fg-muted: #6f6f6f; /* secondary text     */
-    --color-store-fg-subtle: #8f8f8f; /* captions, meta     */
-    --color-store-border: #e7e7e7; /* hairlines          */
+    /* ── Storefront semantic layer ── */
+    --color-store-bg: #ecebe4;
+    --color-store-surface: #ffffff;
+    --color-store-surface-2: #f8f8f8;
+    --color-store-fg: #444444;
+    --color-store-fg-muted: #6f6f6f;
+    --color-store-fg-subtle: #8f8f8f;
+    --color-store-border: #e7e7e7;
     --color-store-border-strong: #d0d0d0;
-    --color-store-accent: #64765b; /* CTA, active states */
-    --color-store-accent-fg: #ffffff; /* text on accent     */
-    --color-store-hover: #e1dfce; /* hover wash         */
+    --color-store-accent: #64765b;
+    --color-store-accent-fg: #ffffff;
+    --color-store-hover: #e1dfce;
+
+    /* ── Typography families ──────────────────────────────────────
+       Remaps Tailwind's built-in font-serif / font-sans so existing
+       `font-serif` and `font-sans` classes across the app render in
+       the KORA design system fonts automatically.
+
+         font-serif  →  Cormorant   (Regular 400 for H1–H5)
+         font-sans   →  Fustat      (Light 300 / Regular 400 / Semibold 600)
+         font-mono   →  unchanged   (Tailwind default stack for SKUs,
+                                     phone numbers, waybills, etc.)
+    */
+    --font-serif: var(--font-cormorant), Georgia, "Times New Roman", serif;
+    --font-sans:
+        var(--font-fustat), system-ui, -apple-system, "Segoe UI", Roboto,
+        sans-serif;
 }
 
 body {
     background-color: var(--color-canvas);
     color: var(--color-ink);
+    font-family: var(--font-sans);
     font-feature-settings: "tnum";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   KORA TYPOGRAPHY SCALE
+   ───────────────────────────────────────────────────────────────────────
+   Full design system from the Figma. These utilities set font-family,
+   size, weight, line-height, and tracking together so any component can
+   adopt a spec-accurate style with a single class:
+
+     <h1 className="type-h1">New Arrivals</h1>
+     <p  className="type-body">Designer dresses, ready to rent.</p>
+     <span className="type-label-caps">Collection</span>
+
+   Line-heights and letter-spacing aren't in the Figma spec — the values
+   below are editorial defaults tuned for each size. Adjust in one place
+   if the designer wants something different.
+
+   ┌───────────────────────────────────────────────────────────────┐
+   │ Figma name                       │ Utility class              │
+   ├──────────────────────────────────┼────────────────────────────┤
+   │ H1   — Cormorant Regular   60px  │ type-h1                    │
+   │ H2   — Cormorant Regular   40px  │ type-h2                    │
+   │ H3   — Cormorant Regular   32px  │ type-h3                    │
+   │ H4   — Cormorant Regular   24px  │ type-h4                    │
+   │ H5   — Cormorant Regular   18px  │ type-h5                    │
+   │ H6   — Fustat Light        24px  │ type-h6                    │
+   │ Body Large    — Fustat Reg 20px  │ type-body-lg               │
+   │ Body          — Fustat Reg 16px  │ type-body                  │
+   │ Body Semibold — Fustat Semi 16px │ type-body-semibold         │
+   │ Body Small    — Fustat Semi 14px │ type-body-sm               │
+   │ LABEL         — Fustat Lig 16px  │ type-label-caps  (uppercase)│
+   │ Label         — Fustat Lig 16px  │ type-label                 │
+   │ Label Small   — Fustat     12px  │ type-label-sm              │
+   │ LABEL SM BOLD — Fustat Semi 12px │ type-label-sm-bold         │
+   └───────────────────────────────────────────────────────────────┘
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Headings — Cormorant Regular ──────────────────────────────────── */
+
+@utility type-h1 {
+    font-family: var(--font-serif);
+    font-size: 60px;
+    line-height: 1.05;
+    font-weight: 400;
+    letter-spacing: 0.005em;
+}
+
+@utility type-h2 {
+    font-family: var(--font-serif);
+    font-size: 40px;
+    line-height: 1.1;
+    font-weight: 400;
+    letter-spacing: 0.008em;
+}
+
+@utility type-h3 {
+    font-family: var(--font-serif);
+    font-size: 32px;
+    line-height: 1.15;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+@utility type-h4 {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    line-height: 1.2;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+@utility type-h5 {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.35;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+/* ── H6 — Fustat Light 24px (switches to sans-serif) ───────────────── */
+
+@utility type-h6 {
+    font-family: var(--font-sans);
+    font-size: 24px;
+    line-height: 1.3;
+    font-weight: 300;
+    letter-spacing: 0.005em;
+}
+
+/* ── Body — Fustat ─────────────────────────────────────────────────── */
+
+@utility type-body-lg {
+    font-family: var(--font-sans);
+    font-size: 20px;
+    line-height: 1.5;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+@utility type-body {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+@utility type-body-semibold {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+@utility type-body-sm {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+/* ── Labels — Fustat Light 16px ─────────────────────────────────────── */
+
+/* LABEL — uppercase, wide tracking (for section eyebrows, tags) */
+@utility type-label-caps {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* Label — no capitalization */
+@utility type-label {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 300;
+    letter-spacing: 0;
+}
+
+/* ── Label Small — Fustat 12px ─────────────────────────────────────── */
+
+@utility type-label-sm {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+}
+
+/* LABEL SMALL BOLD — uppercase semibold 12px */
+@utility type-label-sm-bold {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
