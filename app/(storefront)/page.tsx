@@ -1,24 +1,25 @@
-import Link from 'next/link';
+import Link from "next/link";
+import HomeHeroCarousel from "@/components/storefront/HomeHeroCarousel";
 
 export default function StorefrontHomePage() {
   const featuredDresses = [
     {
-      sku: 'ZM19',
-      name: 'Zimmermann Super Eight Ruffle Maxi',
-      price: 'Rp. 1.700.000',
-      image: '/images/home/featured-1.jpg',
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp. 1.700.000",
+      image: "/images/home/featured-1.jpg",
     },
     {
-      sku: 'ZM19',
-      name: 'Zimmermann Super Eight Ruffle Maxi',
-      price: 'Rp. 1.700.000',
-      image: '/images/home/featured-2.jpg',
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp. 1.700.000",
+      image: "/images/home/featured-2.jpg",
     },
     {
-      sku: 'ZM19',
-      name: 'Zimmermann Super Eight Ruffle Maxi',
-      price: 'Rp. 1.700.000',
-      image: '/images/home/featured-3.jpg',
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp. 1.700.000",
+      image: "/images/home/featured-3.jpg",
     },
   ];
 
@@ -26,52 +27,13 @@ export default function StorefrontHomePage() {
     <div className="w-full flex flex-col">
       {/* =================================================================== */}
       {/* SECTION 1: HERO CAROUSEL BANNER                                     */}
+      {/*                                                                     */}
+      {/* Slide images live in public/images/home/:                           */}
+      {/*   hero-1.jpg  →  New Arrivals                                       */}
+      {/*   hero-2.jpg  →  Available This Week                                */}
+      {/*   hero-3.jpg  →  See Our Collection                                 */}
       {/* =================================================================== */}
-      <section className="relative w-full h-[540px] sm:h-[620px] flex items-center justify-center overflow-hidden">
-        {/* Background Banner with Overlay */}
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: `linear-gradient(0deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.25)), url('/images/home/hero-1.jpg')`,
-          }}
-        />
-
-        {/* Hero Content */}
-        <div className="relative z-10 text-center text-white px-4">
-          <h1 className="font-serif text-[42px] sm:text-[62px] font-normal tracking-[0.02em] mb-4 text-[#FBF9F5] drop-shadow-sm">
-            New Arrivals
-          </h1>
-          <Link
-            href="/shop"
-            className="inline-block bg-[#ECEBE4] text-[#1F261C] px-8 py-2.5 text-[11px] uppercase tracking-[0.2em] font-semibold hover:bg-white transition-all shadow-md"
-          >
-            Shop Now
-          </Link>
-        </div>
-
-        {/* Slide Indicators */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
-          <span className="w-2 h-2 rounded-full bg-white" />
-          <span className="w-2 h-2 rounded-full bg-white/40" />
-          <span className="w-2 h-2 rounded-full bg-white/40" />
-        </div>
-
-        {/* Navigation Arrows */}
-        <button
-          type="button"
-          aria-label="Previous Slide"
-          className="absolute left-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-2xl hidden sm:block z-10"
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          aria-label="Next Slide"
-          className="absolute right-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-2xl hidden sm:block z-10"
-        >
-          →
-        </button>
-      </section>
+      <HomeHeroCarousel />
 
       {/* =================================================================== */}
       {/* SECTION 2: "RENT ME ONCE, HEAD BE TURNING TWICE!"                   */}
@@ -83,7 +45,8 @@ export default function StorefrontHomePage() {
               Rent me once, Head be turning Twice!
             </h2>
             <p className="text-xs text-[#6A7563] max-w-xl">
-              Romanticize your life with high-quality designer pieces — for a fraction of the price. Leave the commitment to us.
+              Romanticize your life with high-quality designer pieces — for a
+              fraction of the price. Leave the commitment to us.
             </p>
           </div>
 
@@ -146,7 +109,9 @@ export default function StorefrontHomePage() {
             <div className="relative w-full max-w-[360px] aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
               <div
                 className="w-full h-full bg-cover bg-center"
-                style={{ backgroundImage: `url('/images/home/editorial-center.jpg')` }}
+                style={{
+                  backgroundImage: `url('/images/home/editorial-center.jpg')`,
+                }}
               />
             </div>
           </div>
@@ -171,7 +136,9 @@ export default function StorefrontHomePage() {
           <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
             <div
               className="w-full h-full bg-cover bg-center"
-              style={{ backgroundImage: `url('/images/home/available-week.jpg')` }}
+              style={{
+                backgroundImage: `url('/images/home/available-week.jpg')`,
+              }}
             />
           </div>
         </div>
