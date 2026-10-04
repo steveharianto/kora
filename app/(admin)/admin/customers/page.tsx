@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
+import {
+  resolvePageSize,
+  slicePage,
+  DEFAULT_PAGE_SIZE,
+} from "@/lib/pagination";
+import PaginationBar from "@/components/admin/PaginationBar";
 import AddCustomerModal from "./AddCustomerModal";
 
 function formatDisplayDate(dateStr?: string | null) {
@@ -49,6 +55,7 @@ export default async function CustomersPage({
     status?: string;
     view?: string;
     page?: string;
+    perPage?: string;
   }>;
 }) {
   const resolvedParams = await searchParams;
@@ -57,8 +64,7 @@ export default async function CustomersPage({
   const toDate = resolvedParams.to || "";
   const statusFilter = resolvedParams.status || "all";
   const viewFilter = resolvedParams.view || "all";
-  const currentPage = Math.max(1, parseInt(resolvedParams.page || "1", 10));
-  const PAGE_SIZE = 8;
+  const perPage = resolvePageSize(resolvedParams.perPage);
 
   const supabase = await createClient();
 
@@ -145,33 +151,23 @@ export default async function CustomersPage({
     filtered = filtered.filter((c) => (c.current_credit || 0) > 0);
   }
 
-  const totalResults = filtered.length;
-  const totalPages = Math.ceil(totalResults / PAGE_SIZE) || 1;
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const endIndex = Math.min(startIndex + PAGE_SIZE, totalResults);
-  const paginatedCustomers = filtered.slice(startIndex, endIndex);
+  const {
+    pageItems: paginatedCustomers,
+    total,
+    totalPages,
+    currentPage,
+    start,
+    end,
+  } = slicePage(filtered, resolvedParams.page, perPage);
 
-  const buildQueryString = (overrides: Record<string, string | number>) => {
-    const params = new URLSearchParams();
-    const current = {
-      search: searchQuery,
-      from: fromDate,
-      to: toDate,
-      status: statusFilter,
-      view: viewFilter,
-      page: currentPage,
-      ...overrides,
-    };
-
-    Object.entries(current).forEach(([k, v]) => {
-      if (v && v !== "all" && v !== 1) {
-        params.set(k, String(v));
-      }
-    });
-
-    const str = params.toString();
-    return str ? `?${str}` : "/admin/customers";
-  };
+  // Preserved filter params for pagination links (no functions across the
+  // server/client boundary — plain serializable object).
+  const pageParams: Record<string, string> = {};
+  if (searchQuery) pageParams.search = searchQuery;
+  if (fromDate) pageParams.from = fromDate;
+  if (toDate) pageParams.to = toDate;
+  if (statusFilter !== "all") pageParams.status = statusFilter;
+  if (viewFilter !== "all") pageParams.view = viewFilter;
 
   return (
     <div className="">
@@ -193,7 +189,10 @@ export default async function CustomersPage({
         method="GET"
         className="flex flex-wrap items-center gap-3 mb-4 text-[13px]"
       >
-        {/* Search input */}
+        {perPage !== DEFAULT_PAGE_SIZE && (
+          <input type="hidden" name="perPage" value={perPage} />
+        )}
+
         <input
           type="text"
           name="search"
@@ -202,7 +201,6 @@ export default async function CustomersPage({
           className="px-3.5 py-1.5 w-44 rounded-lg border border-line bg-card text-ink focus:outline-none focus:ring-1 focus:ring-wine transition placeholder-[#B0A79A]"
         />
 
-        {/* Date Joined Range */}
         <div className="flex items-center gap-2">
           <span className="text-[11px] tracking-[0.14em] uppercase text-muted font-medium">
             Joined
@@ -222,7 +220,6 @@ export default async function CustomersPage({
           />
         </div>
 
-        {/* Status Dropdown */}
         <div className="flex items-center gap-2">
           <span className="text-[11px] tracking-[0.14em] uppercase text-muted font-medium">
             Status
@@ -239,7 +236,6 @@ export default async function CustomersPage({
           </select>
         </div>
 
-        {/* View Preset Dropdown */}
         <select
           name="view"
           defaultValue={viewFilter}
@@ -271,36 +267,16 @@ export default async function CustomersPage({
         )}
       </form>
 
-      {/* Pagination Counter */}
-      <div className="flex justify-end items-center gap-2 mb-2.5 text-xs text-muted">
-        <span>
-          {totalResults === 0
-            ? "0 of 0"
-            : `${startIndex + 1}-${endIndex} of ${totalResults}`}
-        </span>
-        <div className="flex items-center gap-1 ml-1">
-          <Link
-            href={buildQueryString({ page: Math.max(1, currentPage - 1) })}
-            className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] transition ${
-              currentPage <= 1 ? "pointer-events-none opacity-40" : ""
-            }`}
-          >
-            ‹
-          </Link>
-          <Link
-            href={buildQueryString({
-              page: Math.min(totalPages, currentPage + 1),
-            })}
-            className={`w-6 h-6 flex items-center justify-center border border-line rounded bg-card hover:bg-[#F6F4EF] transition ${
-              currentPage >= totalPages ? "pointer-events-none opacity-40" : ""
-            }`}
-          >
-            ›
-          </Link>
-        </div>
-      </div>
+      <PaginationBar
+        total={total}
+        page={currentPage}
+        perPage={perPage}
+        start={start}
+        end={end}
+        queryParams={pageParams}
+        itemLabel="customers"
+      />
 
-      {/* Table */}
       <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
         <div className="w-full overflow-x-auto">
           <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">

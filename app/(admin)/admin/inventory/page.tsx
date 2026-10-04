@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
 import { getCurrentAdmin } from "@/app/actions/auth";
 import { History, X } from "lucide-react";
+import {
+  resolvePageSize,
+  slicePage,
+  DEFAULT_PAGE_SIZE,
+} from "@/lib/pagination";
+import PaginationBar from "@/components/admin/PaginationBar";
 
 const HISTORICAL_PLACEHOLDER_PREFIX = "[Historical Placeholder]";
 
@@ -31,12 +37,17 @@ function StatusPill({ status }: { status: string }) {
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; historical?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    historical?: string;
+    page?: string;
+    perPage?: string;
+  }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const currentTab = resolvedSearchParams.tab || "all";
-  // Historical mode reveals archived items AND placeholder imports.
   const showHistorical = resolvedSearchParams.historical === "1";
+  const perPage = resolvePageSize(resolvedSearchParams.perPage);
 
   const supabase = await createClient();
   const currentAdmin = await getCurrentAdmin();
@@ -63,8 +74,6 @@ export default async function InventoryPage({
     )
     .order("created_at", { ascending: false });
 
-  // Default view: hide archived items *and* historical placeholders.
-  // Both are "not part of the active catalog" — the toggle reveals both.
   if (!showHistorical) {
     query = query
       .eq("is_archived", false)
@@ -105,10 +114,20 @@ export default async function InventoryPage({
     displayItems = pendingItems;
   }
 
+  const {
+    pageItems: paginatedItems,
+    total,
+    totalPages,
+    currentPage,
+    start,
+    end,
+  } = slicePage(displayItems, resolvedSearchParams.page, perPage);
+
   const toggleHref = (() => {
     const params = new URLSearchParams();
     if (currentTab !== "all") params.set("tab", currentTab);
     if (!showHistorical) params.set("historical", "1");
+    if (perPage !== DEFAULT_PAGE_SIZE) params.set("perPage", String(perPage));
     const qs = params.toString();
     return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
   })();
@@ -117,9 +136,15 @@ export default async function InventoryPage({
     const params = new URLSearchParams();
     if (tab !== "all") params.set("tab", tab);
     if (showHistorical) params.set("historical", "1");
+    if (perPage !== DEFAULT_PAGE_SIZE) params.set("perPage", String(perPage));
     const qs = params.toString();
     return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
   };
+
+  // Preserved params for PaginationBar.
+  const pageParams: Record<string, string> = {};
+  if (currentTab !== "all") pageParams.tab = currentTab;
+  if (showHistorical) pageParams.historical = "1";
 
   const hiddenCount = archivedItems.length + placeholderItems.length;
 
@@ -142,7 +167,6 @@ export default async function InventoryPage({
         </Link>
       </div>
 
-      {/* Tabs + Historical toggle row */}
       <div className="flex items-end justify-between gap-4 border-b border-line mb-5">
         <div className="flex gap-4">
           <Link
@@ -220,7 +244,6 @@ export default async function InventoryPage({
         </Link>
       </div>
 
-      {/* Historical mode banner */}
       {showHistorical && (
         <div className="mb-4 p-3 bg-[#FBF8EF] border border-[#E8DFC2] text-[#84661E] rounded-lg text-xs flex items-start gap-2">
           <History className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
@@ -239,6 +262,16 @@ export default async function InventoryPage({
           </span>
         </div>
       )}
+
+      <PaginationBar
+        total={total}
+        page={currentPage}
+        perPage={perPage}
+        start={start}
+        end={end}
+        queryParams={pageParams}
+        itemLabel="items"
+      />
 
       <div className="bg-card border border-line rounded-[10px] p-1.5 pb-0 overflow-hidden">
         <div className="w-full overflow-x-auto">
@@ -275,7 +308,7 @@ export default async function InventoryPage({
               </tr>
             </thead>
             <tbody>
-              {displayItems?.length === 0 ? (
+              {paginatedItems?.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
@@ -285,7 +318,7 @@ export default async function InventoryPage({
                   </td>
                 </tr>
               ) : (
-                displayItems?.map((item) => {
+                paginatedItems?.map((item) => {
                   const isPlaceholder = isHistoricalPlaceholder(item);
                   const dim = item.is_archived || isPlaceholder;
                   return (

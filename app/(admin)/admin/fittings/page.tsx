@@ -2,6 +2,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
 import { Plus } from "lucide-react";
+import {
+  resolvePageSize,
+  slicePage,
+  DEFAULT_PAGE_SIZE,
+} from "@/lib/pagination";
+import PaginationBar from "@/components/admin/PaginationBar";
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "—";
@@ -17,12 +23,15 @@ export default async function FittingsPage({
     tab?: string;
     search?: string;
     status?: string;
+    page?: string;
+    perPage?: string;
   }>;
 }) {
   const resolvedParams = await searchParams;
   const currentTab = resolvedParams.tab || "schedule";
   const searchQuery = (resolvedParams.search || "").trim().toLowerCase();
   const statusFilter = resolvedParams.status || "all";
+  const perPage = resolvePageSize(resolvedParams.perPage);
 
   const supabase = await createClient();
 
@@ -107,6 +116,19 @@ export default async function FittingsPage({
     );
   }
 
+  const {
+    pageItems: paginatedSessions,
+    total,
+    totalPages,
+    currentPage,
+    start,
+    end,
+  } = slicePage(filtered, resolvedParams.page, perPage);
+
+  const pageParams: Record<string, string> = { tab: "all" };
+  if (searchQuery) pageParams.search = searchQuery;
+  if (statusFilter !== "all") pageParams.status = statusFilter;
+
   return (
     <div className="mx-auto pb-24 font-sans text-ink">
       {/* Header */}
@@ -155,7 +177,6 @@ export default async function FittingsPage({
       {/* TAB 1: SCHEDULE */}
       {currentTab === "schedule" && (
         <div className="space-y-7">
-          {/* OVERDUE */}
           {overdueSessions.length > 0 && (
             <div>
               <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#A63222] mb-2.5">
@@ -182,7 +203,10 @@ export default async function FittingsPage({
                           className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
                         >
                           <td className="px-3 py-3 font-bold text-ink">
-                            <Link href={`/admin/fittings/${s.id}`} className="hover:underline text-wine-ink hover:text-black">
+                            <Link
+                              href={`/admin/fittings/${s.id}`}
+                              className="hover:underline text-wine-ink hover:text-black"
+                            >
                               {s.id}
                             </Link>
                           </td>
@@ -248,7 +272,10 @@ export default async function FittingsPage({
                           className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
                         >
                           <td className="px-3 py-3 font-bold text-ink">
-                            <Link href={`/admin/fittings/${s.id}`} className="hover:underline text-wine-ink hover:text-black">
+                            <Link
+                              href={`/admin/fittings/${s.id}`}
+                              className="hover:underline text-wine-ink hover:text-black"
+                            >
                               {s.id}
                             </Link>
                           </td>
@@ -299,7 +326,8 @@ export default async function FittingsPage({
           {/* TOMORROW */}
           <div>
             <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted mb-2.5">
-              TOMORROW · {tomorrowStr} — SEND REMINDERS — {tomorrowSessions.length}
+              TOMORROW · {tomorrowStr} — SEND REMINDERS —{" "}
+              {tomorrowSessions.length}
             </div>
 
             <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
@@ -334,7 +362,10 @@ export default async function FittingsPage({
                           className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
                         >
                           <td className="px-3 py-3 font-bold text-ink">
-                            <Link href={`/admin/fittings/${s.id}`} className="hover:underline text-wine-ink hover:text-black">
+                            <Link
+                              href={`/admin/fittings/${s.id}`}
+                              className="hover:underline text-wine-ink hover:text-black"
+                            >
                               {s.id}
                             </Link>
                           </td>
@@ -422,7 +453,10 @@ export default async function FittingsPage({
                           className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
                         >
                           <td className="px-3 py-3 font-bold text-ink">
-                            <Link href={`/admin/fittings/${s.id}`} className="hover:underline text-wine-ink hover:text-black">
+                            <Link
+                              href={`/admin/fittings/${s.id}`}
+                              className="hover:underline text-wine-ink hover:text-black"
+                            >
                               {s.id}
                             </Link>
                           </td>
@@ -472,6 +506,9 @@ export default async function FittingsPage({
             className="flex flex-wrap items-center gap-3 mb-4 text-[13px]"
           >
             <input type="hidden" name="tab" value="all" />
+            {perPage !== DEFAULT_PAGE_SIZE && (
+              <input type="hidden" name="perPage" value={perPage} />
+            )}
             <input
               type="text"
               name="search"
@@ -499,6 +536,16 @@ export default async function FittingsPage({
             </button>
           </form>
 
+          <PaginationBar
+            total={total}
+            page={currentPage}
+            perPage={perPage}
+            start={start}
+            end={end}
+            queryParams={pageParams}
+            itemLabel="sessions"
+          />
+
           <div className="bg-card border border-line rounded-[10px] p-2 pb-0 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
             <div className="w-full overflow-x-auto">
               <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[850px]">
@@ -515,7 +562,7 @@ export default async function FittingsPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {paginatedSessions.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
@@ -525,13 +572,16 @@ export default async function FittingsPage({
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((s) => (
+                    paginatedSessions.map((s) => (
                       <tr
                         key={s.id}
                         className="hover:bg-[#FBFAF6] border-b border-[#EFEBE2] last:border-none"
                       >
                         <td className="px-3 py-3.5 font-bold text-ink">
-                          <Link href={`/admin/fittings/${s.id}`} className="hover:underline text-wine-ink hover:text-black">
+                          <Link
+                            href={`/admin/fittings/${s.id}`}
+                            className="hover:underline text-wine-ink hover:text-black"
+                          >
                             {s.id}
                           </Link>
                         </td>
