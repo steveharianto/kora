@@ -41,13 +41,22 @@ interface Props {
   deliveryLeadTimes: LeadTime[];
 }
 
+type CourierTier = "same-day" | "next-day" | "regular";
+
 interface RateOption {
   label: string;
   price: number;
   etd: string;
   courierCompany: string;
   courierType: string;
+  tier?: CourierTier;
 }
+
+const TIER_LABEL: Record<CourierTier, string> = {
+  "same-day": "Same Day",
+  "next-day": "Next Day",
+  regular: "Regular",
+};
 
 function todayISO() {
   return new Date().toISOString().split("T")[0];
@@ -80,6 +89,7 @@ export default function CheckoutClient({
   const [eventStartDate, setEventStartDate] = useState<string>("");
   const [eventDays, setEventDays] = useState(1);
   const [rates, setRates] = useState<RateOption[]>([]);
+  const [ratesHint, setRatesHint] = useState<string>("");
   const [selectedRate, setSelectedRate] = useState<RateOption | null>(null);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState("");
@@ -154,11 +164,7 @@ export default function CheckoutClient({
 
   // Deposit stays per-unit — it tracks the item's value, not the duration.
   const totalDeposit = useMemo(
-    () =>
-      cart.reduce(
-        (s, i) => s + (i.price > 1000000 ? 250000 : 150000),
-        0,
-      ),
+    () => cart.reduce((s, i) => s + (i.price > 1000000 ? 250000 : 150000), 0),
     [cart],
   );
 
@@ -172,6 +178,7 @@ export default function CheckoutClient({
   const fetchRates = useCallback(async () => {
     if (!selectedAddress?.postal_code || cart.length === 0) {
       setRates([]);
+      setRatesHint("");
       setSelectedRate(null);
       return;
     }
@@ -189,11 +196,13 @@ export default function CheckoutClient({
     if (res.error || !res.options) {
       setRatesError(res.error || "Could not fetch shipping rates.");
       setRates([]);
+      setRatesHint("");
       setSelectedRate(null);
       return;
     }
-    setRates(res.options);
-    setSelectedRate(res.options[0] || null);
+    setRates(res.options as RateOption[]);
+    setRatesHint(res.hint || "");
+    setSelectedRate((res.options as RateOption[])[0] || null);
   }, [selectedAddress, cart]);
 
   useEffect(() => {
@@ -287,7 +296,10 @@ export default function CheckoutClient({
           <div className="space-y-10">
             <section>
               <div className="flex items-center gap-2 mb-5">
-                <MapPin className="w-4 h-4 text-store-accent" strokeWidth={1.6} />
+                <MapPin
+                  className="w-4 h-4 text-store-accent"
+                  strokeWidth={1.6}
+                />
                 <h2 className="font-serif text-[20px] text-store-fg font-normal">
                   Delivery Address
                 </h2>
@@ -411,7 +423,10 @@ export default function CheckoutClient({
 
             <section>
               <div className="flex items-center gap-2 mb-5">
-                <Truck className="w-4 h-4 text-store-accent" strokeWidth={1.6} />
+                <Truck
+                  className="w-4 h-4 text-store-accent"
+                  strokeWidth={1.6}
+                />
                 <h2 className="font-serif text-[20px] text-store-fg font-normal">
                   Shipping Method
                 </h2>
@@ -435,56 +450,70 @@ export default function CheckoutClient({
                   No courier options available for this route.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {rates.map((r) => {
-                    const active = selectedRate?.label === r.label;
-                    return (
-                      <label
-                        key={r.label}
-                        className={`flex items-center gap-2.5 border px-3 py-2.5 cursor-pointer transition-colors ${
-                          active
-                            ? "border-store-accent bg-store-hover/30"
-                            : "border-store-border-strong hover:border-store-fg"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="rate"
-                          className="sr-only"
-                          checked={active}
-                          onChange={() => setSelectedRate(r)}
-                        />
-                        <span
-                          className={`w-4 h-4 flex-shrink-0 border flex items-center justify-center transition-colors ${
+                <>
+                  {ratesHint && (
+                    <p className="mb-3 text-[11.5px] text-store-fg-muted leading-relaxed">
+                      {ratesHint}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {rates.map((r) => {
+                      const active = selectedRate?.label === r.label;
+                      return (
+                        <label
+                          key={r.label}
+                          className={`flex items-center gap-2.5 border px-3 py-2.5 cursor-pointer transition-colors ${
                             active
-                              ? "bg-store-accent border-store-accent"
-                              : "border-store-border-strong bg-transparent"
+                              ? "border-store-accent bg-store-hover/30"
+                              : "border-store-border-strong hover:border-store-fg"
                           }`}
                         >
-                          {active && (
-                            <Check
-                              className="w-3 h-3 text-white"
-                              strokeWidth={3}
-                            />
-                          )}
-                        </span>
-                        <span className="flex-1 min-w-0">
-                          <span className="block text-[12.5px] text-store-fg font-medium leading-snug truncate">
-                            {r.label}
+                          <input
+                            type="radio"
+                            name="rate"
+                            className="sr-only"
+                            checked={active}
+                            onChange={() => setSelectedRate(r)}
+                          />
+                          <span
+                            className={`w-4 h-4 flex-shrink-0 border flex items-center justify-center transition-colors ${
+                              active
+                                ? "bg-store-accent border-store-accent"
+                                : "border-store-border-strong bg-transparent"
+                            }`}
+                          >
+                            {active && (
+                              <Check
+                                className="w-3 h-3 text-white"
+                                strokeWidth={3}
+                              />
+                            )}
                           </span>
-                          {r.etd && (
-                            <span className="block text-[10.5px] text-store-fg-muted leading-snug">
-                              Est. {r.etd}
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[12.5px] text-store-fg font-medium leading-snug truncate">
+                              {r.label}
                             </span>
-                          )}
-                        </span>
-                        <span className="text-[12px] text-store-fg font-semibold whitespace-nowrap">
-                          Rp {r.price.toLocaleString("id-ID")}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
+                            <span className="flex items-center gap-1.5 mt-0.5">
+                              {r.tier && (
+                                <span className="inline-block text-[9px] font-semibold uppercase tracking-wider text-store-accent bg-store-accent/10 px-1.5 py-[1px] leading-tight">
+                                  {TIER_LABEL[r.tier]}
+                                </span>
+                              )}
+                              {r.etd && (
+                                <span className="text-[10.5px] text-store-fg-muted leading-snug truncate">
+                                  Est. {r.etd}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                          <span className="text-[12px] text-store-fg font-semibold whitespace-nowrap">
+                            Rp {r.price.toLocaleString("id-ID")}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </section>
 
@@ -621,8 +650,7 @@ export default function CheckoutClient({
 
               <p className="text-[11px] text-store-fg-muted text-center mt-4 leading-relaxed">
                 You&apos;ll be redirected to Xendit to complete your payment
-                securely. Your order will be confirmed once payment is
-                received.
+                securely. Your order will be confirmed once payment is received.
               </p>
             </div>
           </div>

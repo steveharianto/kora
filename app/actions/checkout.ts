@@ -59,6 +59,70 @@ function labelForCourier(company: string, type: string): string {
   return `${comp} - ${typ}`;
 }
 
+/* ── Courier tier classification ──────────────────────────────────
+ *
+ * The customer shouldn't have to parse 15 rate rows to find the right
+ * speed/price tradeoff. We bucket every (company, type) pair into one
+ * of three tiers and — for intercity — show only the cheapest option
+ * per tier, so the picker reads as "fast / balanced / cheap".
+ *
+ * Anything not listed defaults to "regular" so an unrecognised courier
+ * still surfaces rather than silently vanishing.
+ */
+
+export type CourierTier = "same-day" | "next-day" | "regular";
+
+const COURIER_TIER_MAP: Record<string, CourierTier> = {
+  // Same-day
+  "gojek|instant": "same-day",
+  "grab|instant": "same-day",
+  "paxel|instant": "same-day",
+  // Next-day (overnight / 1-day services)
+  "jne|yes": "next-day",
+  "sicepat|best": "next-day",
+  "gojek|sameday": "next-day",
+  "grab|sameday": "next-day",
+  "anteraja|sameday": "next-day",
+  // Regular (2–4 day economy)
+  "jne|reg": "regular",
+  "sicepat|reg": "regular",
+  "anteraja|reg": "regular",
+  "ninja|standard": "regular",
+  "pos|reg": "regular",
+  "tiki|reg": "regular",
+  "lion|reg": "regular",
+  "paxel|small": "regular",
+  "paxel|medium": "regular",
+  "paxel|large": "regular",
+  "paxel|regular": "regular",
+};
+
+function tierFor(company: string, type: string): CourierTier {
+  const key = `${company.toLowerCase()}|${type.toLowerCase()}`;
+  return COURIER_TIER_MAP[key] || "regular";
+}
+
+/**
+ * True if a postal code is inside Jakarta proper (10110–14540).
+ * All Jakarta postal codes begin with two digits in the 10–14 range;
+ * neighbouring Jabodetabek (Tangerang 15xxx, Bekasi/Depok/Bogor 16–17xxx)
+ * do NOT match, which is exactly what we want — those are intercity.
+ */
+function isJakartaPostal(postalCode: string): boolean {
+  return /^1[0-4]/.test((postalCode || "").trim());
+}
+
+/* ── Shipment rate fetch + curation ─────────────────────────────── */
+
+export interface CheckoutRateOption {
+  label: string;
+  price: number;
+  etd: string;
+  courierCompany: string;
+  courierType: string;
+  tier: CourierTier;
+}
+
 export async function getCheckoutShippingRates(input: {
   destinationPostalCode: string;
   /**
@@ -146,19 +210,61 @@ export async function getCheckoutShippingRates(input: {
     return { error: res.error || "Could not fetch shipping rates." };
   }
 
-  // Build options with the dynamic label — nothing gets dropped.
-  const options = res.rates.map((r) => ({
+  // ── Build the full option list with tier classification ───────────
+  let options: CheckoutRateOption[] = res.rates.map((r) => ({
     label: labelForCourier(r.courier_company, r.courier_type),
     price: r.price,
     etd: r.etd || r.duration || "",
     courierCompany: r.courier_company,
     courierType: r.courier_type,
+    tier: tierFor(r.courier_company, r.courier_type),
   }));
 
-  // Sort by price ascending — cheapest floats to the top.
+  // Sort cheapest-first so "cheapest per tier" is just the first hit.
   options.sort((a, b) => a.price - b.price);
 
-  return { success: true, options };
+  const sameCity =
+    isJakartaPostal(String(origin.postal_code)) &&
+    isJakartaPostal(input.destinationPostalCode);
+
+  let hint: string | undefined;
+
+  if (sameCity) {
+    // ── Same-city (Jakarta → Jakarta) ──────────────────────────────
+    // Paxel only. Intracity JNE REG / SiCepat REG offer no speed
+    // advantage over Paxel and just clutter the picker.
+    const paxelOnly = options.filter(
+      (o) => o.courierCompany.toLowerCase() === "paxel",
+    );
+
+    if (paxelOnly.length > 0) {
+      const cheapest = paxelOnly[0];
+      const instant = paxelOnly.find(
+        (o) => o.courierType.toLowerCase() === "instant" && o !== cheapest,
+      );
+      options = instant ? [cheapest, instant] : [cheapest];
+      hint =
+        "Same-city deliveries are handled by Paxel for reliable same-day service.";
+    } else {
+      // Rare: Paxel unavailable for this route (weight/zone). Fall back
+      // to the two cheapest options so the customer isn't stranded.
+      options = options.slice(0, 2);
+    }
+  } else {
+    // ── Intercity ──────────────────────────────────────────────────
+    // Keep only the cheapest option in each tier and present in
+    // fastest → slowest order. Max 3 rows, each a distinct tradeoff.
+    const byTier = new Map<CourierTier, CheckoutRateOption>();
+    for (const opt of options) {
+      if (!byTier.has(opt.tier)) byTier.set(opt.tier, opt);
+    }
+    const tierOrder: CourierTier[] = ["same-day", "next-day", "regular"];
+    options = tierOrder
+      .map((t) => byTier.get(t))
+      .filter((o): o is CheckoutRateOption => Boolean(o));
+  }
+
+  return { success: true, options, hint, sameCity };
 }
 
 /* ── Website order ID ────────────────────────────────────────────── */
@@ -501,8 +607,7 @@ export async function markWebsiteOrderPaid(
   });
 
   const customer = (order as any).customers as
-    | { first_name?: string; last_name?: string; phone?: string }
-    | undefined;
+    { first_name?: string; last_name?: string; phone?: string } | undefined;
 
   if (customer?.phone) {
     const customerName =
