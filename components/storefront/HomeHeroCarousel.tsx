@@ -12,7 +12,7 @@ import Link from "next/link";
  *   hero-3.jpg → See Our Collection
  *
  * Behaviour:
- *   • Autoplay every 6 s, pauses on hover.
+ *   • Autoplay every 10 s, pauses on hover.
  *   • Left / right arrow buttons (thin editorial line arrows).
  *   • Dot indicators — active dot larger + fully opaque.
  *   • ← / → keyboard navigation.
@@ -48,7 +48,7 @@ const SLIDES: Slide[] = [
   },
 ];
 
-const AUTOPLAY_MS = 6000;
+const AUTOPLAY_MS = 10000;
 
 export default function HomeHeroCarousel() {
   const [active, setActive] = useState(0);
