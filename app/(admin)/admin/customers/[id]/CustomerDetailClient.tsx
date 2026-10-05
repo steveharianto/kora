@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
+import {
+  ExternalLink,
+  CheckCircle2,
+  XCircle,
+  MessageCircle,
+  Camera,
+} from "lucide-react";
 import {
   updateCustomer,
   deleteCustomer,
@@ -15,6 +21,7 @@ import { formatRupiah } from "@/lib/utils";
 import AddressMapPicker from "@/components/AddressMapPicker";
 import RupiahInput from "@/components/RupiahInput";
 import NotificationPicker from "@/components/admin/NotificationPicker";
+import AdminKtpCaptureModal from "@/components/admin/AdminKtpCaptureModal";
 
 export default function CustomerDetailClient({
   customer,
@@ -31,7 +38,11 @@ export default function CustomerDetailClient({
   // KTP review state
   const [ktpNotes, setKtpNotes] = useState("");
   const [ktpBusy, setKtpBusy] = useState(false);
-  const [ktpFlash, setKtpFlash] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [ktpFlash, setKtpFlash] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const [ktpCaptureOpen, setKtpCaptureOpen] = useState(false);
 
   // Profile Form State
   const [profile, setProfile] = useState({
@@ -253,7 +264,10 @@ export default function CustomerDetailClient({
               title={`Open WhatsApp chat with ${customer.first_name} ${customer.last_name || ""}`.trim()}
               className="font-medium border border-line bg-card text-ink rounded-lg px-3.5 py-2 text-sm hover:border-[#25D366] hover:bg-[#F4FBF5] transition cursor-pointer inline-flex items-center gap-1.5"
             >
-              <MessageCircle className="w-4 h-4 text-[#25D366]" strokeWidth={1.8} />
+              <MessageCircle
+                className="w-4 h-4 text-[#25D366]"
+                strokeWidth={1.8}
+              />
               WhatsApp
             </a>
           ) : (
@@ -523,9 +537,20 @@ export default function CustomerDetailClient({
         <div className="space-y-4">
           {/* KTP Verification Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-3">
-              KTP Verification
-            </h3>
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <h3 className="font-serif text-[18px] font-normal">
+                KTP Verification
+              </h3>
+              <button
+                type="button"
+                onClick={() => setKtpCaptureOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-wine-ink border border-wine/30 bg-wine-soft px-3 py-1.5 rounded-lg hover:bg-wine hover:text-white transition cursor-pointer"
+                title="Capture or upload the customer's KTP on their behalf"
+              >
+                <Camera className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Upload / Capture
+              </button>
+            </div>
 
             {/* Photo preview */}
             <div className="mb-4">
@@ -549,13 +574,16 @@ export default function CustomerDetailClient({
                     <span className="text-[11px] text-muted">
                       Uploaded{" "}
                       {latestKtp?.created_at
-                        ? new Date(latestKtp.created_at).toLocaleString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
+                        ? new Date(latestKtp.created_at).toLocaleString(
+                            "en-GB",
+                            {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )
                         : "—"}
                     </span>
                     <a
@@ -574,6 +602,14 @@ export default function CustomerDetailClient({
                   <p className="text-xs text-muted">
                     No KTP photo uploaded yet.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setKtpCaptureOpen(true)}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-wine-ink hover:underline cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" strokeWidth={1.8} />
+                    Capture or upload now
+                  </button>
                 </div>
               )}
             </div>
@@ -870,6 +906,15 @@ export default function CustomerDetailClient({
           </div>
         </div>
       )}
+
+      {/* MODAL: Admin KTP Capture / Upload */}
+      <AdminKtpCaptureModal
+        isOpen={ktpCaptureOpen}
+        onClose={() => setKtpCaptureOpen(false)}
+        customerId={customer.id}
+        customerName={`${customer.first_name} ${customer.last_name || ""}`.trim()}
+        onUploaded={() => router.refresh()}
+      />
     </div>
   );
 }

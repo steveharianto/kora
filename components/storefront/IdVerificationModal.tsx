@@ -1,20 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Upload, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { X, Upload, Loader2, Camera } from "lucide-react";
 import { uploadCustomerKtp } from "@/app/actions/customerProfile";
+import { uploadKtpFile, removeKtpFile } from "@/lib/ktpUpload";
+import KtpCamera from "./KtpCamera";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onProceed: () => void;
 }
-
-const MAX_SIZE_MB = 5;
-const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const BUCKET = "ktp-photos";
-const SIGNED_URL_TTL_S = 60 * 60 * 24 * 365; // 1 year — Supabase max
 
 type ViewState = "idle" | "uploading" | "uploaded";
 
@@ -25,83 +21,58 @@ export default function IdVerificationModal({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<ViewState>("idle");
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [uploadedPath, setUploadedPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  /* Reset the modal every time it opens */
   useEffect(() => {
     if (!isOpen) return;
     setState("idle");
-    setUploadedUrl(null);
-    setError("");
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setState("idle");
+    setCameraOpen(false);
     setUploadedUrl(null);
     setUploadedPath(null);
     setError("");
+    setSaving(false);
   }, [isOpen]);
 
-  const handleFile = async (file: File) => {
+  /**
+   * Upload a blob (from either the file picker or the in-app camera)
+   * to Supabase Storage, then surface it in the preview pane.
+   */
+  const uploadBlob = async (blob: Blob, filename: string) => {
+    setState("uploading");
     setError("");
 
-    if (!ACCEPTED.includes(file.type)) {
-      setError("Please upload a JPG, PNG, or WebP image.");
-      return;
-    }
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`File is too large. Maximum size is ${MAX_SIZE_MB}MB.`);
-      return;
-    }
-
-    setState("uploading");
-
-    try {
-      const supabase = createClient();
-      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const path = `ktp/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { upsert: false, contentType: file.type });
-
-      if (upErr) throw new Error(upErr.message);
-
-      const { data: signed, error: signErr } = await supabase.storage
-        .from(BUCKET)
-        .createSignedUrl(path, SIGNED_URL_TTL_S);
-
-      if (signErr || !signed?.signedUrl) {
-        throw new Error(
-          signErr?.message || "Could not sign the uploaded file.",
-        );
-      }
-
-      setUploadedPath(path);
-      setUploadedUrl(signed.signedUrl);
-      setState("uploaded");
-    } catch (e: any) {
-      setError(e.message || "Upload failed. Please try again.");
+    const res = await uploadKtpFile(blob, filename);
+    if ("error" in res) {
+      setError(res.error);
       setState("idle");
+      return;
     }
+
+    setUploadedPath(res.photoPath);
+    setUploadedUrl(res.photoUrl);
+    setState("uploaded");
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    if (file) uploadBlob(file, file.name);
     e.target.value = "";
   };
+
+  const handleCameraCapture = async (blob: Blob, filename: string) => {
+    setCameraOpen(false);
+    await uploadBlob(blob, filename);
+  };
+
   const handleReplace = async () => {
     // Best-effort cleanup of the abandoned upload.
     if (uploadedPath) {
-      const supabase = createClient();
-      await supabase.storage
-        .from(BUCKET)
-        .remove([uploadedPath])
-        .catch(() => {});
+      await removeKtpFile(uploadedPath);
     }
     setUploadedUrl(null);
     setUploadedPath(null);
@@ -206,9 +177,9 @@ export default function IdVerificationModal({
             ) : (
               <>
                 <p className="text-center text-[13px] text-store-fg-muted max-w-[520px] mx-auto leading-relaxed mb-12">
-                  You haven&apos;t uploaded your ID yet. Please upload it below
-                  to proceed with checkout. Make sure your ID follows the
-                  guidelines below.
+                  You haven&apos;t uploaded your ID yet. Take a photo or upload
+                  a file below to proceed with checkout. Make sure your ID
+                  follows the guidelines below.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-16 max-w-[660px] mx-auto mb-14">
@@ -228,46 +199,69 @@ export default function IdVerificationModal({
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  disabled={state === "uploading"}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full max-w-[640px] mx-auto block border border-dashed border-store-fg/30 hover:border-store-accent bg-transparent py-12 px-6 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                >
-                  <div className="flex items-center justify-center gap-3 text-store-fg-muted">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-[640px] mx-auto">
+                  <button
+                    type="button"
+                    disabled={state === "uploading"}
+                    onClick={() => setCameraOpen(true)}
+                    className="flex flex-col items-center gap-3 border border-dashed border-store-fg/30 hover:border-store-accent bg-transparent py-8 px-6 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    <Camera
+                      className="w-6 h-6 text-store-accent"
+                      strokeWidth={1.5}
+                    />
+                    <span className="text-[12.5px] tracking-[0.14em] uppercase text-store-fg">
+                      Take Photo
+                    </span>
+                    <span className="text-[11px] text-store-fg-muted text-center leading-snug">
+                      Open the camera and photograph your KTP
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={state === "uploading"}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center gap-3 border border-dashed border-store-fg/30 hover:border-store-accent bg-transparent py-8 px-6 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                  >
                     {state === "uploading" ? (
-                      <>
-                        <Loader2
-                          className="w-5 h-5 animate-spin"
-                          strokeWidth={1.5}
-                        />
-                        <span className="text-[13px] tracking-wide">
-                          Uploading…
-                        </span>
-                      </>
+                      <Loader2
+                        className="w-6 h-6 text-store-accent animate-spin"
+                        strokeWidth={1.5}
+                      />
                     ) : (
-                      <>
-                        <Upload className="w-5 h-5" strokeWidth={1.5} />
-                        <span className="text-[13px] tracking-wide">
-                          Upload your ID (KTP) Here
-                        </span>
-                      </>
+                      <Upload
+                        className="w-6 h-6 text-store-accent"
+                        strokeWidth={1.5}
+                      />
                     )}
-                  </div>
-                </button>
+                    <span className="text-[12.5px] tracking-[0.14em] uppercase text-store-fg">
+                      Upload File
+                    </span>
+                    <span className="text-[11px] text-store-fg-muted text-center leading-snug">
+                      Pick a photo from your device
+                    </span>
+                  </button>
+                </div>
               </>
             )}
 
             <input
               ref={fileInputRef}
               type="file"
-              accept={ACCEPTED.join(",")}
+              accept="image/jpeg,image/png,image/webp"
               onChange={handleFileInput}
               className="hidden"
             />
           </div>
         </div>
       </div>
+
+      <KtpCamera
+        isOpen={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={handleCameraCapture}
+      />
     </>
   );
 }
