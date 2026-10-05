@@ -1,40 +1,40 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   updateFittingStatus,
   recordAfterHoursFeePayment,
   convertFittingToOrder,
   markFittingRefunded,
   verifyFittingPaymentAdmin,
-} from '@/app/actions/fittings';
-import { formatRupiah } from '@/lib/utils';
+} from "@/app/actions/fittings";
+import { formatRupiah } from "@/lib/utils";
 import {
   AlertTriangle,
   BadgeDollarSign,
   RefreshCw,
   Loader2,
   ShoppingBag,
-} from 'lucide-react';
-import NotificationPicker from '@/components/admin/NotificationPicker';
-import EntityChat from '@/components/admin/EntityChat';
+} from "lucide-react";
+import NotificationPicker from "@/components/admin/NotificationPicker";
+import EntityChat from "@/components/admin/EntityChat";
 
 function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—';
-  const [year, month, day] = dateStr.split('T')[0].split('-');
-  if (!year || !month || !day) return '—';
+  if (!dateStr) return "—";
+  const [year, month, day] = dateStr.split("T")[0].split("-");
+  if (!year || !month || !day) return "—";
   return `${day}/${month}/${year}`;
 }
 
 const COURIER_OPTIONS = [
-  'Self pickup',
-  'JNE - REG',
-  'JNE - YES',
-  'SiCepat - REG',
-  'Gosend - Instant',
-  'Paxel - Medium',
+  "Self pickup",
+  "JNE - REG",
+  "JNE - YES",
+  "SiCepat - REG",
+  "Gosend - Instant",
+  "Paxel - Medium",
 ];
 
 export default function FittingDetailForm({
@@ -48,24 +48,25 @@ export default function FittingDetailForm({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState("");
   const [feeMethod, setFeeMethod] = useState(
-    initialFitting.fee_payment_method || 'Cash',
+    initialFitting.fee_payment_method || "QRIS (EDC)",
   );
-  const [convertMethod, setConvertMethod] = useState('Self pickup');
+  const [convertMethod, setConvertMethod] = useState("Self pickup");
 
   // Payment verification state
   const [verifying, setVerifying] = useState(false);
   const [verifyFlash, setVerifyFlash] = useState<{
-    type: 'ok' | 'err';
+    type: "ok" | "err";
     text: string;
   } | null>(null);
 
   const customerName =
-    `${initialFitting.customers?.first_name || ''} ${initialFitting.customers?.last_name || ''}`.trim() ||
-    'Customer';
-  const customerCity = initialFitting.customers?.addresses?.[0]?.city || 'Surabaya';
-  const customerPhone = initialFitting.customers?.phone || '';
+    `${initialFitting.customers?.first_name || ""} ${initialFitting.customers?.last_name || ""}`.trim() ||
+    "Customer";
+  const customerCity =
+    initialFitting.customers?.addresses?.[0]?.city || "Surabaya";
+  const customerPhone = initialFitting.customers?.phone || "";
 
   const fittingItems: any[] = initialFitting.fitting_items || [];
   const dress1 = fittingItems.find((fi) => fi.slot_number === 1);
@@ -95,15 +96,15 @@ export default function FittingDetailForm({
     setVerifying(false);
 
     if (res?.error) {
-      setVerifyFlash({ type: 'err', text: res.error });
+      setVerifyFlash({ type: "err", text: res.error });
       return;
     }
 
     setVerifyFlash({
-      type: 'ok',
+      type: "ok",
       text: res?.alreadyPaid
-        ? 'Already marked as Paid.'
-        : 'Xendit confirmed the payment — status updated to Paid.',
+        ? "Already marked as Paid."
+        : "Xendit confirmed the payment — status updated to Paid.",
     });
     router.refresh();
   };
@@ -145,50 +146,50 @@ export default function FittingDetailForm({
             {initialFitting.id}
           </h1>
           <p className="text-xs text-muted mt-0.5">
-            {customerName} · {formatDate(initialFitting.date)}{' '}
-            {initialFitting.slot ? String(initialFitting.slot).slice(0, 5) : ''}
+            {customerName} · {formatDate(initialFitting.date)}{" "}
+            {initialFitting.slot ? String(initialFitting.slot).slice(0, 5) : ""}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           <span
             className={`text-[10px] font-bold tracking-wider uppercase px-2.5 py-1 rounded border mr-1 ${
-              initialFitting.status === 'Confirmed'
-                ? 'bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]'
-                : initialFitting.status === 'Pending'
-                  ? 'bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]'
-                  : initialFitting.status === 'Conflict Evicted'
-                    ? 'bg-[#F8EED9] text-[#A65B20] border-[#E8DFC2]'
-                    : 'bg-[#EFEBE2] text-muted border-transparent'
+              initialFitting.status === "Confirmed"
+                ? "bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]"
+                : initialFitting.status === "Pending"
+                  ? "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]"
+                  : initialFitting.status === "Conflict Evicted"
+                    ? "bg-[#F8EED9] text-[#A65B20] border-[#E8DFC2]"
+                    : "bg-[#EFEBE2] text-muted border-transparent"
             }`}
           >
             {initialFitting.status}
           </span>
 
-          {initialFitting.status === 'Pending' && (
+          {initialFitting.status === "Pending" && (
             <button
               type="button"
-              onClick={() => handleStatusChange('Confirmed')}
+              onClick={() => handleStatusChange("Confirmed")}
               disabled={loading}
               className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
               Confirm
             </button>
           )}
-          {initialFitting.status !== 'Completed' && (
+          {initialFitting.status !== "Completed" && (
             <button
               type="button"
-              onClick={() => handleStatusChange('Completed')}
+              onClick={() => handleStatusChange("Completed")}
               disabled={loading}
               className="px-3.5 py-1.5 border border-line bg-card rounded-lg text-xs font-medium hover:bg-[#F6F4EF] cursor-pointer"
             >
               Mark done
             </button>
           )}
-          {initialFitting.status !== 'Cancelled' && (
+          {initialFitting.status !== "Cancelled" && (
             <button
               type="button"
-              onClick={() => handleStatusChange('Cancelled')}
+              onClick={() => handleStatusChange("Cancelled")}
               disabled={loading}
               className="px-3.5 py-1.5 border border-line text-bad rounded-lg text-xs font-medium hover:bg-bad-bg cursor-pointer"
             >
@@ -222,7 +223,7 @@ export default function FittingDetailForm({
             <button
               type="button"
               onClick={handleConvertToOrder}
-              disabled={converting || initialFitting.status === 'Cancelled'}
+              disabled={converting || initialFitting.status === "Cancelled"}
               title="Create a new manual order draft from this fitting"
               className="px-3.5 py-1.5 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
             >
@@ -248,11 +249,11 @@ export default function FittingDetailForm({
         </div>
       )}
 
-      {initialFitting.status === 'Conflict Evicted' && (
+      {initialFitting.status === "Conflict Evicted" && (
         <div className="mb-4 p-4 rounded-xl border border-[#E8DFC2] bg-[#FBF8EF] text-xs text-[#84661E] flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span>
-            <strong>Session Cancelled by Inventory Eviction:</strong>{' '}
+            <strong>Session Cancelled by Inventory Eviction:</strong>{" "}
             {initialFitting.conflict_notes}
           </span>
         </div>
@@ -329,7 +330,7 @@ export default function FittingDetailForm({
                 value={
                   initialFitting.slot
                     ? String(initialFitting.slot).slice(0, 5)
-                    : '—'
+                    : "—"
                 }
                 className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-ink font-bold"
               />
@@ -354,7 +355,7 @@ export default function FittingDetailForm({
                   </label>
                   {d?.is_evicted && (
                     <span className="text-[9px] font-bold tracking-wider uppercase bg-bad-bg text-bad px-1.5 py-0.5 rounded border border-[#D9A79C]">
-                      Evicted by {d.evicted_by_order_id || 'Order'}
+                      Evicted by {d.evicted_by_order_id || "Order"}
                     </span>
                   )}
                 </div>
@@ -362,13 +363,13 @@ export default function FittingDetailForm({
                   disabled
                   value={
                     d
-                      ? `${d.item_sku} — ${d.items?.name || 'Garment'} (${d.items?.size || 'S'})`
-                      : '—'
+                      ? `${d.item_sku} — ${d.items?.name || "Garment"} (${d.items?.size || "S"})`
+                      : "—"
                   }
                   className={`w-full text-[13px] border border-line rounded-lg px-3 py-2 ${
                     d?.is_evicted
-                      ? 'bg-bad-bg/40 text-bad font-medium line-through'
-                      : 'bg-[#F6F4EF] text-ink'
+                      ? "bg-bad-bg/40 text-bad font-medium line-through"
+                      : "bg-[#F6F4EF] text-ink"
                   }`}
                 />
               </div>
@@ -393,7 +394,7 @@ export default function FittingDetailForm({
                   value={
                     initialFitting.is_after_hours
                       ? formatRupiah(Number(initialFitting.after_hours_fee))
-                      : '— (regular hours)'
+                      : "— (regular hours)"
                   }
                   className="w-full text-xs border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-muted"
                 />
@@ -404,13 +405,13 @@ export default function FittingDetailForm({
                 </label>
                 <input
                   disabled
-                  value={initialFitting.fee_payment_status || 'n/a'}
+                  value={initialFitting.fee_payment_status || "n/a"}
                   className={`w-full text-xs border border-line rounded-lg px-3 py-2 ${
-                    initialFitting.fee_payment_status === 'Paid'
-                      ? 'bg-[#EAF3E7] text-[#2E7D47] font-bold'
-                      : initialFitting.fee_payment_status === 'Unpaid'
-                        ? 'bg-[#FDF3DE] text-[#977028] font-bold'
-                        : 'bg-[#F6F4EF] text-muted'
+                    initialFitting.fee_payment_status === "Paid"
+                      ? "bg-[#EAF3E7] text-[#2E7D47] font-bold"
+                      : initialFitting.fee_payment_status === "Unpaid"
+                        ? "bg-[#FDF3DE] text-[#977028] font-bold"
+                        : "bg-[#F6F4EF] text-muted"
                   }`}
                 />
               </div>
@@ -418,7 +419,7 @@ export default function FittingDetailForm({
 
             {/* Payment verification strip — shown whenever fee is Unpaid */}
             {initialFitting.is_after_hours &&
-              initialFitting.fee_payment_status === 'Unpaid' && (
+              initialFitting.fee_payment_status === "Unpaid" && (
                 <div className="mb-3 p-3 bg-[#FDFCFA] border border-line rounded-lg space-y-2">
                   <p className="text-[11px] text-muted leading-relaxed">
                     If the customer paid via Xendit but this shows Unpaid, the
@@ -435,14 +436,16 @@ export default function FittingDetailForm({
                     ) : (
                       <RefreshCw className="w-3 h-3" />
                     )}
-                    {verifying ? 'Checking Xendit…' : 'Verify payment with Xendit'}
+                    {verifying
+                      ? "Checking Xendit…"
+                      : "Verify payment with Xendit"}
                   </button>
                   {verifyFlash && (
                     <div
                       className={`text-[11px] font-medium rounded-md px-2 py-1 ${
-                        verifyFlash.type === 'ok'
-                          ? 'bg-ok-bg text-ok'
-                          : 'bg-bad-bg text-bad'
+                        verifyFlash.type === "ok"
+                          ? "bg-ok-bg text-ok"
+                          : "bg-bad-bg text-bad"
                       }`}
                     >
                       {verifyFlash.text}
@@ -452,7 +455,7 @@ export default function FittingDetailForm({
               )}
 
             {initialFitting.is_after_hours &&
-              initialFitting.fee_payment_status !== 'Paid' && (
+              initialFitting.fee_payment_status !== "Paid" && (
                 <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
                   <div className="flex-1">
                     <label className="block text-[10px] tracking-[0.14em] uppercase text-muted mb-1">
@@ -463,7 +466,6 @@ export default function FittingDetailForm({
                       onChange={(e) => setFeeMethod(e.target.value)}
                       className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA]"
                     >
-                      <option value="Cash">Cash</option>
                       <option value="QRIS (EDC)">QRIS (EDC)</option>
                       <option value="Bank Transfer - BCA">
                         Bank Transfer - BCA
@@ -499,7 +501,7 @@ export default function FittingDetailForm({
             currentAdmin={currentAdmin}
             admins={admins}
             logs={auditLogs.filter((l: any) =>
-              l.action_type?.endsWith('_CHAT'),
+              l.action_type?.endsWith("_CHAT"),
             )}
           />
         </div>
@@ -507,7 +509,7 @@ export default function FittingDetailForm({
           <h3 className="font-serif text-[18px] font-normal mb-3">
             Activity log
           </h3>
-          {auditLogs.filter((l: any) => !l.action_type?.endsWith('_CHAT'))
+          {auditLogs.filter((l: any) => !l.action_type?.endsWith("_CHAT"))
             .length === 0 ? (
             <p className="text-xs text-muted">
               No activity logged for this session yet.
@@ -515,14 +517,14 @@ export default function FittingDetailForm({
           ) : (
             <ul className="space-y-2.5 text-xs">
               {auditLogs
-                .filter((l: any) => !l.action_type?.endsWith('_CHAT'))
+                .filter((l: any) => !l.action_type?.endsWith("_CHAT"))
                 .map((log: any) => (
                   <li
                     key={log.id}
                     className="border-b border-line pb-1.5 last:border-none"
                   >
-                    <span className="font-semibold">{log.admin_name}</span>:{' '}
-                    {log.action_type}{' '}
+                    <span className="font-semibold">{log.admin_name}</span>:{" "}
+                    {log.action_type}{" "}
                     {log.new_value && (
                       <span className="text-wine-ink font-medium">
                         ({log.new_value})
@@ -543,21 +545,21 @@ export default function FittingDetailForm({
 
 function RefundBanner({ fitting }: { fitting: any }) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  if (fitting.refund_status !== 'Pending') return null;
+  if (fitting.refund_status !== "Pending") return null;
 
   const amount = Number(fitting.refund_amount) || 0;
 
   const handleMark = async () => {
     if (
       !confirm(
-        `Mark Rp ${amount.toLocaleString('id-ID')} as refunded? Confirm you've already processed this in Xendit.`,
+        `Mark Rp ${amount.toLocaleString("id-ID")} as refunded? Confirm you've already processed this in Xendit.`,
       )
     )
       return;
     setLoading(true);
-    setError('');
+    setError("");
     const res = await markFittingRefunded(fitting.id, amount);
     setLoading(false);
     if (res.error) setError(res.error);
@@ -573,13 +575,13 @@ function RefundBanner({ fitting }: { fitting: any }) {
         />
         <div className="flex-1">
           <p className="font-semibold text-[13px]">
-            Refund owed to customer: Rp {amount.toLocaleString('id-ID')}
+            Refund owed to customer: Rp {amount.toLocaleString("id-ID")}
           </p>
           <p className="text-[12px] mt-1 leading-relaxed">
-            This fitting was paid and has been{' '}
-            {fitting.status === 'Conflict Evicted'
-              ? 'evicted by a paid rental'
-              : 'cancelled'}
+            This fitting was paid and has been{" "}
+            {fitting.status === "Conflict Evicted"
+              ? "evicted by a paid rental"
+              : "cancelled"}
             . Process the refund manually in the Xendit dashboard, then mark it
             here.
           </p>
@@ -591,7 +593,7 @@ function RefundBanner({ fitting }: { fitting: any }) {
           disabled={loading}
           className="flex-shrink-0 px-4 py-2 bg-amber-700 text-white text-[11px] font-semibold rounded-lg hover:bg-amber-800 transition cursor-pointer disabled:opacity-50"
         >
-          {loading ? 'Saving…' : 'Mark Refunded'}
+          {loading ? "Saving…" : "Mark Refunded"}
         </button>
       </div>
     </div>

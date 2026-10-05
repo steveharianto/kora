@@ -1540,7 +1540,6 @@ export default function OrderForm({
                   <option value="Bank Transfer - BCA">
                     Bank Transfer - BCA
                   </option>
-                  <option value="Cash">Cash</option>
                   <option value="Credit Card">Credit Card</option>
                 </select>
               </div>
