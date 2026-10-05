@@ -5,12 +5,17 @@ const GOOGLE_MAPS_URL = "https://maps.app.goo.gl/YKkwsJQkRBMXixe26";
 
 export default function StorefrontFooter() {
   return (
-    <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-16 pb-8 px-6 sm:px-12 border-t border-[#54644C]">
+    <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-20 pb-10 px-6 sm:px-12 border-t border-[#54644C]">
       <div className="max-w-[1512px] mx-auto">
-        {/* Main columns */}
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-x-8 gap-y-10 pb-12">
+        {/* Main columns
+            ─────────────────────────────────────────────────────────
+            Column layout matches the Figma:
+              [ Logo ] [ Location + Working Hours ] [ Navigation ] [ Social ] [ Legal ]
+            Location and Working Hours live in the SAME column, stacked.
+        */}
+        <div className="grid grid-cols-2 md:grid-cols-12 gap-x-10 gap-y-14 pb-16">
           {/* Logo */}
-          <div className="col-span-2 md:col-span-3">
+          <div className="col-span-2 md:col-span-4">
             <Link
               href="/"
               aria-label="KORA — Home"
@@ -19,49 +24,51 @@ export default function StorefrontFooter() {
               <Image
                 src="/images/logo2.png"
                 alt="KORA"
-                width={160}
-                height={48}
-                className="h-7 sm:h-8 w-auto"
+                width={220}
+                height={66}
+                className="h-12 sm:h-14 w-auto"
+                priority={false}
               />
             </Link>
           </div>
 
-          {/* Location — hyperlinked to Google Maps */}
-          <div className="col-span-1 md:col-span-2">
-            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
-              Location
-            </h4>
-            <a
-              href={GOOGLE_MAPS_URL}
-              target="_blank"
-              rel="noreferrer"
-              title="Open KORA showroom in Google Maps"
-              className="block text-[11.5px] text-[#ECEBE4]/75 leading-relaxed hover:text-white hover:underline underline-offset-4 transition-colors"
-            >
-              Jl. Darmawangsa VI No. 42 Pulo,
-              <br />
-              Kebayoran Baru, South Jakarta 12160
-            </a>
-          </div>
+          {/* Location + Working Hours — stacked in one column */}
+          <div className="col-span-2 md:col-span-3 space-y-10">
+            <div>
+              <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
+                Location
+              </h4>
+              <a
+                href={GOOGLE_MAPS_URL}
+                target="_blank"
+                rel="noreferrer"
+                title="Open KORA showroom in Google Maps"
+                className="block text-[12px] text-[#ECEBE4]/80 leading-[1.7] hover:text-white hover:underline underline-offset-4 transition-colors"
+              >
+                Jl. Darmawangsa VI No. 42 Pulo,
+                <br />
+                Kebayoran Baru, South Jakarta 12160
+              </a>
+            </div>
 
-          {/* Working Hours */}
-          <div className="col-span-1 md:col-span-2">
-            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
-              Working Hours
-            </h4>
-            <p className="text-[11.5px] text-[#ECEBE4]/75 leading-relaxed">
-              Monday–Friday: 10 AM – 5 PM
-              <br />
-              Saturday: 10 AM – 1 PM
-            </p>
+            <div>
+              <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
+                Working Hours
+              </h4>
+              <p className="text-[12px] text-[#ECEBE4]/80 leading-[1.7]">
+                Monday–Friday: 10 AM – 5 PM
+                <br />
+                Saturday: 10 AM – 1 PM
+              </p>
+            </div>
           </div>
 
           {/* Navigation */}
           <div className="col-span-1 md:col-span-2">
-            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
+            <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
               Navigation
             </h4>
-            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
+            <ul className="space-y-3 text-[11px] tracking-[0.12em] uppercase text-[#ECEBE4]/80">
               <li>
                 <Link
                   href="/shop?filter=new"
@@ -107,10 +114,10 @@ export default function StorefrontFooter() {
 
           {/* Social */}
           <div className="col-span-1 md:col-span-2">
-            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
+            <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
               Social
             </h4>
-            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
+            <ul className="space-y-3 text-[11px] tracking-[0.12em] uppercase text-[#ECEBE4]/80">
               <li>
                 <a
                   href="https://instagram.com"
@@ -154,10 +161,10 @@ export default function StorefrontFooter() {
 
           {/* Legal */}
           <div className="col-span-2 md:col-span-1">
-            <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
+            <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
               Legal
             </h4>
-            <ul className="space-y-2 text-[11px] tracking-[0.08em] uppercase text-[#ECEBE4]/75">
+            <ul className="space-y-3 text-[11px] tracking-[0.12em] uppercase text-[#ECEBE4]/80">
               <li>
                 <Link
                   href="/terms"
@@ -170,10 +177,9 @@ export default function StorefrontFooter() {
           </div>
         </div>
 
-        {/* Bottom bar */}
-        <div className="pt-6 border-t border-[#76886D] flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#ECEBE4]/70">
+        {/* Bottom bar — copyright only */}
+        <div className="pt-8 border-t border-[#76886D] text-[11px] text-[#ECEBE4]/70">
           <p>Copyright © 2026 KORA</p>
-          <p className="tracking-wider">Website by KLETOS</p>
         </div>
       </div>
     </footer>
