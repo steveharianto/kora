@@ -3,32 +3,28 @@
 import { useState, useEffect } from "react";
 import { X, ChevronDown, Info } from "lucide-react";
 import SizeGuideModal from "@/components/storefront/SizeGuideModal";
+import { STYLE_TAGS } from "@/lib/styleTags";
 
 export interface FilterState {
   brands: string[];
   sizes: string[];
   colors: string[];
-  occasions: string[];
+  styles: string[];
 }
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  facets: { brands: string[]; sizeBuckets: string[]; colors: string[] };
+  facets: {
+    brands: string[];
+    sizeBuckets: string[];
+    colors: string[];
+    styles: string[];
+  };
   value: FilterState;
   onApply: (next: FilterState) => void;
   onClearAll: () => void;
 }
-
-const OCCASIONS = [
-  "Birthday Party",
-  "Baby Shower",
-  "New Year's Eve",
-  "Anniversary Event",
-  "Wedding Celebration",
-  "Graduation Bash",
-  "Halloween Gathering",
-];
 
 const COLOR_SWATCHES: Record<string, string> = {
   red: "#EF4444",
@@ -76,7 +72,7 @@ export default function FilterDrawer({
     brand: true,
     size: true,
     color: true,
-    occasion: true,
+    style: true,
     rental: true,
     fitting: true,
   });
@@ -172,7 +168,10 @@ export default function FilterDrawer({
           >
             <div className="grid grid-cols-2 gap-x-6 gap-y-3">
               {facets.colors.map((c) => (
-                <label key={c} className="flex items-center gap-3 cursor-pointer group">
+                <label
+                  key={c}
+                  className="flex items-center gap-3 cursor-pointer group"
+                >
                   <input
                     type="checkbox"
                     checked={draft.colors.includes(c)}
@@ -196,18 +195,19 @@ export default function FilterDrawer({
             </div>
           </Section>
 
+          {/* Style — canonical 4 tags (Mini / Midi / Maxi / Hijab Friendly) */}
           <Section
-            title={`Occasion (${OCCASIONS.length})`}
-            open={openSections.occasion}
-            onToggle={() => toggleSection("occasion")}
+            title={`Style (${STYLE_TAGS.length})`}
+            open={openSections.style}
+            onToggle={() => toggleSection("style")}
           >
             <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              {OCCASIONS.map((o) => (
+              {STYLE_TAGS.map((s) => (
                 <Checkbox
-                  key={o}
-                  label={o}
-                  checked={draft.occasions.includes(o)}
-                  onChange={() => toggleArray("occasions", o)}
+                  key={s}
+                  label={s}
+                  checked={draft.styles.includes(s)}
+                  onChange={() => toggleArray("styles", s)}
                 />
               ))}
             </div>
@@ -250,7 +250,7 @@ export default function FilterDrawer({
             type="button"
             onClick={() => {
               onClearAll();
-              setDraft({ brands: [], sizes: [], colors: [], occasions: [] });
+              setDraft({ brands: [], sizes: [], colors: [], styles: [] });
             }}
             className="flex-1 py-3.5 border border-store-fg text-[11px] tracking-[0.2em] uppercase font-medium text-store-fg hover:bg-store-hover/40 transition-colors cursor-pointer"
           >
@@ -325,7 +325,12 @@ function Checkbox({
 }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer group">
-      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="sr-only"
+      />
       <span
         className={`w-4 h-4 border transition-colors flex-shrink-0 ${
           checked

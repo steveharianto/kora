@@ -24,7 +24,12 @@ interface Item {
 
 interface Props {
   items: Item[];
-  facets: { brands: string[]; sizeBuckets: string[]; colors: string[] };
+  facets: {
+    brands: string[];
+    sizeBuckets: string[];
+    colors: string[];
+    styles: string[];
+  };
   initial: {
     q: string;
     category: string;
@@ -33,6 +38,7 @@ interface Props {
     brand: string;
     size: string;
     color: string;
+    style: string;
   };
 }
 
@@ -58,7 +64,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
     brands: initial.brand ? initial.brand.split(",").filter(Boolean) : [],
     sizes: initial.size ? initial.size.split(",").filter(Boolean) : [],
     colors: initial.color ? initial.color.split(",").filter(Boolean) : [],
-    occasions: [],
+    styles: initial.style ? initial.style.split(",").filter(Boolean) : [],
   });
 
   // Lock body scroll while the drawer is open.
@@ -78,14 +84,17 @@ export default function ShopClient({ items, facets, initial }: Props) {
 
   // Sync URL when the meaningful state changes — makes filters shareable.
   const syncUrl = useCallback(
-    (next: Partial<{
-      sort: string;
-      category: string;
-      filter: string;
-      brand: string;
-      size: string;
-      color: string;
-    }>) => {
+    (
+      next: Partial<{
+        sort: string;
+        category: string;
+        filter: string;
+        brand: string;
+        size: string;
+        color: string;
+        style: string;
+      }>,
+    ) => {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
       const cat = next.category ?? category;
@@ -94,12 +103,14 @@ export default function ShopClient({ items, facets, initial }: Props) {
       const br = next.brand ?? filters.brands.join(",");
       const sz = next.size ?? filters.sizes.join(",");
       const cl = next.color ?? filters.colors.join(",");
+      const st = next.style ?? filters.styles.join(",");
       if (cat) params.set("category", cat);
       if (flt) params.set("filter", flt);
       if (srt && srt !== "date-desc") params.set("sort", srt);
       if (br) params.set("brand", br);
       if (sz) params.set("size", sz);
       if (cl) params.set("color", cl);
+      if (st) params.set("style", st);
       const qs = params.toString();
       router.replace(qs ? `/shop?${qs}` : "/shop", { scroll: false });
     },
@@ -139,6 +150,14 @@ export default function ShopClient({ items, facets, initial }: Props) {
       const set = new Set(filters.colors.map((c) => c.toLowerCase()));
       list = list.filter((i) => set.has((i.color || "").toLowerCase()));
     }
+    if (filters.styles.length) {
+      // Match any selected canonical style against the item's tags
+      // (case-insensitive — legacy rows may store "hijab friendly").
+      const set = new Set(filters.styles.map((s) => s.toLowerCase()));
+      list = list.filter((i) =>
+        (i.tags || []).some((t) => set.has(String(t).toLowerCase())),
+      );
+    }
 
     // Sort
     switch (sortBy) {
@@ -156,7 +175,9 @@ export default function ShopClient({ items, facets, initial }: Props) {
         break;
       case "date-desc":
       default:
-        list.sort((a, b) => (b.dateAdded || "").localeCompare(a.dateAdded || ""));
+        list.sort((a, b) =>
+          (b.dateAdded || "").localeCompare(a.dateAdded || ""),
+        );
         break;
     }
 
@@ -168,7 +189,10 @@ export default function ShopClient({ items, facets, initial }: Props) {
 
   const { heading, subtitle } = useMemo(() => {
     if (category === "traditional")
-      return { heading: "Traditional", subtitle: "Kebaya, kaftan, and heritage pieces." };
+      return {
+        heading: "Traditional",
+        subtitle: "Kebaya, kaftan, and heritage pieces.",
+      };
     if (category === "accessories")
       return { heading: "Accessories", subtitle: "The finishing touches." };
     if (presetFilter === "new")
@@ -185,7 +209,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
     filters.brands.length +
     filters.sizes.length +
     filters.colors.length +
-    filters.occasions.length;
+    filters.styles.length;
 
   const applyFilters = (next: FilterState) => {
     setFilters(next);
@@ -194,13 +218,19 @@ export default function ShopClient({ items, facets, initial }: Props) {
       brand: next.brands.join(","),
       size: next.sizes.join(","),
       color: next.colors.join(","),
+      style: next.styles.join(","),
     });
   };
 
   const clearAll = () => {
-    const empty: FilterState = { brands: [], sizes: [], colors: [], occasions: [] };
+    const empty: FilterState = {
+      brands: [],
+      sizes: [],
+      colors: [],
+      styles: [],
+    };
     setFilters(empty);
-    syncUrl({ brand: "", size: "", color: "" });
+    syncUrl({ brand: "", size: "", color: "", style: "" });
   };
 
   return (
@@ -283,7 +313,9 @@ export default function ShopClient({ items, facets, initial }: Props) {
         {/* ── Grid ─────────────────────────────────────────────────── */}
         {visible.length === 0 ? (
           <div className="py-24 text-center">
-            <p className="font-serif text-[20px] text-store-fg mb-2">Nothing here yet</p>
+            <p className="font-serif text-[20px] text-store-fg mb-2">
+              Nothing here yet
+            </p>
             <p className="text-[13px] text-store-fg-muted">
               Try removing a filter or checking back soon.
             </p>

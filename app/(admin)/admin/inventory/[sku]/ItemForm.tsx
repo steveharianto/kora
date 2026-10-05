@@ -16,8 +16,7 @@ import {
 } from "@/app/actions/inventory";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
-
-const SUGGESTED_STYLE_TAGS = ["Hijab Friendly", "Maxi", "Mini", "Midi"];
+import { STYLE_TAGS, normalizeStyleTags } from "@/lib/styleTags";
 
 export default function ItemForm({
   isNew,
@@ -77,7 +76,7 @@ export default function ItemForm({
     status: viewData.status || "Available",
     website_status: viewData.website_status || "Draft",
     description: viewData.description || "",
-    tags: viewData.tags || [],
+    tags: normalizeStyleTags(viewData.tags),
     date_added:
       viewData.date_added ||
       new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
@@ -117,7 +116,7 @@ export default function ItemForm({
       status: merged.status || "Available",
       website_status: merged.website_status || "Draft",
       description: merged.description || "",
-      tags: merged.tags || [],
+      tags: normalizeStyleTags(merged.tags),
       date_added:
         merged.date_added ||
         new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
@@ -141,9 +140,6 @@ export default function ItemForm({
     setNotes(initialData?.notes || "");
     setImages(initialImages || []);
   }, [initialData, initialImages]);
-
-  const tagInputRef = useRef<HTMLInputElement>(null);
-  const [tagInputValue, setTagInputValue] = useState("");
 
   const colorInputRef = useRef<HTMLInputElement>(null);
   const [isColorOpen, setIsColorOpen] = useState(false);
@@ -204,6 +200,7 @@ export default function ItemForm({
 
   const handleChange = (e: any) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
+
   const handleMeasChange = (group: string, field: string, value: string) => {
     setMeas({
       ...meas,
@@ -214,30 +211,19 @@ export default function ItemForm({
     });
   };
 
-  const addTag = (value: string) => {
-    const cleanValue = value.trim().replace(/,+$/, "");
-    if (cleanValue && !formData.tags.includes(cleanValue)) {
-      setFormData({ ...formData, tags: [...formData.tags, cleanValue] });
-    }
-    setTagInputValue("");
-  };
-
-  const removeTag = (index: number) => {
-    const newTags = [...formData.tags];
-    newTags.splice(index, 1);
-    setFormData({ ...formData, tags: newTags });
-    tagInputRef.current?.focus();
-  };
-
-  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      addTag(tagInputValue);
-    } else if (e.key === "Backspace" && tagInputValue === "") {
-      if (formData.tags.length > 0) {
-        removeTag(formData.tags.length - 1);
-      }
-    }
+  /**
+   * Toggle a canonical style tag. Only STYLE_TAGS values can enter
+   * formData.tags — freeform text is no longer accepted.
+   */
+  const toggleStyleTag = (tag: string) => {
+    setFormData((prev) => {
+      const has = prev.tags.includes(tag);
+      const next = has
+        ? prev.tags.filter((t: string) => t !== tag)
+        : // Re-sort through STYLE_TAGS order so the saved array is canonical
+          normalizeStyleTags([...prev.tags, tag]);
+      return { ...prev, tags: next };
+    });
   };
 
   const filteredColors = colorOptions.filter((c: string) =>
@@ -453,88 +439,36 @@ export default function ItemForm({
               </div>
             </div>
 
-            {/* STYLE TAGS (RENAMED WITH HIJAB FRIENDLY, MAXI, MINI CHIPS) */}
+            {/* STYLE TAGS — fixed canonical set, no freeform entry */}
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted font-medium">
                   Style Tags
                 </label>
                 <span className="text-[10px] text-muted">
-                  Click suggestion or type below
+                  Pick any that apply
                 </span>
               </div>
 
-              {/* Suggestions */}
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {SUGGESTED_STYLE_TAGS.map((tag) => {
+              <div className="grid grid-cols-2 gap-2">
+                {STYLE_TAGS.map((tag) => {
                   const isSelected = formData.tags.includes(tag);
                   return (
                     <button
                       key={tag}
                       type="button"
-                      onClick={() => {
-                        if (isSelected) {
-                          setFormData({
-                            ...formData,
-                            tags: formData.tags.filter(
-                              (t: string) => t !== tag,
-                            ),
-                          });
-                        } else {
-                          setFormData({
-                            ...formData,
-                            tags: [...formData.tags, tag],
-                          });
-                        }
-                      }}
-                      className={`text-[11px] px-2 py-0.5 rounded-full border transition cursor-pointer ${
+                      onClick={() => toggleStyleTag(tag)}
+                      aria-pressed={isSelected}
+                      className={`flex items-center justify-center gap-1.5 text-[12px] px-3 py-2 rounded-lg border transition cursor-pointer ${
                         isSelected
                           ? "bg-wine text-white border-wine font-medium"
                           : "bg-[#F6F4EF] text-muted border-line hover:border-ink hover:text-ink"
                       }`}
                     >
-                      {isSelected ? `✓ ${tag}` : `+ ${tag}`}
+                      {isSelected ? "✓" : "+"} {tag}
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Tag Input Box */}
-              <div
-                className="flex flex-wrap items-center gap-1.5 border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] min-h-[38px] cursor-text"
-                onClick={() => tagInputRef.current?.focus()}
-              >
-                {formData.tags.map((tag: string, i: number) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 bg-wine-soft text-wine-ink text-[12px] px-2 py-0.5 rounded-full"
-                  >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeTag(i);
-                      }}
-                      className="text-muted hover:text-bad leading-none cursor-pointer"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <input
-                  ref={tagInputRef}
-                  type="text"
-                  value={tagInputValue}
-                  onChange={(e) => setTagInputValue(e.target.value)}
-                  onKeyDown={handleTagKeyDown}
-                  placeholder={
-                    formData.tags.length === 0
-                      ? "Type custom style tag and press enter..."
-                      : ""
-                  }
-                  className="flex-1 bg-transparent border-none outline-none text-[13px] min-w-[120px] p-0"
-                />
               </div>
             </div>
 

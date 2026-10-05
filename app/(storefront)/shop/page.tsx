@@ -5,6 +5,7 @@ import {
   SIZE_BUCKET_ORDER,
   type SizeBucket,
 } from "@/lib/sizeBucket";
+import { STYLE_TAGS } from "@/lib/styleTags";
 
 export const metadata = {
   title: "Shop | KORA",
@@ -22,6 +23,7 @@ export default async function ShopPage({
     brand?: string;
     size?: string;
     color?: string;
+    style?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -89,22 +91,33 @@ export default async function ShopPage({
   const brandSet = new Set<string>();
   const sizeBucketSet = new Set<SizeBucket>();
   const colorSet = new Set<string>();
+  const styleSet = new Set<string>();
 
   for (const i of availableItems) {
     if (i.brand) brandSet.add(i.brand);
     if (i.sizeBucket) sizeBucketSet.add(i.sizeBucket);
     if (i.color) colorSet.add(i.color);
+
+    // Style facet — only the canonical 4 ever surface, matched
+    // case-insensitively against whatever tags the item carries.
+    for (const t of i.tags || []) {
+      const lower = String(t).toLowerCase();
+      const canonical = STYLE_TAGS.find((s) => s.toLowerCase() === lower);
+      if (canonical) styleSet.add(canonical);
+    }
   }
 
   // Preserve canonical ordering — XS · S · M · L · XL · Free Size
   const sizeBuckets = SIZE_BUCKET_ORDER.filter((b) => sizeBucketSet.has(b));
   const colors = Array.from(colorSet).sort();
   const brands = Array.from(brandSet).sort();
+  // STYLE_TAGS order (Mini · Midi · Maxi · Hijab Friendly)
+  const styles = STYLE_TAGS.filter((s) => styleSet.has(s));
 
   return (
     <ShopClient
       items={availableItems}
-      facets={{ brands, sizeBuckets, colors }}
+      facets={{ brands, sizeBuckets, colors, styles }}
       initial={{
         q: params.q || "",
         category: params.category || "",
@@ -113,6 +126,7 @@ export default async function ShopPage({
         brand: params.brand || "",
         size: params.size || "",
         color: params.color || "",
+        style: params.style || "",
       }}
     />
   );
