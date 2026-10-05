@@ -1,5 +1,7 @@
-import Link from 'next/link';
-import Image from 'next/image';
+import Link from "next/link";
+import Image from "next/image";
+
+const GOOGLE_MAPS_URL = "https://maps.app.goo.gl/YKkwsJQkRBMXixe26";
 
 export default function StorefrontFooter() {
   return (
@@ -24,16 +26,22 @@ export default function StorefrontFooter() {
             </Link>
           </div>
 
-          {/* Location */}
+          {/* Location — hyperlinked to Google Maps */}
           <div className="col-span-1 md:col-span-2">
             <h4 className="font-serif text-[16px] text-[#ECEBE4] font-normal mb-3">
               Location
             </h4>
-            <p className="text-[11.5px] text-[#ECEBE4]/75 leading-relaxed">
+            <a
+              href={GOOGLE_MAPS_URL}
+              target="_blank"
+              rel="noreferrer"
+              title="Open KORA showroom in Google Maps"
+              className="block text-[11.5px] text-[#ECEBE4]/75 leading-relaxed hover:text-white hover:underline underline-offset-4 transition-colors"
+            >
               Jl. Darmawangsa VI No. 42 Pulo,
               <br />
               Kebayoran Baru, South Jakarta 12160
-            </p>
+            </a>
           </div>
 
           {/* Working Hours */}
