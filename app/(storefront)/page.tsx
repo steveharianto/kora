@@ -24,14 +24,9 @@ export default function StorefrontHomePage() {
   ];
 
   return (
-    <div className="w-full flex flex-col">
+    <div className="w-full overflow-x-hidden">
       {/* =================================================================== */}
       {/* SECTION 1: HERO CAROUSEL BANNER                                     */}
-      {/*                                                                     */}
-      {/* Slide images live in public/images/home/:                           */}
-      {/*   hero-1.jpg  →  New Arrivals                                       */}
-      {/*   hero-2.jpg  →  Available This Week                                */}
-      {/*   hero-3.jpg  →  See Our Collection                                 */}
       {/* =================================================================== */}
       <HomeHeroCarousel />
 
@@ -58,7 +53,6 @@ export default function StorefrontHomePage() {
           </Link>
         </div>
 
-        {/* Featured 3-Card Showcase */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {featuredDresses.map((dress, index) => (
             <Link
@@ -85,17 +79,24 @@ export default function StorefrontHomePage() {
 
       {/* =================================================================== */}
       {/* SECTION 3: EDITORIAL SPLIT SHOWCASE                                 */}
+      {/*                                                                     */}
+      {/* Grid uses `1fr minmax(0,360px) 1fr` — the middle column is PINNED  */}
+      {/* to 360px so `aspect-[3/4]` on the image has a definite width to    */}
+      {/* resolve against (a pure `auto` column collapses to 0 when the      */}
+      {/* only child is a background-image div with no intrinsic width).     */}
+      {/* The two `1fr` sides split the residual space equally, which places */}
+      {/* the pinned 360px column at the exact horizontal center of the      */}
+      {/* section — aligning with the "Available This Week" image below.     */}
       {/* =================================================================== */}
       <section className="relative w-full min-h-[580px] sm:min-h-[720px] bg-[#2E362A] text-white overflow-hidden flex items-center">
-        {/* Editorial Background Composition */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-35"
           style={{ backgroundImage: `url('/images/home/editorial-bg.jpg')` }}
         />
 
-        <div className="relative z-10 max-w-[1512px] mx-auto w-full px-6 sm:px-12 py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left Text */}
-          <div className="lg:col-span-4 text-center lg:text-left space-y-2">
+        <div className="relative z-10 max-w-[1512px] mx-auto w-full px-6 sm:px-12 py-16 grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,360px)_1fr] gap-8 items-center">
+          {/* Left Text — hugs the left edge of its 1fr column */}
+          <div className="w-full text-center lg:text-left space-y-2">
             <h2 className="font-serif text-[36px] sm:text-[48px] font-normal tracking-[0.02em] text-[#F3F1EC]">
               New Arrivals
             </h2>
@@ -104,9 +105,9 @@ export default function StorefrontHomePage() {
             </p>
           </div>
 
-          {/* Center Showcase Image */}
-          <div className="lg:col-span-5 flex justify-center">
-            <div className="relative w-full max-w-[360px] aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
+          {/* Center Image — pinned 360px column, sits at true 50% */}
+          <div className="w-full flex justify-center">
+            <div className="relative w-full aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
               <div
                 className="w-full h-full bg-cover bg-center"
                 style={{
@@ -116,8 +117,8 @@ export default function StorefrontHomePage() {
             </div>
           </div>
 
-          {/* Right Action Trigger */}
-          <div className="lg:col-span-3 flex justify-center lg:justify-end">
+          {/* Right Button — hugs the right edge of its 1fr column */}
+          <div className="w-full flex justify-center lg:justify-end">
             <Link
               href="/shop"
               className="bg-[#ECEBE4] text-[#1F261C] px-8 py-3 text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-white transition-colors shadow-lg"
@@ -131,30 +132,32 @@ export default function StorefrontHomePage() {
       {/* =================================================================== */}
       {/* SECTION 4: "AVAILABLE THIS WEEK"                                    */}
       {/* =================================================================== */}
-      <section className="w-full py-24 sm:py-28 px-6 bg-[#F2F0E9] flex flex-col items-center text-center">
-        <div className="max-w-[420px] w-full mb-8">
-          <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
-            <div
-              className="w-full h-full bg-cover bg-center"
-              style={{
-                backgroundImage: `url('/images/home/available-week.jpg')`,
-              }}
-            />
+      <section className="w-full py-24 sm:py-28 px-6 bg-[#F2F0E9]">
+        <div className="mx-auto max-w-[600px] flex flex-col items-center text-center">
+          <div className="w-full max-w-[420px] mx-auto mb-8">
+            <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
+              <div
+                className="w-full h-full bg-cover bg-center"
+                style={{
+                  backgroundImage: `url('/images/home/available-week.jpg')`,
+                }}
+              />
+            </div>
           </div>
-        </div>
 
-        <h2 className="font-serif text-[32px] sm:text-[40px] font-normal tracking-[0.01em] text-[#2D3828] mb-2">
-          Available This Week
-        </h2>
-        <p className="text-xs text-[#6A7563] max-w-sm mb-6">
-          Got an event coming up? These pieces are ready for you.
-        </p>
-        <Link
-          href="/shop?filter=available-now"
-          className="bg-[#64765B] text-white px-9 py-2.5 text-[11px] uppercase tracking-[0.18em] font-medium hover:bg-[#52624B] transition-colors"
-        >
-          Rent Now
-        </Link>
+          <h2 className="font-serif text-[32px] sm:text-[40px] font-normal tracking-[0.01em] text-[#2D3828] mb-2">
+            Available This Week
+          </h2>
+          <p className="text-xs text-[#6A7563] max-w-sm mb-6">
+            Got an event coming up? These pieces are ready for you.
+          </p>
+          <Link
+            href="/shop?filter=available-now"
+            className="bg-[#64765B] text-white px-9 py-2.5 text-[11px] uppercase tracking-[0.18em] font-medium hover:bg-[#52624B] transition-colors"
+          >
+            Rent Now
+          </Link>
+        </div>
       </section>
 
       {/* =================================================================== */}
@@ -170,7 +173,6 @@ export default function StorefrontHomePage() {
           </p>
         </div>
 
-        {/* 4 Connected Circular Steps */}
         <div className="max-w-[1280px] w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative mb-16">
           {/* Step 1 */}
           <div className="flex flex-col items-center text-center group">
@@ -247,7 +249,6 @@ export default function StorefrontHomePage() {
           </div>
         </div>
 
-        {/* CTA Button */}
         <Link
           href="/how-to-rent"
           className="bg-[#64765B] text-white px-8 py-3 text-[11px] uppercase tracking-[0.18em] font-medium hover:bg-[#52624B] transition-colors shadow-sm"
