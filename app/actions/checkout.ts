@@ -14,6 +14,7 @@ import {
 } from "@/lib/orderLifecycle";
 import { emitWa } from "@/lib/notifications";
 import { formatRupiah } from "@/lib/utils";
+import { getPromoDiscountPercent, normalizePromoCode } from "@/lib/promo";
 import { revalidatePath } from "next/cache";
 
 /* ── Courier rate lookup ─────────────────────────────────────────── */
@@ -59,31 +60,19 @@ function labelForCourier(company: string, type: string): string {
   return `${comp} - ${typ}`;
 }
 
-/* ── Courier tier classification ──────────────────────────────────
- *
- * The customer shouldn't have to parse 15 rate rows to find the right
- * speed/price tradeoff. We bucket every (company, type) pair into one
- * of three tiers and — for intercity — show only the cheapest option
- * per tier, so the picker reads as "fast / balanced / cheap".
- *
- * Anything not listed defaults to "regular" so an unrecognised courier
- * still surfaces rather than silently vanishing.
- */
+/* ── Courier tier classification ────────────────────────────────── */
 
 export type CourierTier = "same-day" | "next-day" | "regular";
 
 const COURIER_TIER_MAP: Record<string, CourierTier> = {
-  // Same-day
   "gojek|instant": "same-day",
   "grab|instant": "same-day",
   "paxel|instant": "same-day",
-  // Next-day (overnight / 1-day services)
   "jne|yes": "next-day",
   "sicepat|best": "next-day",
   "gojek|sameday": "next-day",
   "grab|sameday": "next-day",
   "anteraja|sameday": "next-day",
-  // Regular (2–4 day economy)
   "jne|reg": "regular",
   "sicepat|reg": "regular",
   "anteraja|reg": "regular",
@@ -125,10 +114,6 @@ export interface CheckoutRateOption {
 
 export async function getCheckoutShippingRates(input: {
   destinationPostalCode: string;
-  /**
-   * Coordinates of the selected delivery address. Required for instant
-   * couriers like Paxel, Gosend, GrabExpress to be priced by Biteship.
-   */
   destinationLatitude?: number | null;
   destinationLongitude?: number | null;
   itemSkus: string[];
@@ -179,13 +164,11 @@ export async function getCheckoutShippingRates(input: {
     return { error: "No valid items in cart." };
   }
 
-  // Origin coordinate — required by Biteship for instant courier pricing.
   const originLat =
     origin.latitude != null ? Number(origin.latitude) : undefined;
   const originLng =
     origin.longitude != null ? Number(origin.longitude) : undefined;
 
-  // Destination coordinate — from the customer's selected address.
   const destLat =
     input.destinationLatitude != null
       ? Number(input.destinationLatitude)
@@ -210,7 +193,6 @@ export async function getCheckoutShippingRates(input: {
     return { error: res.error || "Could not fetch shipping rates." };
   }
 
-  // ── Build the full option list with tier classification ───────────
   let options: CheckoutRateOption[] = res.rates.map((r) => ({
     label: labelForCourier(r.courier_company, r.courier_type),
     price: r.price,
@@ -220,7 +202,6 @@ export async function getCheckoutShippingRates(input: {
     tier: tierFor(r.courier_company, r.courier_type),
   }));
 
-  // Sort cheapest-first so "cheapest per tier" is just the first hit.
   options.sort((a, b) => a.price - b.price);
 
   const sameCity =
@@ -230,9 +211,6 @@ export async function getCheckoutShippingRates(input: {
   let hint: string | undefined;
 
   if (sameCity) {
-    // ── Same-city (Jakarta → Jakarta) ──────────────────────────────
-    // Paxel only. Intracity JNE REG / SiCepat REG offer no speed
-    // advantage over Paxel and just clutter the picker.
     const paxelOnly = options.filter(
       (o) => o.courierCompany.toLowerCase() === "paxel",
     );
@@ -246,14 +224,9 @@ export async function getCheckoutShippingRates(input: {
       hint =
         "Same-city deliveries are handled by Paxel for reliable same-day service.";
     } else {
-      // Rare: Paxel unavailable for this route (weight/zone). Fall back
-      // to the two cheapest options so the customer isn't stranded.
       options = options.slice(0, 2);
     }
   } else {
-    // ── Intercity ──────────────────────────────────────────────────
-    // Keep only the cheapest option in each tier and present in
-    // fastest → slowest order. Max 3 rows, each a distinct tradeoff.
     const byTier = new Map<CourierTier, CheckoutRateOption>();
     for (const opt of options) {
       if (!byTier.has(opt.tier)) byTier.set(opt.tier, opt);
@@ -307,6 +280,8 @@ export async function createWebsiteOrder(input: {
   courierLabel: string;
   shippingFee: number;
   storeCreditApplied: number;
+  /** Optional hardcoded promo code (e.g. "KORAWEB"). Applied to rental subtotal. */
+  promoCode?: string | null;
 }) {
   const customer = await getCurrentCustomer();
   if (!customer) return { error: "Unauthorized." };
@@ -380,9 +355,16 @@ export async function createWebsiteOrder(input: {
 
   const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
   const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
+
+  // Hardcoded promo — percent off rental subtotal only.
+  // Deposits and shipping are never discounted.
+  const normalizedPromo = normalizePromoCode(input.promoCode);
+  const promoPercent = getPromoDiscountPercent(normalizedPromo);
+  const promoDiscount = Math.round((totalPrice * promoPercent) / 100);
+
   const grandTotal = Math.max(
     0,
-    totalPrice + totalDeposit + shippingFee - credit,
+    totalPrice + totalDeposit + shippingFee - credit - promoDiscount,
   );
 
   const orderId = await getNextWebsiteOrderId();
@@ -437,6 +419,9 @@ export async function createWebsiteOrder(input: {
       customer_id: customer.id,
       recipient: recipientName,
       event_days: input.eventDays,
+      promo_code: normalizedPromo || null,
+      promo_percent: promoPercent,
+      promo_discount: promoDiscount,
       lines: productRows.map((p) => ({
         sku: p.item_sku,
         unit_days: input.items.find((x) => x.sku === p.item_sku)?.eventDays,

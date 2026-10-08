@@ -17,6 +17,7 @@ import {
   createXenditInvoiceForOrder,
 } from "@/app/actions/checkout";
 import type { CustomerSession } from "@/app/actions/customerAuth";
+import { getPromoDiscountPercent, normalizePromoCode } from "@/lib/promo";
 
 interface Address {
   id: number;
@@ -98,6 +99,12 @@ export default function CheckoutClient({
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
 
+  // Hardcoded promo state. `appliedPromo` is the normalised code that has
+  // been validated (non-empty discount). `promoInput` is the raw field value.
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState("");
+  const [promoError, setPromoError] = useState("");
+
   useEffect(() => {
     const c = readRentalCart();
     setCart(c);
@@ -170,9 +177,14 @@ export default function CheckoutClient({
 
   const shippingFee = selectedRate?.price || 0;
   const maxCredit = customer.currentCredit;
+
+  // Promo discount — percent off rental subtotal only.
+  const promoPercent = appliedPromo ? getPromoDiscountPercent(appliedPromo) : 0;
+  const promoDiscount = Math.round((subtotal * promoPercent) / 100);
+
   const grandTotal = Math.max(
     0,
-    subtotal + totalDeposit + shippingFee - storeCreditUsed,
+    subtotal + totalDeposit + shippingFee - storeCreditUsed - promoDiscount,
   );
 
   const fetchRates = useCallback(async () => {
@@ -209,6 +221,28 @@ export default function CheckoutClient({
     fetchRates();
   }, [fetchRates]);
 
+  const handleApplyPromo = () => {
+    setPromoError("");
+    const normalised = normalizePromoCode(promoInput);
+    if (!normalised) {
+      setPromoError("Enter a promo code.");
+      return;
+    }
+    const pct = getPromoDiscountPercent(normalised);
+    if (pct <= 0) {
+      setPromoError("Invalid promo code.");
+      return;
+    }
+    setAppliedPromo(normalised);
+    setPromoInput("");
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo("");
+    setPromoInput("");
+    setPromoError("");
+  };
+
   const handlePay = async () => {
     if (!selectedAddress || !selectedRate) {
       setCheckoutError("Please select an address and courier.");
@@ -222,13 +256,13 @@ export default function CheckoutClient({
     setSubmitting(true);
     setCheckoutError("");
 
-    // Server-side recomputes totals from items.rental_price × eventDays —
-    // see createWebsiteOrder.
+    // Server-side recomputes totals from items.rental_price × eventDays and
+    // re-applies the hardcoded promo discount — see createWebsiteOrder.
     const orderRes = await createWebsiteOrder({
       items: cart.map((c) => ({
         sku: c.sku,
         quantity: 1,
-        price: c.price, // per-day unit price; server multiplies by eventDays
+        price: c.price,
         deposit: c.price > 1000000 ? 250000 : 150000,
         eventDays: c.eventDays,
       })),
@@ -244,6 +278,7 @@ export default function CheckoutClient({
       courierLabel: selectedRate.label,
       shippingFee: selectedRate.price,
       storeCreditApplied: storeCreditUsed,
+      promoCode: appliedPromo || null,
     });
 
     if (orderRes.error || !orderRes.orderId) {
@@ -517,6 +552,63 @@ export default function CheckoutClient({
               )}
             </section>
 
+            {/* Promo Code — hardcoded, applies to rental subtotal only */}
+            <section>
+              <h2 className="font-serif text-[20px] text-store-fg font-normal mb-4">
+                Promo Code
+              </h2>
+
+              {appliedPromo ? (
+                <div className="flex items-center justify-between gap-3 max-w-[420px] p-3.5 border border-store-accent bg-store-hover/30">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-store-fg font-mono tracking-wider">
+                      {appliedPromo}
+                    </p>
+                    <p className="text-[11.5px] text-store-fg-muted mt-0.5">
+                      {promoPercent}% off rental subtotal
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemovePromo}
+                    className="flex-shrink-0 text-[11px] tracking-[0.14em] uppercase underline underline-offset-4 text-store-fg-muted hover:text-store-fg cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2 max-w-[420px]">
+                  <input
+                    type="text"
+                    value={promoInput}
+                    onChange={(e) => {
+                      setPromoInput(e.target.value);
+                      setPromoError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleApplyPromo();
+                      }
+                    }}
+                    placeholder="Enter code"
+                    className="flex-1 min-w-0 text-[13px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal placeholder:font-sans"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyPromo}
+                    className="flex-shrink-0 px-5 py-3 bg-store-accent text-white text-[11px] tracking-[0.18em] uppercase font-medium hover:bg-store-accent-hover transition-colors cursor-pointer"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+
+              {promoError && (
+                <p className="mt-2 text-[11.5px] text-red-600">{promoError}</p>
+              )}
+            </section>
+
             {maxCredit > 0 && (
               <section>
                 <h2 className="font-serif text-[20px] text-store-fg font-normal mb-4">
@@ -599,6 +691,13 @@ export default function CheckoutClient({
                   label="Subtotal"
                   value={`Rp ${subtotal.toLocaleString("id-ID")}`}
                 />
+                {promoDiscount > 0 && (
+                  <Row
+                    label={`Promo (${appliedPromo})`}
+                    value={`− Rp ${promoDiscount.toLocaleString("id-ID")}`}
+                    tone="accent"
+                  />
+                )}
                 <Row
                   label="Refundable Deposit"
                   value={`Rp ${totalDeposit.toLocaleString("id-ID")}`}
@@ -660,11 +759,27 @@ export default function CheckoutClient({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "accent";
+}) {
   return (
     <div className="flex justify-between gap-4">
       <span className="text-store-fg-muted">{label}</span>
-      <span className="text-store-fg font-medium">{value}</span>
+      <span
+        className={
+          tone === "accent"
+            ? "text-store-accent font-semibold"
+            : "text-store-fg font-medium"
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }
