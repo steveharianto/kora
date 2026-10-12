@@ -14,6 +14,7 @@ interface Item {
   sku: string;
   name: string;
   brand: string;
+  type: string;
   size: string;
   sizeBucket: string | null;
   color: string;
@@ -23,6 +24,8 @@ interface Item {
   coverImage: string | null;
   dateAdded: string;
   category: string;
+  /** True when no active booking overlaps the next 7 days. */
+  availableThisWeek: boolean;
 }
 
 interface Props {
@@ -47,6 +50,9 @@ interface Props {
 
 const PAGE_SIZE = 12;
 
+/** New Arrivals window — items added within this many days. */
+const NEW_ARRIVALS_WINDOW_DAYS = 30;
+
 type Intent = "rent" | "fitting";
 
 const LABEL_CLASS =
@@ -60,6 +66,13 @@ const OPTIONAL_TAG = (
     (optional)
   </span>
 );
+
+/* ── Date helpers (local) ────────────────────────────────────────── */
+function isoNDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function ShopClient({ items, facets, initial }: Props) {
   const router = useRouter();
@@ -142,12 +155,34 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const filtered = useMemo(() => {
     let list = items.slice();
 
-    if (category) list = list.filter((i) => i.category === category);
-
-    if (presetFilter === "new") {
-      list.sort((a, b) => (b.dateAdded || "").localeCompare(a.dateAdded || ""));
+    /* ── Category filter (from the header's Shop All dropdown) ─────
+       dresses       → everything that is NOT an accessory
+                       (Dress, Kebaya, Kaftan, Set / Outer, Top)
+       accessories   → only items whose type is a veil / belt /
+                       jewelry / bag
+       traditional   → only kebaya / kaftan (deep-link only)
+       ""            → no category filter (ALL) */
+    if (category === "accessories") {
+      list = list.filter((i) => i.category === "accessories");
+    } else if (category === "traditional") {
+      list = list.filter((i) => i.category === "traditional");
+    } else if (category === "dresses") {
+      list = list.filter((i) => i.category !== "accessories");
     }
 
+    /* ── Preset filter (from the header's Shop All dropdown) ───────
+       new           → items added within the last 30 days
+       available-now → items whose rental window does not overlap
+                       the next 7 days (computed server-side)
+       ""            → no preset filter */
+    if (presetFilter === "new") {
+      const cutoff = isoNDaysAgo(NEW_ARRIVALS_WINDOW_DAYS);
+      list = list.filter((i) => (i.dateAdded || "") >= cutoff);
+    } else if (presetFilter === "available-now") {
+      list = list.filter((i) => i.availableThisWeek);
+    }
+
+    /* ── Free-text search ────────────────────────────────────────── */
     if (query) {
       const q = query.toLowerCase();
       list = list.filter(
@@ -158,6 +193,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
       );
     }
 
+    /* ── Facet filters (from the filter drawer) ──────────────────── */
     if (filters.brands.length) {
       const set = new Set(filters.brands);
       list = list.filter((i) => set.has(i.brand));
@@ -177,6 +213,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
       );
     }
 
+    /* ── Sort ────────────────────────────────────────────────────── */
     switch (sortBy) {
       case "alpha-asc":
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -204,6 +241,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
+  /* ── Heading copy per active filter ──────────────────────────────── */
   const { heading, subtitle } = useMemo(() => {
     if (category === "traditional")
       return {
@@ -263,9 +301,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
 
         {/* ── Toolbar ──────────────────────────────────────────────── */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10">
-          {/* Step 1: intent toggle.  Step 2: reveals the matching field(s). */}
           <div className="flex flex-col gap-5">
-            {/* Intent selector */}
             <div>
               <label className={LABEL_CLASS}>I want to</label>
               <div
@@ -302,7 +338,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
               </div>
             </div>
 
-            {/* Revealed fields */}
             {intent === "rent" ? (
               <div>
                 <label className={LABEL_CLASS}>I want to rent between</label>
