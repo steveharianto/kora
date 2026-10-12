@@ -141,8 +141,9 @@ export default function StorefrontHeader({
           <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
             <button
               type="button"
-              aria-label="Search"
-              onClick={() => setIsSearchOpen(true)}
+              aria-label={isSearchOpen ? "Close search" : "Search"}
+              aria-expanded={isSearchOpen}
+              onClick={() => setIsSearchOpen((v) => !v)}
               className="hover:text-[#1F261C] transition-colors cursor-pointer"
             >
               <SearchIcon className="w-[22px] h-[22px]" />
@@ -184,12 +185,13 @@ export default function StorefrontHeader({
             </button>
           </div>
         </div>
-      </header>
 
-      <SearchPanel
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-      />
+        {/* Inline search bar — expands inside the sticky header */}
+        <SearchPanel
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+        />
+      </header>
 
       <RentalCartDrawer
         isOpen={openCart === "rental"}
