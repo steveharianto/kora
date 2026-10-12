@@ -4,12 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, User, ShoppingBag } from "lucide-react";
 import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
 import IdVerificationModal from "@/components/storefront/IdVerificationModal";
 import SearchPanel from "./SearchPanel";
+import {
+  SearchIcon,
+  AccountIcon,
+  RentalBagIcon,
+  FittingHangerIcon,
+} from "@/components/icons";
 import {
   getCurrentCustomer,
   type CustomerSession,
@@ -140,7 +145,7 @@ export default function StorefrontHeader({
               onClick={() => setIsSearchOpen(true)}
               className="hover:text-[#1F261C] transition-colors cursor-pointer"
             >
-              <Search className="w-[18px] h-[18px] stroke-[1.8]" />
+              <SearchIcon className="w-[22px] h-[22px]" />
             </button>
 
             <Link
@@ -150,7 +155,7 @@ export default function StorefrontHeader({
               }
               className="flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
             >
-              <User className="w-[19px] h-[19px] stroke-[1.8] flex-shrink-0" />
+              <AccountIcon className="w-[22px] h-[22px] flex-shrink-0" />
               {displayName && (
                 <span className="hidden sm:inline text-[11.5px] tracking-[0.06em] font-medium text-[#3B4736] max-w-[140px] truncate">
                   {displayName}
@@ -164,7 +169,7 @@ export default function StorefrontHeader({
               onClick={() => setOpenCart("rental")}
               className="flex items-center gap-1.5 hover:text-[#1F261C] transition-colors cursor-pointer"
             >
-              <ShoppingBag className="w-[18px] h-[18px] stroke-[1.8]" />
+              <RentalBagIcon className="w-[22px] h-[22px]" />
               <RentalCartBadge />
             </button>
 
@@ -174,13 +179,7 @@ export default function StorefrontHeader({
               onClick={() => setOpenCart("fitting")}
               className="flex items-center gap-1.5 hover:text-[#1F261C] transition-colors cursor-pointer"
             >
-              <svg
-                className="w-[20px] h-[20px] stroke-[1.8] fill-none stroke-current"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 4a2 2 0 0 1 2 2c0 .7-.4 1.3-1 1.7V9l8 5.5v1.5H3V14.5L11 9V7.7A2 2 0 0 1 12 4z" />
-                <path d="M7 16v3a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3" />
-              </svg>
+              <FittingHangerIcon className="w-[22px] h-[22px]" />
               <FittingCartBadge />
             </button>
           </div>
@@ -215,4 +214,3 @@ export default function StorefrontHeader({
     </>
   );
 }
-  
