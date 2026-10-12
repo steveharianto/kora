@@ -54,7 +54,6 @@ export default function FittingDetailForm({
   );
   const [convertMethod, setConvertMethod] = useState("Self pickup");
 
-  // Payment verification state
   const [verifying, setVerifying] = useState(false);
   const [verifyFlash, setVerifyFlash] = useState<{
     type: "ok" | "err";
@@ -203,7 +202,6 @@ export default function FittingDetailForm({
             onSent={() => router.refresh()}
           />
 
-          {/* Convert-to-order — inline fulfilment method picker */}
           <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-line">
             <label className="text-[10px] uppercase tracking-wider text-muted font-medium">
               Fulfilment
@@ -417,7 +415,6 @@ export default function FittingDetailForm({
               </div>
             </div>
 
-            {/* Payment verification strip — shown whenever fee is Unpaid */}
             {initialFitting.is_after_hours &&
               initialFitting.fee_payment_status === "Unpaid" && (
                 <div className="mb-3 p-3 bg-[#FDFCFA] border border-line rounded-lg space-y-2">
@@ -492,7 +489,6 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      {/* Team notes (chat) + activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-line rounded-[10px] p-5">
           <EntityChat
@@ -554,7 +550,7 @@ function RefundBanner({ fitting }: { fitting: any }) {
   const handleMark = async () => {
     if (
       !confirm(
-        `Mark Rp ${amount.toLocaleString("id-ID")} as refunded? Confirm you've already processed this in Xendit.`,
+        `Mark ${formatRupiah(amount)} as refunded? Confirm you've already processed this in Xendit.`,
       )
     )
       return;
@@ -575,7 +571,7 @@ function RefundBanner({ fitting }: { fitting: any }) {
         />
         <div className="flex-1">
           <p className="font-semibold text-[13px]">
-            Refund owed to customer: Rp {amount.toLocaleString("id-ID")}
+            Refund owed to customer: {formatRupiah(amount)}
           </p>
           <p className="text-[12px] mt-1 leading-relaxed">
             This fitting was paid and has been{" "}

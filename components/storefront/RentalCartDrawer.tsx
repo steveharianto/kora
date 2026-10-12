@@ -8,6 +8,7 @@ import {
   rentalCartSubtotal,
   type RentalCartItem,
 } from "@/lib/storefront/cart";
+import { formatRupiah } from "@/lib/utils";
 
 interface Props {
   isOpen: boolean;
@@ -15,7 +16,11 @@ interface Props {
   onCheckout?: () => void;
 }
 
-export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props) {
+export default function RentalCartDrawer({
+  isOpen,
+  onClose,
+  onCheckout,
+}: Props) {
   const [items, setItems] = useState<RentalCartItem[]>([]);
 
   useEffect(() => {
@@ -46,20 +51,22 @@ export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props)
     writeRentalCart(next);
   };
 
-  // Subtotal = Σ(unit price × event days) per line.
   const subtotal = rentalCartSubtotal(items);
 
   if (!isOpen) return null;
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-[60]" onClick={onClose} aria-hidden />
+      <div
+        className="fixed inset-0 bg-black/30 z-[60]"
+        onClick={onClose}
+        aria-hidden
+      />
       <aside
         role="dialog"
         aria-label="Rental cart"
         className="fixed top-0 right-0 bottom-0 w-full max-w-[600px] bg-store-bg z-[70] flex flex-col shadow-2xl"
       >
-        {/* Header */}
         <div className="flex items-start justify-between px-8 sm:px-10 pt-8 sm:pt-10 pb-8">
           <h2 className="font-serif text-[36px] sm:text-[44px] text-store-accent leading-none font-normal">
             Cart ({items.length})
@@ -74,20 +81,24 @@ export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props)
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-8 sm:px-10 pb-8">
           {items.length === 0 ? (
-            <p className="text-[13px] text-store-fg-muted">Shopping cart is empty.</p>
+            <p className="text-[13px] text-store-fg-muted">
+              Shopping cart is empty.
+            </p>
           ) : (
             <div className="space-y-8">
               {items.map((it, idx) => (
-                <CartRow key={`${it.sku}-${idx}`} item={it} onRemove={() => removeAt(idx)} />
+                <CartRow
+                  key={`${it.sku}-${idx}`}
+                  item={it}
+                  onRemove={() => removeAt(idx)}
+                />
               ))}
             </div>
           )}
         </div>
 
-        {/* Footer */}
         {items.length > 0 && (
           <div className="px-8 sm:px-10 pt-6 pb-8 border-t border-store-border">
             <div className="flex items-baseline justify-between mb-6">
@@ -95,7 +106,7 @@ export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props)
                 Subtotal
               </span>
               <span className="text-[22px] sm:text-[26px] text-store-fg font-semibold leading-none">
-                Rp {subtotal.toLocaleString("id-ID")}
+                {formatRupiah(subtotal)}
               </span>
             </div>
             <button
@@ -112,8 +123,6 @@ export default function RentalCartDrawer({ isOpen, onClose, onCheckout }: Props)
   );
 }
 
-/* ── Row ─────────────────────────────────────────────────────────── */
-
 function CartRow({
   item,
   onRemove,
@@ -129,7 +138,11 @@ function CartRow({
       <div className="w-20 sm:w-24 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
         {item.image && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+          <img
+            src={item.image}
+            alt={item.name}
+            className="w-full h-full object-cover"
+          />
         )}
       </div>
 
@@ -139,14 +152,17 @@ function CartRow({
         </h3>
         {days > 1 && (
           <p className="text-[11.5px] text-store-fg-muted mb-0.5">
-            Rp {item.price.toLocaleString("id-ID")} × {days} days
+            {formatRupiah(item.price)} × {days} days
           </p>
         )}
         <p className="text-[13.5px] sm:text-[14px] text-store-fg font-semibold mb-3">
-          Rp {lineTotal.toLocaleString("id-ID")}
+          {formatRupiah(lineTotal)}
         </p>
         <div className="space-y-0.5 text-[11.5px] sm:text-[12px] text-store-fg-muted">
-          <p>Rental Date&nbsp;&nbsp;{fmtDateRange(item.rentalStart, item.rentalEnd)}</p>
+          <p>
+            Rental Date&nbsp;&nbsp;
+            {fmtDateRange(item.rentalStart, item.rentalEnd)}
+          </p>
           <p>Returning Date&nbsp;&nbsp;{fmtLongDate(item.rentalEnd)}</p>
         </div>
       </div>
@@ -161,8 +177,6 @@ function CartRow({
     </div>
   );
 }
-
-/* ── Date helpers ────────────────────────────────────────────────── */
 
 function fmtLongDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);

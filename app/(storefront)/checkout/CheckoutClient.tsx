@@ -18,6 +18,7 @@ import {
 } from "@/app/actions/checkout";
 import type { CustomerSession } from "@/app/actions/customerAuth";
 import { getPromoDiscountPercent, normalizePromoCode } from "@/lib/promo";
+import { formatRupiah } from "@/lib/utils";
 
 interface Address {
   id: number;
@@ -99,8 +100,6 @@ export default function CheckoutClient({
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
 
-  // Hardcoded promo state. `appliedPromo` is the normalised code that has
-  // been validated (non-empty discount). `promoInput` is the raw field value.
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState("");
   const [promoError, setPromoError] = useState("");
@@ -166,10 +165,8 @@ export default function CheckoutClient({
     return addDays(todayISO(), 3 + leadDays + 1);
   }, [selectedAddress, deliveryLeadTimes]);
 
-  // Subtotal = Σ(unit price × event days) per line.
   const subtotal = useMemo(() => rentalCartSubtotal(cart), [cart]);
 
-  // Deposit stays per-unit — it tracks the item's value, not the duration.
   const totalDeposit = useMemo(
     () => cart.reduce((s, i) => s + (i.price > 1000000 ? 250000 : 150000), 0),
     [cart],
@@ -178,7 +175,6 @@ export default function CheckoutClient({
   const shippingFee = selectedRate?.price || 0;
   const maxCredit = customer.currentCredit;
 
-  // Promo discount — percent off rental subtotal only.
   const promoPercent = appliedPromo ? getPromoDiscountPercent(appliedPromo) : 0;
   const promoDiscount = Math.round((subtotal * promoPercent) / 100);
 
@@ -256,8 +252,6 @@ export default function CheckoutClient({
     setSubmitting(true);
     setCheckoutError("");
 
-    // Server-side recomputes totals from items.rental_price × eventDays and
-    // re-applies the hardcoded promo discount — see createWebsiteOrder.
     const orderRes = await createWebsiteOrder({
       items: cart.map((c) => ({
         sku: c.sku,
@@ -542,7 +536,7 @@ export default function CheckoutClient({
                             </span>
                           </span>
                           <span className="text-[12px] text-store-fg font-semibold whitespace-nowrap">
-                            Rp {r.price.toLocaleString("id-ID")}
+                            {formatRupiah(r.price)}
                           </span>
                         </label>
                       );
@@ -552,7 +546,6 @@ export default function CheckoutClient({
               )}
             </section>
 
-            {/* Promo Code — hardcoded, applies to rental subtotal only */}
             <section>
               <h2 className="font-serif text-[20px] text-store-fg font-normal mb-4">
                 Promo Code
@@ -616,7 +609,7 @@ export default function CheckoutClient({
                 </h2>
                 <div className="flex items-center gap-3 max-w-[320px]">
                   <span className="text-[12.5px] text-store-fg-muted">
-                    Available: Rp {maxCredit.toLocaleString("id-ID")}
+                    Available: {formatRupiah(maxCredit)}
                   </span>
                 </div>
                 <input
@@ -666,11 +659,11 @@ export default function CheckoutClient({
                         </p>
                         {days > 1 && (
                           <p className="text-[11.5px] text-store-fg-muted mt-0.5">
-                            Rp {c.price.toLocaleString("id-ID")} × {days} days
+                            {formatRupiah(c.price)} × {days} days
                           </p>
                         )}
                         <p className="text-[12px] text-store-fg font-medium mt-0.5">
-                          Rp {lineTotal.toLocaleString("id-ID")}
+                          {formatRupiah(lineTotal)}
                         </p>
                         {c.eventStart && c.eventEnd && (
                           <p className="text-[11px] text-store-fg-subtle mt-0.5">
@@ -687,33 +680,26 @@ export default function CheckoutClient({
               </div>
 
               <div className="py-5 space-y-2.5 text-[13px]">
-                <Row
-                  label="Subtotal"
-                  value={`Rp ${subtotal.toLocaleString("id-ID")}`}
-                />
+                <Row label="Subtotal" value={formatRupiah(subtotal)} />
                 {promoDiscount > 0 && (
                   <Row
                     label={`Promo (${appliedPromo})`}
-                    value={`− Rp ${promoDiscount.toLocaleString("id-ID")}`}
+                    value={`− ${formatRupiah(promoDiscount)}`}
                     tone="accent"
                   />
                 )}
                 <Row
                   label="Refundable Deposit"
-                  value={`Rp ${totalDeposit.toLocaleString("id-ID")}`}
+                  value={formatRupiah(totalDeposit)}
                 />
                 <Row
                   label="Shipping"
-                  value={
-                    selectedRate
-                      ? `Rp ${selectedRate.price.toLocaleString("id-ID")}`
-                      : "—"
-                  }
+                  value={selectedRate ? formatRupiah(selectedRate.price) : "—"}
                 />
                 {storeCreditUsed > 0 && (
                   <Row
                     label="Store Credit"
-                    value={`− Rp ${storeCreditUsed.toLocaleString("id-ID")}`}
+                    value={`− ${formatRupiah(storeCreditUsed)}`}
                   />
                 )}
               </div>
@@ -723,7 +709,7 @@ export default function CheckoutClient({
                   Total
                 </span>
                 <span className="text-[20px] text-store-fg font-semibold">
-                  Rp {grandTotal.toLocaleString("id-ID")}
+                  {formatRupiah(grandTotal)}
                 </span>
               </div>
 

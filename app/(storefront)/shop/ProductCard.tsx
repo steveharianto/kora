@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatRupiah } from "@/lib/utils";
 
 interface Item {
   sku: string;
@@ -32,7 +33,7 @@ export default function ProductCard({ item }: { item: Item }) {
         {item.sku}-{item.name}
       </h3>
       <p className="text-[12px] tracking-wide text-store-fg-muted mt-1">
-        Rp. {item.rentalPrice.toLocaleString("id-ID")}
+        {formatRupiah(item.rentalPrice)}
       </p>
     </Link>
   );

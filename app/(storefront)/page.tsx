@@ -6,19 +6,19 @@ export default function StorefrontHomePage() {
     {
       sku: "ZM19",
       name: "Zimmermann Super Eight Ruffle Maxi",
-      price: "Rp. 1.700.000",
+      price: "Rp1.700.000",
       image: "/images/home/featured-1.jpg",
     },
     {
       sku: "ZM19",
       name: "Zimmermann Super Eight Ruffle Maxi",
-      price: "Rp. 1.700.000",
+      price: "Rp1.700.000",
       image: "/images/home/featured-2.jpg",
     },
     {
       sku: "ZM19",
       name: "Zimmermann Super Eight Ruffle Maxi",
-      price: "Rp. 1.700.000",
+      price: "Rp1.700.000",
       image: "/images/home/featured-3.jpg",
     },
   ];
@@ -79,14 +79,6 @@ export default function StorefrontHomePage() {
 
       {/* =================================================================== */}
       {/* SECTION 3: EDITORIAL SPLIT SHOWCASE                                 */}
-      {/*                                                                     */}
-      {/* Grid uses `1fr minmax(0,360px) 1fr` — the middle column is PINNED  */}
-      {/* to 360px so `aspect-[3/4]` on the image has a definite width to    */}
-      {/* resolve against (a pure `auto` column collapses to 0 when the      */}
-      {/* only child is a background-image div with no intrinsic width).     */}
-      {/* The two `1fr` sides split the residual space equally, which places */}
-      {/* the pinned 360px column at the exact horizontal center of the      */}
-      {/* section — aligning with the "Available This Week" image below.     */}
       {/* =================================================================== */}
       <section className="relative w-full min-h-[580px] sm:min-h-[720px] bg-[#2E362A] text-white overflow-hidden flex items-center">
         <div
@@ -95,7 +87,6 @@ export default function StorefrontHomePage() {
         />
 
         <div className="relative z-10 max-w-[1512px] mx-auto w-full px-6 sm:px-12 py-16 grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,360px)_1fr] gap-8 items-center">
-          {/* Left Text — hugs the left edge of its 1fr column */}
           <div className="w-full text-center lg:text-left space-y-2">
             <h2 className="font-serif text-[36px] sm:text-[48px] font-normal tracking-[0.02em] text-[#F3F1EC]">
               New Arrivals
@@ -105,7 +96,6 @@ export default function StorefrontHomePage() {
             </p>
           </div>
 
-          {/* Center Image — pinned 360px column, sits at true 50% */}
           <div className="w-full flex justify-center">
             <div className="relative w-full aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
               <div
@@ -117,7 +107,6 @@ export default function StorefrontHomePage() {
             </div>
           </div>
 
-          {/* Right Button — hugs the right edge of its 1fr column */}
           <div className="w-full flex justify-center lg:justify-end">
             <Link
               href="/shop"
@@ -174,7 +163,6 @@ export default function StorefrontHomePage() {
         </div>
 
         <div className="max-w-[1280px] w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative mb-16">
-          {/* Step 1 */}
           <div className="flex flex-col items-center text-center group">
             <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
               <svg
@@ -193,7 +181,6 @@ export default function StorefrontHomePage() {
             </p>
           </div>
 
-          {/* Step 2 */}
           <div className="flex flex-col items-center text-center group">
             <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
               <svg
@@ -212,7 +199,6 @@ export default function StorefrontHomePage() {
             </p>
           </div>
 
-          {/* Step 3 */}
           <div className="flex flex-col items-center text-center group">
             <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
               <svg
@@ -230,7 +216,6 @@ export default function StorefrontHomePage() {
             </p>
           </div>
 
-          {/* Step 4 */}
           <div className="flex flex-col items-center text-center group">
             <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
               <svg

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CancelFittingModal from "./CancelFittingModal";
 import RescheduleFittingModal from "./RescheduleFittingModal";
+import { formatRupiah } from "@/lib/utils";
 
 const STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-100 text-amber-800",
@@ -15,7 +16,12 @@ const STATUS_STYLES: Record<string, string> = {
   "No Show": "bg-red-100 text-red-800",
 };
 
-const INACTIVE_STATUSES = ["Cancelled", "Completed", "Conflict Evicted", "No Show"];
+const INACTIVE_STATUSES = [
+  "Cancelled",
+  "Completed",
+  "Conflict Evicted",
+  "No Show",
+];
 
 export default function FittingsClient({ fittings }: { fittings: any[] }) {
   const router = useRouter();
@@ -61,11 +67,14 @@ export default function FittingsClient({ fittings }: { fittings: any[] }) {
                     <p className="font-serif text-[16px] text-store-fg mb-0.5">
                       {fmtLongWeekday(f.date)}
                     </p>
-                    <p className="text-[12px] text-store-fg-muted">{fmtSlot(f.slot)}</p>
+                    <p className="text-[12px] text-store-fg-muted">
+                      {fmtSlot(f.slot)}
+                    </p>
                   </div>
                   <span
                     className={`text-[10px] tracking-[0.14em] uppercase font-medium px-2.5 py-1 ${
-                      STATUS_STYLES[f.status] || "bg-store-fg/10 text-store-fg-muted"
+                      STATUS_STYLES[f.status] ||
+                      "bg-store-fg/10 text-store-fg-muted"
                     }`}
                   >
                     {f.status}
@@ -74,15 +83,19 @@ export default function FittingsClient({ fittings }: { fittings: any[] }) {
 
                 <div className="border-t border-store-border pt-4 space-y-3">
                   {(f.fitting_items || []).map((fi: any, i: number) => {
-                    const cover = (fi.items?.item_images || [])
-                      .sort((a: any, b: any) => a.display_order - b.display_order)[0]
-                      ?.image_url;
+                    const cover = (fi.items?.item_images || []).sort(
+                      (a: any, b: any) => a.display_order - b.display_order,
+                    )[0]?.image_url;
                     return (
                       <div key={i} className="flex items-center gap-3">
                         <div className="w-12 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                           {cover && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={cover} alt="" className="w-full h-full object-cover" />
+                            <img
+                              src={cover}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
                           )}
                         </div>
                         <p
@@ -103,7 +116,7 @@ export default function FittingsClient({ fittings }: { fittings: any[] }) {
                   <p className="text-[11.5px] text-store-fg-muted mt-4 pt-4 border-t border-store-border">
                     After-hours fee:{" "}
                     <strong className="text-store-fg">
-                      Rp {(Number(f.after_hours_fee) || 0).toLocaleString("id-ID")}
+                      {formatRupiah(Number(f.after_hours_fee) || 0)}
                     </strong>{" "}
                     — {f.fee_payment_status}
                   </p>

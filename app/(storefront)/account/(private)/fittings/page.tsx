@@ -3,6 +3,7 @@ import { getCurrentCustomer } from "@/app/actions/customerAuth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import FittingBookingVerifier from "./FittingBookingVerifier";
+import { formatRupiah } from "@/lib/utils";
 
 export const metadata = {
   title: "Fitting Sessions | KORA",
@@ -30,10 +31,12 @@ export default async function FittingsPage({
   const supabase = await createClient();
   const { data: fittings } = await supabase
     .from("fittings")
-    .select(`
+    .select(
+      `
       id, date, slot, end_time, status, is_after_hours, after_hours_fee, fee_payment_status,
       fitting_items ( item_sku, is_evicted, items ( name, item_images ( image_url, display_order ) ) )
-    `)
+    `,
+    )
     .eq("customer_id", customer.id)
     .order("date", { ascending: false })
     .order("slot", { ascending: false });
@@ -69,11 +72,14 @@ export default async function FittingsPage({
                   <p className="font-serif text-[16px] text-store-fg mb-0.5">
                     {fmtLongWeekday(f.date)}
                   </p>
-                  <p className="text-[12px] text-store-fg-muted">{fmtSlot(f.slot)}</p>
+                  <p className="text-[12px] text-store-fg-muted">
+                    {fmtSlot(f.slot)}
+                  </p>
                 </div>
                 <span
                   className={`text-[10px] tracking-[0.14em] uppercase font-medium px-2.5 py-1 ${
-                    STATUS_STYLES[f.status] || "bg-store-fg/10 text-store-fg-muted"
+                    STATUS_STYLES[f.status] ||
+                    "bg-store-fg/10 text-store-fg-muted"
                   }`}
                 >
                   {f.status}
@@ -82,19 +88,26 @@ export default async function FittingsPage({
 
               <div className="border-t border-store-border pt-4 space-y-3">
                 {(f.fitting_items || []).map((fi: any, i: number) => {
-                  const cover = (fi.items?.item_images || [])
-                    .sort((a: any, b: any) => a.display_order - b.display_order)[0]?.image_url;
+                  const cover = (fi.items?.item_images || []).sort(
+                    (a: any, b: any) => a.display_order - b.display_order,
+                  )[0]?.image_url;
                   return (
                     <div key={i} className="flex items-center gap-3">
                       <div className="w-12 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                         {cover && (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={cover} alt="" className="w-full h-full object-cover" />
+                          <img
+                            src={cover}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
                         )}
                       </div>
                       <p
                         className={`text-[13px] ${
-                          fi.is_evicted ? "text-store-fg-subtle line-through" : "text-store-fg"
+                          fi.is_evicted
+                            ? "text-store-fg-subtle line-through"
+                            : "text-store-fg"
                         }`}
                       >
                         {fi.item_sku}-{fi.items?.name || ""}
@@ -108,7 +121,7 @@ export default async function FittingsPage({
                 <p className="text-[11.5px] text-store-fg-muted mt-4 pt-4 border-t border-store-border">
                   After-hours fee:{" "}
                   <strong className="text-store-fg">
-                    Rp {(Number(f.after_hours_fee) || 0).toLocaleString("id-ID")}
+                    {formatRupiah(Number(f.after_hours_fee) || 0)}
                   </strong>{" "}
                   — {f.fee_payment_status}
                 </p>

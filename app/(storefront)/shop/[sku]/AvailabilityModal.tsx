@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { getSkuAvailabilityMap } from "@/app/actions/storefront";
+import { formatRupiah } from "@/lib/utils";
 
 interface Accessory {
   sku: string;
@@ -31,7 +32,6 @@ interface Props {
     rentalEnd: string;
     eventStart: string;
     eventEnd: string;
-    /** Number of event days — multiplies rentalPrice. */
     eventDays: number;
     postalCode: string;
     accessories: string[];
@@ -39,8 +39,6 @@ interface Props {
 }
 
 const BASE_PREP_DAYS = 3;
-
-/* ── Date helpers ────────────────────────────────────────────────── */
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -61,9 +59,6 @@ function fmtShort(s: string): string {
   const [y, m, d] = s.split("-").map(Number);
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
 }
-function fmtRupiah(n: number): string {
-  return `Rp ${n.toLocaleString("id-ID")}`;
-}
 function nextMonth(y: number, m: number): { y: number; m: number } {
   return m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
 }
@@ -80,15 +75,11 @@ function monthLabel(y: number, m: number): string {
   });
 }
 function diffDays(a: string, b: string): number {
-  return Math.round(
-    (parseISO(b).getTime() - parseISO(a).getTime()) / 86400000,
-  );
+  return Math.round((parseISO(b).getTime() - parseISO(a).getTime()) / 86400000);
 }
 function isoOf(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
-
-/* ── Lead-time resolver ──────────────────────────────────────────── */
 
 function resolveLead(
   postalCode: string,
@@ -112,8 +103,6 @@ function resolveLead(
   if (other) return { region: other.region, days: Number(other.days) };
   return { region: "Indonesia", days: 2 };
 }
-
-/* ── Calendar cell model ─────────────────────────────────────────── */
 
 type CellOwner = "prev" | "current" | "next";
 
@@ -168,8 +157,6 @@ function buildCells(year: number, month: number): Cell[] {
 
   return cells;
 }
-
-/* ── Component ───────────────────────────────────────────────────── */
 
 export default function AvailabilityModal({
   isOpen,
@@ -400,9 +387,10 @@ export default function AvailabilityModal({
   const infoDelivery = committed ? addDays(committed.lo, -1) : null;
   const infoRest = committed ? addDays(committed.hi, 1) : null;
   const infoReturn = committed ? addDays(committed.hi, 2) : null;
-  const infoEventCount = committed ? diffDays(committed.lo, committed.hi) + 1 : 0;
+  const infoEventCount = committed
+    ? diffDays(committed.lo, committed.hi) + 1
+    : 0;
 
-  // Rental total = per-day rate × event-day count.
   const lineTotal = infoEventCount > 0 ? rentalPrice * infoEventCount : 0;
 
   const selectionStillValid = useMemo(() => {
@@ -460,7 +448,6 @@ export default function AvailabilityModal({
           </h2>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 px-6 sm:px-10 pb-8">
-            {/* ── LEFT: Calendar + info panel ────────────────────────── */}
             <div className="space-y-4">
               <div className="border border-store-border-strong p-6">
                 <div className="flex items-center justify-between mb-5">
@@ -598,14 +585,12 @@ export default function AvailabilityModal({
                 )}
               </div>
 
-              {/* Info panel */}
               <div className="p-5 bg-[#F1EFE1] border border-store-border">
                 {!committed ? (
                   <p className="text-[12.5px] text-store-fg-muted leading-relaxed">
                     Drag across the calendar to select your event day(s) — drag
-                    onto the faded trailing dates to cross into next month.
-                    Your delivery, rest day, and return deadline will appear
-                    here.
+                    onto the faded trailing dates to cross into next month. Your
+                    delivery, rest day, and return deadline will appear here.
                   </p>
                 ) : (
                   <div>
@@ -648,7 +633,6 @@ export default function AvailabilityModal({
               </div>
             </div>
 
-            {/* ── RIGHT: summary + postal + estimation + accessories ─── */}
             <div className="space-y-5">
               <div>
                 <label className="block text-[13px] text-store-fg mb-2">
@@ -661,7 +645,6 @@ export default function AvailabilityModal({
                 </div>
               </div>
 
-              {/* Price panel — always visible, multiplies by event day count */}
               <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
@@ -677,10 +660,10 @@ export default function AvailabilityModal({
                   <>
                     <div className="flex items-baseline justify-between gap-3">
                       <span className="text-[12.5px] text-store-fg-muted">
-                        {fmtRupiah(rentalPrice)} × {infoEventCount}
+                        {formatRupiah(rentalPrice)} × {infoEventCount}
                       </span>
                       <span className="text-[17px] font-semibold text-store-fg">
-                        {fmtRupiah(lineTotal)}
+                        {formatRupiah(lineTotal)}
                       </span>
                     </div>
                     <p className="text-[11px] text-store-fg-muted leading-relaxed border-t border-[#DBD7C6] pt-2">
@@ -691,7 +674,7 @@ export default function AvailabilityModal({
                 ) : (
                   <p className="text-[12px] text-store-fg-muted leading-relaxed">
                     Select your event day(s) on the calendar to see the rental
-                    total. Pricing is {fmtRupiah(rentalPrice)} per event day.
+                    total. Pricing is {formatRupiah(rentalPrice)} per event day.
                   </p>
                 )}
               </div>
@@ -713,7 +696,6 @@ export default function AvailabilityModal({
                 />
               </div>
 
-              {/* Delivery estimation — ALWAYS visible */}
               <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-3">
                 <div className="flex items-center gap-2">
                   <MapPin
@@ -729,9 +711,7 @@ export default function AvailabilityModal({
                   <>
                     <div className="space-y-1.5 text-[12.5px] text-store-fg">
                       <div className="flex justify-between gap-3">
-                        <span className="text-store-fg-muted">
-                          Postal code
-                        </span>
+                        <span className="text-store-fg-muted">Postal code</span>
                         <span className="font-mono text-store-fg-muted">
                           — not set —
                         </span>
@@ -775,9 +755,7 @@ export default function AvailabilityModal({
                     </div>
                     <div className="flex justify-between gap-3">
                       <span className="text-store-fg-muted">Region</span>
-                      <span className="font-medium">
-                        {resolvedLead.region}
-                      </span>
+                      <span className="font-medium">{resolvedLead.region}</span>
                     </div>
                     <div className="flex justify-between gap-3">
                       <span className="text-store-fg-muted">
@@ -822,9 +800,9 @@ export default function AvailabilityModal({
                     Complete Your Look
                   </h3>
                   <p className="text-[12px] text-store-fg-muted mb-4 leading-relaxed">
-                    The accessories listed below are confirmed available for
-                    the selected date, and the price reflects the same duration
-                    as the dress rental.
+                    The accessories listed below are confirmed available for the
+                    selected date, and the price reflects the same duration as
+                    the dress rental.
                   </p>
                   <div className="space-y-3">
                     {accessories.map((a) => {
@@ -851,8 +829,8 @@ export default function AvailabilityModal({
                             </p>
                             <p className="text-[11.5px] text-store-fg-muted">
                               {infoEventCount > 1
-                                ? `${fmtRupiah(a.rentalPrice)} × ${infoEventCount} = ${fmtRupiah(accTotal)}`
-                                : fmtRupiah(accTotal)}
+                                ? `${formatRupiah(a.rentalPrice)} × ${infoEventCount} = ${formatRupiah(accTotal)}`
+                                : formatRupiah(accTotal)}
                             </p>
                           </div>
                           <button
@@ -875,18 +853,17 @@ export default function AvailabilityModal({
             </div>
           </div>
 
-          {/* Add to cart — with a prominent rental total to the left */}
           <div className="px-6 sm:px-10 pb-12 pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-store-border mt-2 pt-6">
             <div className="text-left sm:text-left text-center">
               <p className="text-[11px] tracking-[0.14em] uppercase text-store-fg-muted mb-1">
                 Rental Total
               </p>
               <p className="text-[22px] font-semibold text-store-fg leading-none">
-                {infoEventCount > 0 ? fmtRupiah(lineTotal) : "—"}
+                {infoEventCount > 0 ? formatRupiah(lineTotal) : "—"}
               </p>
               {infoEventCount > 1 && (
                 <p className="text-[11px] text-store-fg-muted mt-1">
-                  {fmtRupiah(rentalPrice)} × {infoEventCount} days
+                  {formatRupiah(rentalPrice)} × {infoEventCount} days
                 </p>
               )}
             </div>
@@ -912,8 +889,6 @@ export default function AvailabilityModal({
     </>
   );
 }
-
-/* ── Sub-components ──────────────────────────────────────────────── */
 
 function LegendSwatch({
   color,

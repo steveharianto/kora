@@ -6,6 +6,7 @@ import { Info } from "lucide-react";
 import AvailabilityModal from "./AvailabilityModal";
 import FittingModal from "./FittingModal";
 import SizeGuideModal from "@/components/storefront/SizeGuideModal";
+import { formatRupiah } from "@/lib/utils";
 import {
   readRentalCart,
   writeRentalCart,
@@ -60,8 +61,6 @@ const SIZE_LABELS: Array<[string, string]> = [
   ["arm_length", "Arm Length"],
 ];
 
-// "description" removed — the field is unpopulated and the tab just
-// showed the empty-state string. Add it back once descriptions exist.
 type TabKey = "size" | "tnc" | "fitting";
 
 export default function ProductDetail({
@@ -77,8 +76,6 @@ export default function ProductDetail({
   fittingPrefill: { date: string; slot: string } | null;
   deliveryLeadTimes: LeadTime[];
 }) {
-  // Default tab is now Size — the most useful thing to land on when
-  // Description isn't available.
   const [activeTab, setActiveTab] = useState<TabKey>("size");
   const [activeImg, setActiveImg] = useState(0);
   const [availOpen, setAvailOpen] = useState(false);
@@ -180,8 +177,6 @@ export default function ProductDetail({
     }
   };
 
-  const formatRupiah = (n: number) => `Rp. ${n.toLocaleString("id-ID")}`;
-
   const prefillLabel = fittingPrefill
     ? formatPrefillLine(fittingPrefill.date, fittingPrefill.slot)
     : null;
@@ -189,7 +184,6 @@ export default function ProductDetail({
   return (
     <div className="w-full">
       <div className="max-w-[1512px] mx-auto">
-        {/* ── Top: gallery + info ──────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr]">
           {/* Gallery */}
           <div className="flex gap-3 p-4 sm:p-6">
@@ -280,7 +274,6 @@ export default function ProductDetail({
               )}
             </div>
 
-            {/* Tabs — Description removed */}
             <div className="border-b border-store-border mb-6">
               <div className="flex gap-8 text-[13px] tracking-[0.02em]">
                 {(["size", "tnc", "fitting"] as TabKey[]).map((k) => (
@@ -305,7 +298,6 @@ export default function ProductDetail({
             <div className="text-[13.5px] leading-relaxed text-store-fg-muted">
               {activeTab === "size" && (
                 <div className="space-y-6">
-                  {/* Bucket callout */}
                   <div className="flex items-start justify-between gap-4 p-4 border border-store-border-strong bg-[#F1EFE1]">
                     <div className="min-w-0">
                       <div className="text-[10.5px] tracking-[0.18em] uppercase text-store-fg-muted mb-1">
@@ -406,7 +398,7 @@ export default function ProductDetail({
           </div>
         </div>
 
-        {/* ── You May Also Like ───────────────────────────────────── */}
+        {/* Related */}
         {relatedItems.length > 0 && (
           <section className="px-6 sm:px-12 pt-8 pb-20">
             <h2 className="font-serif text-[26px] sm:text-[30px] text-store-fg mb-7">
@@ -433,7 +425,7 @@ export default function ProductDetail({
                     {r.sku}-{r.name}
                   </h3>
                   <p className="text-[12px] text-store-fg-muted mt-1">
-                    Rp. {r.rentalPrice.toLocaleString("id-ID")}
+                    {formatRupiah(r.rentalPrice)}
                   </p>
                 </Link>
               ))}
@@ -442,7 +434,6 @@ export default function ProductDetail({
         )}
       </div>
 
-      {/* ── Modals ─────────────────────────────────────────────────── */}
       <AvailabilityModal
         isOpen={availOpen}
         onClose={() => setAvailOpen(false)}
@@ -478,7 +469,6 @@ export default function ProductDetail({
         }}
       />
 
-      {/* ── Toast ──────────────────────────────────────────────────── */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-[60] bg-store-fg text-white text-[12px] tracking-wider px-5 py-3 shadow-xl">
           {toast}

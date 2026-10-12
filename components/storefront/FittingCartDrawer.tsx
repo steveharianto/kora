@@ -8,6 +8,7 @@ import {
   type FittingSession,
 } from "@/lib/storefront/cart";
 import { createFittingBooking } from "@/app/actions/customerFittingBooking";
+import { formatRupiah } from "@/lib/utils";
 
 interface Props {
   isOpen: boolean;
@@ -87,7 +88,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
       return;
     }
 
-    // Clear local cart — the booking now lives server-side
     writeFittingCart([]);
 
     if (res.invoiceUrl) {
@@ -102,7 +102,11 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-[60]" onClick={onClose} aria-hidden />
+      <div
+        className="fixed inset-0 bg-black/30 z-[60]"
+        onClick={onClose}
+        aria-hidden
+      />
       <aside
         role="dialog"
         aria-label="Fitting session cart"
@@ -125,7 +129,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
           </div>
         ) : (
           <>
-            {/* Header */}
             <div className="flex items-start justify-between px-8 sm:px-10 pt-8 sm:pt-10 pb-8 gap-4">
               <h2 className="font-serif text-[24px] sm:text-[30px] text-store-accent leading-[1.15] font-normal">
                 Book Fitting Session Cart ({totalItems})
@@ -140,7 +143,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-y-auto px-8 sm:px-10 pb-8">
               {sessions.length === 0 ? (
                 <p className="text-[13px] text-store-fg-muted">
@@ -148,7 +150,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
                 </p>
               ) : (
                 <>
-                  {/* ⚠️ Eviction warning */}
                   <div className="mb-6 p-4 bg-amber-50 border border-amber-200 flex gap-3">
                     <AlertTriangle
                       className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5"
@@ -158,9 +159,11 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
                       <strong className="block mb-1 tracking-wide uppercase text-[10px]">
                         Heads up
                       </strong>
-                      A fitting doesn&apos;t reserve your piece. If another customer completes a paid
-                      rental for one of your selected dresses before your session, this fitting will
-                      be automatically cancelled and our team will refund your session fee.
+                      A fitting doesn&apos;t reserve your piece. If another
+                      customer completes a paid rental for one of your selected
+                      dresses before your session, this fitting will be
+                      automatically cancelled and our team will refund your
+                      session fee.
                     </div>
                   </div>
 
@@ -184,7 +187,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
               )}
             </div>
 
-            {/* Footer */}
             {sessions.length > 0 && (
               <div className="px-8 sm:px-10 pt-6 pb-8 border-t border-store-border">
                 <div className="flex items-baseline justify-between mb-6">
@@ -192,7 +194,7 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
                     Subtotal
                   </span>
                   <span className="text-[22px] sm:text-[26px] text-store-fg font-semibold leading-none">
-                    {totalFee > 0 ? `Rp ${totalFee.toLocaleString("id-ID")}` : "FREE"}
+                    {totalFee > 0 ? formatRupiah(totalFee) : "FREE"}
                   </span>
                 </div>
                 <button
@@ -209,7 +211,8 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
                 </button>
                 {anyPaid && (
                   <p className="text-[11px] text-store-fg-muted text-center mt-3 leading-relaxed">
-                    You&apos;ll be redirected to Xendit to pay the after-hours session fee securely.
+                    You&apos;ll be redirected to Xendit to pay the after-hours
+                    session fee securely.
                   </p>
                 )}
               </div>
@@ -220,8 +223,6 @@ export default function FittingCartDrawer({ isOpen, onClose }: Props) {
     </>
   );
 }
-
-/* ── Session card ────────────────────────────────────────────────── */
 
 function SessionCard({
   session,
@@ -242,7 +243,9 @@ function SessionCard({
           {session.items.length} {session.items.length === 1 ? "Item" : "Items"}
         </span>
       </div>
-      <p className="text-[12.5px] text-store-fg-muted mb-5">{fmtSlot(session.slot)}</p>
+      <p className="text-[12.5px] text-store-fg-muted mb-5">
+        {fmtSlot(session.slot)}
+      </p>
 
       <div className="border-t border-[#E5E2D4] pt-4 space-y-4">
         {session.items.map((it, i) => (
@@ -250,7 +253,11 @@ function SessionCard({
             <div className="w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
               {it.image && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={it.image} alt={it.name} className="w-full h-full object-cover" />
+                <img
+                  src={it.image}
+                  alt={it.name}
+                  className="w-full h-full object-cover"
+                />
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -258,7 +265,7 @@ function SessionCard({
                 {it.sku}-{it.name}
               </p>
               <p className="text-[12.5px] sm:text-[13px] text-store-fg font-semibold">
-                Rp {it.price.toLocaleString("id-ID")}
+                {formatRupiah(it.price)}
               </p>
             </div>
             <button
@@ -282,7 +289,9 @@ function SessionCard({
         </button>
         <span className="text-[12.5px] sm:text-[13px] text-store-fg whitespace-nowrap">
           Fitting Session Fee:{" "}
-          <strong>{session.fee > 0 ? `Rp ${session.fee.toLocaleString("id-ID")}` : "FREE"}</strong>
+          <strong>
+            {session.fee > 0 ? formatRupiah(session.fee) : "FREE"}
+          </strong>
         </span>
       </div>
     </div>

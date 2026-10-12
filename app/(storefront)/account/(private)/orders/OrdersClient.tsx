@@ -3,14 +3,30 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatRupiah } from "@/lib/utils";
 import ReturnProcessModal from "./ReturnProcessModal";
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+const STATUS_STYLES: Record<
+  string,
+  { bg: string; text: string; label: string }
+> = {
   Draft: { bg: "bg-store-fg/10", text: "text-store-fg-muted", label: "DRAFT" },
   Ordered: { bg: "bg-amber-100", text: "text-amber-800", label: "UPCOMING" },
-  "In Shipping": { bg: "bg-blue-100", text: "text-blue-800", label: "OUT FOR DELIVERY" },
-  Active: { bg: "bg-green-100", text: "text-green-800", label: "RETURN DEADLINE" },
-  Completed: { bg: "bg-store-fg/10", text: "text-store-fg-muted", label: "COMPLETED" },
+  "In Shipping": {
+    bg: "bg-blue-100",
+    text: "text-blue-800",
+    label: "OUT FOR DELIVERY",
+  },
+  Active: {
+    bg: "bg-green-100",
+    text: "text-green-800",
+    label: "RETURN DEADLINE",
+  },
+  Completed: {
+    bg: "bg-store-fg/10",
+    text: "text-store-fg-muted",
+    label: "COMPLETED",
+  },
   Cancelled: { bg: "bg-red-100", text: "text-red-800", label: "CANCELLED" },
 };
 
@@ -90,15 +106,19 @@ function OrderCard({
 
       <div className="space-y-5 border-t border-store-border pt-5">
         {items.map((p: any, i: number) => {
-          const cover = (p.items?.item_images || [])
-            .sort((a: any, b: any) => a.display_order - b.display_order)[0]
-            ?.image_url;
+          const cover = (p.items?.item_images || []).sort(
+            (a: any, b: any) => a.display_order - b.display_order,
+          )[0]?.image_url;
           return (
             <div key={i} className="flex gap-4">
               <div className="w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                 {cover && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={cover} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={cover}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -106,7 +126,7 @@ function OrderCard({
                   {p.item_sku}-{p.items?.name || ""}
                 </p>
                 <p className="text-[12.5px] text-store-fg mb-2">
-                  Rp. {(Number(p.price) || 0).toLocaleString("id-ID")}
+                  {formatRupiah(Number(p.price) || 0)}
                 </p>
                 <p className="text-[11.5px] text-store-fg-muted">
                   Rental Date&nbsp;&nbsp;
@@ -122,7 +142,7 @@ function OrderCard({
         <div className="flex items-baseline gap-3 mb-4">
           <span className="text-[13px] text-store-fg-muted">Subtotal</span>
           <span className="text-[15px] text-store-fg font-semibold">
-            Rp {subtotal.toLocaleString("id-ID")}
+            {formatRupiah(subtotal)}
           </span>
         </div>
 
