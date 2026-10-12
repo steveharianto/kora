@@ -1,4 +1,12 @@
-import { Heart, Cake, Flower2, GraduationCap, Wine, MessageCircle, Mail } from "lucide-react";
+import {
+  Heart,
+  Cake,
+  Flower2,
+  GraduationCap,
+  Wine,
+  MessageCircle,
+  Mail,
+} from "lucide-react";
 
 export const metadata = {
   title: "About KORA",
@@ -19,24 +27,27 @@ export default function AboutPage() {
     <div className="w-full">
       {/* ── Hero ─────────────────────────────────────────────────── */}
       <section
-        className="relative w-full min-h-[360px] sm:min-h-[440px] flex items-center justify-center overflow-hidden"
+        className="relative w-full min-h-[440px] sm:min-h-[560px] lg:min-h-[640px] flex items-center justify-center overflow-hidden"
         style={{
           backgroundImage: "url('/images/about/hero.jpg')",
           backgroundSize: "cover",
-          backgroundPosition: "center",
+          // Bias the crop upward so the model's face and head stay in
+          // frame with headroom above — a portrait source inside a very
+          // wide hero would otherwise crop to the dead center.
+          backgroundPosition: "center 40%",
         }}
       >
-        {/* Subtle dark overlay for legibility */}
-        <div className="absolute inset-0 bg-black/25" />
+        {/* Light overlay for legibility — Figma keeps the image bright */}
+        <div className="absolute inset-0 bg-black/15" />
 
-        <div className="relative z-10 max-w-[820px] mx-auto px-6 sm:px-10 text-center">
-          <h1 className="font-serif text-[22px] sm:text-[28px] leading-[1.45] text-white font-normal tracking-[0.005em]">
-            KORA <span className="font-normal">was created to help you show up to</span>{" "}
-            <em className="italic">every special occasion</em>{" "}
-            <span>feeling</span> <em className="italic">confident</em>{" "}
-            <span>and</span> <em className="italic">beautifully dressed</em>{" "}
-            <span>without the need to buy a new dress for</span>{" "}
-            <em className="italic">every moment</em>
+        <div className="relative z-10 max-w-[900px] mx-auto px-6 sm:px-10 text-center">
+          <h1 className="font-serif font-normal text-white tracking-[0.005em] leading-[1.35] text-[26px] sm:text-[34px] lg:text-[42px]">
+            KORA was created to help you show up to{" "}
+            <em className="italic uppercase">every special occasion</em> feeling{" "}
+            <em className="italic uppercase">confident</em> and{" "}
+            <em className="italic uppercase">beautifully dressed</em> without
+            the need to buy a new dress for{" "}
+            <em className="italic uppercase">every moment</em>
           </h1>
         </div>
       </section>
@@ -59,7 +70,9 @@ export default function AboutPage() {
                   strokeWidth={1}
                   absoluteStrokeWidth
                 />
-                <span className="text-[12.5px] text-store-fg tracking-wide">{label}</span>
+                <span className="text-[12.5px] text-store-fg tracking-wide">
+                  {label}
+                </span>
               </div>
             ))}
           </div>
@@ -88,7 +101,9 @@ export default function AboutPage() {
             </h3>
 
             <div>
-              <p className="font-serif text-[17px] text-store-fg mb-2">KORA (Level 4)</p>
+              <p className="font-serif text-[17px] text-store-fg mb-2">
+                KORA (Level 4)
+              </p>
               <p className="text-[12.5px] text-store-fg-muted leading-relaxed">
                 Jl. Darmawangsa VI No. 42 Pulo,
                 <br />
@@ -97,7 +112,9 @@ export default function AboutPage() {
             </div>
 
             <div>
-              <p className="font-serif text-[17px] text-store-fg mb-2">Working Hours</p>
+              <p className="font-serif text-[17px] text-store-fg mb-2">
+                Working Hours
+              </p>
               <p className="text-[12.5px] text-store-fg-muted leading-relaxed">
                 Monday–Friday: 10 AM – 5 PM
                 <br />
@@ -115,11 +132,11 @@ export default function AboutPage() {
             Contact Us
           </h2>
           <p className="text-[12.5px] text-store-fg-muted mb-14 max-w-md mx-auto leading-relaxed">
-            Have a question or need help with a booking? Message us on WhatsApp — we&apos;re happy to help.
+            Have a question or need help with a booking? Message us on WhatsApp
+            — we&apos;re happy to help.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-14">
-            {/* WhatsApp */}
             <div className="flex flex-col items-center gap-4">
               <MessageCircle
                 className="w-9 h-9 text-store-fg"
@@ -153,9 +170,12 @@ export default function AboutPage() {
               </div>
             </div>
 
-            {/* Email */}
             <div className="flex flex-col items-center gap-4">
-              <Mail className="w-9 h-9 text-store-fg" strokeWidth={1.2} absoluteStrokeWidth />
+              <Mail
+                className="w-9 h-9 text-store-fg"
+                strokeWidth={1.2}
+                absoluteStrokeWidth
+              />
               <p className="font-serif text-[17px] text-store-fg">Email</p>
               <a
                 href="mailto:daysinkora@gmail.com"
@@ -165,7 +185,6 @@ export default function AboutPage() {
               </a>
             </div>
 
-            {/* Instagram */}
             <div className="flex flex-col items-center gap-4">
               <svg
                 className="w-9 h-9 text-store-fg"
