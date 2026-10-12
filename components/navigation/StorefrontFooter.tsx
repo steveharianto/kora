@@ -12,10 +12,17 @@ export default function StorefrontFooter() {
             Column layout matches the Figma:
               [ Logo ] [ Location + Working Hours ] [ Navigation ] [ Social ] [ Legal ]
             Location and Working Hours live in the SAME column, stacked.
+
+            Grid spans tuned for visual balance:
+              Logo            3/12  — pulled back so it reads as a mark, not a banner
+              Location+Hours  4/12  — widest text column (address needs the room)
+              Navigation      2/12
+              Social          2/12
+              Legal           1/12
         */}
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-x-10 gap-y-14 pb-16">
+        <div className="grid grid-cols-2 md:grid-cols-12 gap-x-8 gap-y-14 pb-16">
           {/* Logo */}
-          <div className="col-span-2 md:col-span-4">
+          <div className="col-span-2 md:col-span-3">
             <Link
               href="/"
               aria-label="KORA — Home"
@@ -26,14 +33,14 @@ export default function StorefrontFooter() {
                 alt="KORA"
                 width={220}
                 height={66}
-                className="h-12 sm:h-14 w-auto"
+                className="h-8 sm:h-10 w-auto"
                 priority={false}
               />
             </Link>
           </div>
 
           {/* Location + Working Hours — stacked in one column */}
-          <div className="col-span-2 md:col-span-3 space-y-10">
+          <div className="col-span-2 md:col-span-4 space-y-10">
             <div>
               <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
                 Location
