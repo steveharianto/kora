@@ -2,10 +2,13 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Plus, ChevronDown } from "lucide-react";
+import { Plus, ChevronDown } from "lucide-react";
 import ProductCard from "./ProductCard";
 import SortDropdown from "./SortDropdown";
 import FilterDrawer, { type FilterState } from "./FilterDrawer";
+import ShopDateRangePicker, {
+  type DateRange,
+} from "@/components/storefront/ShopDateRangePicker";
 
 interface Item {
   sku: string;
@@ -44,6 +47,20 @@ interface Props {
 
 const PAGE_SIZE = 12;
 
+type Intent = "rent" | "fitting";
+
+const LABEL_CLASS =
+  "block text-[10px] tracking-[0.2em] uppercase text-store-fg-muted mb-2.5 font-medium";
+
+const SELECT_FIELD_CLASS =
+  "w-full h-11 text-[12px] tracking-wider bg-transparent border border-store-border-strong text-store-fg pl-3.5 pr-10 focus:outline-none focus:border-store-accent transition-colors duration-150 cursor-pointer appearance-none uppercase";
+
+const OPTIONAL_TAG = (
+  <span className="text-store-fg-subtle normal-case tracking-normal font-normal">
+    (optional)
+  </span>
+);
+
 export default function ShopClient({ items, facets, initial }: Props) {
   const router = useRouter();
 
@@ -53,9 +70,13 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const [category, setCategory] = useState(initial.category);
   const [presetFilter, setPresetFilter] = useState(initial.filter);
   const [query] = useState(initial.q);
-  const [rentOnDate, setRentOnDate] = useState("");
-  const [fittingSession, setFittingSession] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Two-step "how would you like to shop?" flow.
+  const [intent, setIntent] = useState<Intent>("rent");
+  const [rentRange, setRentRange] = useState<DateRange | null>(null);
+  const [fittingRange, setFittingRange] = useState<DateRange | null>(null);
+  const [fittingSession, setFittingSession] = useState("");
 
   // NOTE: `size` here holds *bucket* values (XS / S / M / L / XL / Free Size)
   // — the URL param name stays `size` for continuity but the semantics
@@ -142,7 +163,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       list = list.filter((i) => set.has(i.brand));
     }
     if (filters.sizes.length) {
-      // Match against the derived bucket, not the raw size string.
       const set = new Set(filters.sizes);
       list = list.filter((i) => i.sizeBucket && set.has(i.sizeBucket));
     }
@@ -151,15 +171,12 @@ export default function ShopClient({ items, facets, initial }: Props) {
       list = list.filter((i) => set.has((i.color || "").toLowerCase()));
     }
     if (filters.styles.length) {
-      // Match any selected canonical style against the item's tags
-      // (case-insensitive — legacy rows may store "hijab friendly").
       const set = new Set(filters.styles.map((s) => s.toLowerCase()));
       list = list.filter((i) =>
         (i.tags || []).some((t) => set.has(String(t).toLowerCase())),
       );
     }
 
-    // Sort
     switch (sortBy) {
       case "alpha-asc":
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -245,44 +262,93 @@ export default function ShopClient({ items, facets, initial }: Props) {
         </div>
 
         {/* ── Toolbar ──────────────────────────────────────────────── */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
-          <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10">
+          {/* Step 1: intent toggle.  Step 2: reveals the matching field(s). */}
+          <div className="flex flex-col gap-5">
+            {/* Intent selector */}
             <div>
-              <label className="block text-[10px] tracking-[0.18em] uppercase text-store-fg-muted mb-1.5">
-                I want rent on
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={rentOnDate}
-                  onChange={(e) => setRentOnDate(e.target.value)}
-                  className="w-[190px] text-[12px] tracking-wider uppercase bg-transparent border border-store-border-strong px-3 py-2.5 pr-9 text-store-fg focus:outline-none focus:border-store-accent"
-                />
-                <Calendar className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <label className={LABEL_CLASS}>I want to</label>
+              <div
+                role="tablist"
+                aria-label="Choose a shopping intent"
+                className="inline-flex border border-store-border-strong overflow-hidden"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={intent === "rent"}
+                  onClick={() => setIntent("rent")}
+                  className={`px-6 h-11 text-[11px] tracking-[0.2em] uppercase font-medium transition-colors duration-150 cursor-pointer ${
+                    intent === "rent"
+                      ? "bg-store-accent text-white"
+                      : "text-store-fg-muted hover:text-store-fg hover:bg-store-hover/30"
+                  }`}
+                >
+                  Rent a Dress
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={intent === "fitting"}
+                  onClick={() => setIntent("fitting")}
+                  className={`px-6 h-11 text-[11px] tracking-[0.2em] uppercase font-medium transition-colors duration-150 cursor-pointer border-l border-store-border-strong ${
+                    intent === "fitting"
+                      ? "bg-store-accent text-white"
+                      : "text-store-fg-muted hover:text-store-fg hover:bg-store-hover/30"
+                  }`}
+                >
+                  Book a Fitting
+                </button>
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] tracking-[0.18em] uppercase text-store-fg-muted mb-1.5">
-                I want book fitting on
-              </label>
-              <div className="relative">
-                <select
-                  value={fittingSession}
-                  onChange={(e) => setFittingSession(e.target.value)}
-                  className="w-[190px] text-[12px] tracking-wider uppercase bg-transparent border border-store-border-strong px-3 py-2.5 pr-9 text-store-fg focus:outline-none focus:border-store-accent cursor-pointer appearance-none"
-                >
-                  <option value="">Select session</option>
-                  <option value="10:00">10:00</option>
-                  <option value="11:00">11:00</option>
-                  <option value="13:00">13:00</option>
-                  <option value="14:00">14:00</option>
-                  <option value="15:00">15:00</option>
-                  <option value="16:00">16:00</option>
-                </select>
-                <ChevronDown className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {/* Revealed fields */}
+            {intent === "rent" ? (
+              <div>
+                <label className={LABEL_CLASS}>I want to rent between</label>
+                <ShopDateRangePicker
+                  value={rentRange}
+                  onChange={setRentRange}
+                  className="w-[280px]"
+                />
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                <div>
+                  <label className={LABEL_CLASS}>
+                    Preferred dates {OPTIONAL_TAG}
+                  </label>
+                  <ShopDateRangePicker
+                    value={fittingRange}
+                    onChange={setFittingRange}
+                    className="w-[280px]"
+                  />
+                </div>
+
+                <div>
+                  <label className={LABEL_CLASS}>Session {OPTIONAL_TAG}</label>
+                  <div className="relative w-[240px]">
+                    <select
+                      value={fittingSession}
+                      onChange={(e) => setFittingSession(e.target.value)}
+                      className={SELECT_FIELD_CLASS}
+                    >
+                      <option value="">Any session</option>
+                      <option value="10:00">10:00</option>
+                      <option value="11:00">11:00</option>
+                      <option value="13:00">13:00</option>
+                      <option value="14:00">14:00</option>
+                      <option value="15:00">15:00</option>
+                      <option value="16:00">16:00</option>
+                    </select>
+                    <ChevronDown
+                      className="w-4 h-4 text-store-fg-muted absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                      strokeWidth={1.5}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-6 text-[11px] tracking-[0.18em] uppercase text-store-fg-muted">
