@@ -1,5 +1,39 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import HomeHeroCarousel from "@/components/storefront/HomeHeroCarousel";
+import {
+  BrowseIcon,
+  BookDatesIcon,
+  WearItIcon,
+  ReturnItIcon,
+} from "@/components/icons";
+
+const STEPS = [
+  {
+    n: 1,
+    Icon: BrowseIcon,
+    title: "Browse",
+    body: "Find the one for your occasion",
+  },
+  {
+    n: 2,
+    Icon: BookDatesIcon,
+    title: "Book Your Dates",
+    body: "Pick when you need it. We'll have it ready",
+  },
+  {
+    n: 3,
+    Icon: WearItIcon,
+    title: "Wear It",
+    body: "Show up, turn heads, enjoy the night",
+  },
+  {
+    n: 4,
+    Icon: ReturnItIcon,
+    title: "Return It",
+    body: "Send it back. We handle the cleaning",
+  },
+];
 
 export default function StorefrontHomePage() {
   const featuredDresses = [
@@ -150,88 +184,67 @@ export default function StorefrontHomePage() {
       </section>
 
       {/* =================================================================== */}
-      {/* SECTION 5: "HOW IT WORKS" — 4 SIMPLE STEPS                          */}
+      {/* SECTION 5: "HOW IT WORKS" — 4 CONNECTED STEPS                       */}
       {/* =================================================================== */}
       <section className="w-full py-24 sm:py-28 px-6 bg-[#DDDBCF] border-t border-[#CECBC0] flex flex-col items-center">
-        <div className="text-center mb-16">
-          <h2 className="font-serif text-[36px] sm:text-[46px] font-normal tracking-[0.01em] text-[#364230] mb-2">
+        <div className="text-center mb-16 sm:mb-20">
+          <h2 className="font-serif text-[36px] sm:text-[46px] font-normal tracking-[0.01em] text-[#364230] mb-3">
             How It Works
           </h2>
-          <p className="text-xs tracking-wider text-[#5D6B56] uppercase">
+          <p className="text-[13px] text-[#5D6B56]">
             Designer dresses, four simple steps
           </p>
         </div>
 
-        <div className="max-w-[1280px] w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative mb-16">
-          <div className="flex flex-col items-center text-center group">
-            <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
-              <svg
-                className="w-8 h-8 stroke-[#485642] fill-none stroke-[1.4] mb-1"
-                viewBox="0 0 24 24"
-              >
-                <rect x="3" y="4" width="18" height="16" rx="1" />
-                <path d="M7 8h10M7 12h4" />
-              </svg>
-              <h3 className="font-serif text-[17px] text-[#2D3828] font-normal">
-                Browse
-              </h3>
-            </div>
-            <p className="text-xs text-[#5D6B56] max-w-[180px]">
-              Find the one for your occasion
-            </p>
-          </div>
+        {/* Desktop / tablet: connected circles */}
+        <div className="hidden md:flex items-start justify-center w-full max-w-[1280px] mb-16">
+          {STEPS.map((step, i) => {
+            const Icon = step.Icon;
+            return (
+              <Fragment key={step.n}>
+                <div
+                  className="flex flex-col items-center"
+                  style={{ width: "220px" }}
+                >
+                  <div className="w-[220px] h-[220px] rounded-full border border-[#7A8B73] flex flex-col items-center justify-center gap-3">
+                    <Icon className="w-12 h-12 text-[#64765B]" />
+                    <h3 className="font-serif text-[22px] text-[#364230] font-normal tracking-[0.005em]">
+                      {step.title}
+                    </h3>
+                  </div>
+                  <p className="text-[12px] text-[#5D6B56] text-center mt-6 max-w-[200px] leading-[1.6]">
+                    {step.body}
+                  </p>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div
+                    className="flex-1 h-px bg-[#7A8B73]"
+                    style={{ marginTop: "110px" }}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
+        </div>
 
-          <div className="flex flex-col items-center text-center group">
-            <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
-              <svg
-                className="w-8 h-8 stroke-[#485642] fill-none stroke-[1.4] mb-1"
-                viewBox="0 0 24 24"
-              >
-                <rect x="3" y="4" width="18" height="18" rx="2" />
-                <path d="M16 2v4M8 2v4M3 10h18" />
-              </svg>
-              <h3 className="font-serif text-[17px] text-[#2D3828] font-normal">
-                Book Your Dates
-              </h3>
-            </div>
-            <p className="text-xs text-[#5D6B56] max-w-[180px]">
-              Pick when you need it. We&apos;ll have it ready
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center text-center group">
-            <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
-              <svg
-                className="w-8 h-8 stroke-[#485642] fill-none stroke-[1.4] mb-1"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 2l2.5 5 5 .5-4 3.5 1.5 5.5-5-3-5 3 1.5-5.5-4-3.5 5-.5z" />
-              </svg>
-              <h3 className="font-serif text-[17px] text-[#2D3828] font-normal">
-                Wear It
-              </h3>
-            </div>
-            <p className="text-xs text-[#5D6B56] max-w-[180px]">
-              Show up, turn heads, enjoy the night
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center text-center group">
-            <div className="w-40 h-40 rounded-full border border-[#7A8B73] bg-[#E5E3D8] flex flex-col items-center justify-center p-4 mb-4 shadow-sm group-hover:bg-[#ECEAE0] transition-colors">
-              <svg
-                className="w-8 h-8 stroke-[#485642] fill-none stroke-[1.4] mb-1"
-                viewBox="0 0 24 24"
-              >
-                <path d="M21 8H3v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8zM16 4l-4 4-4-4" />
-              </svg>
-              <h3 className="font-serif text-[17px] text-[#2D3828] font-normal">
-                Return It
-              </h3>
-            </div>
-            <p className="text-xs text-[#5D6B56] max-w-[180px]">
-              Send it back. We handle the cleaning
-            </p>
-          </div>
+        {/* Mobile: stacked 2-col grid, no connector lines */}
+        <div className="md:hidden grid grid-cols-2 gap-x-4 gap-y-10 mb-16 w-full max-w-[420px]">
+          {STEPS.map((step) => {
+            const Icon = step.Icon;
+            return (
+              <div key={step.n} className="flex flex-col items-center">
+                <div className="w-[140px] h-[140px] rounded-full border border-[#7A8B73] flex flex-col items-center justify-center gap-2 px-2">
+                  <Icon className="w-9 h-9 text-[#64765B]" />
+                  <h3 className="font-serif text-[14px] text-[#364230] font-normal text-center leading-tight">
+                    {step.title}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-[#5D6B56] text-center mt-4 max-w-[140px] leading-[1.5]">
+                  {step.body}
+                </p>
+              </div>
+            );
+          })}
         </div>
 
         <Link
