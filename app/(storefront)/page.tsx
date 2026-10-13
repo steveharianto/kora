@@ -1,243 +1,259 @@
-import { createClient } from "@/lib/supabase/server";
-import ShopClient from "./ShopClient";
+import Link from "next/link";
+import { Fragment } from "react";
+import HomeHeroCarousel from "@/components/storefront/HomeHeroCarousel";
 import {
-  deriveSizeBucket,
-  SIZE_BUCKET_ORDER,
-  type SizeBucket,
-} from "@/lib/sizeBucket";
-import { STYLE_TAGS } from "@/lib/styleTags";
+  BrowseIcon,
+  BookDatesIcon,
+  WearItIcon,
+  ReturnItIcon,
+} from "@/components/icons";
 
-export const metadata = {
-  title: "Shop | KORA",
-  description: "Every piece, ready to rent.",
-};
-
-/* ── Storefront category taxonomy ────────────────────────────────── */
-
-// Types table names that map to the "Accessories" storefront category.
-const ACCESSORY_TYPES = [
-  "veil",
-  "belt / sash",
-  "belt/sash",
-  "jewelry",
-  "bag / clutch",
-  "bag/clutch",
+const STEPS = [
+  {
+    n: 1,
+    Icon: BrowseIcon,
+    title: "Browse",
+    body: "Find the one for your occasion",
+  },
+  {
+    n: 2,
+    Icon: BookDatesIcon,
+    title: "Book Your Dates",
+    body: "Pick when you need it. We'll have it ready",
+  },
+  {
+    n: 3,
+    Icon: WearItIcon,
+    title: "Wear It",
+    body: "Show up, turn heads, enjoy the night",
+  },
+  {
+    n: 4,
+    Icon: ReturnItIcon,
+    title: "Return It",
+    body: "Send it back. We handle the cleaning",
+  },
 ];
 
-// Types that map to the "Traditional" derived bucket. Not exposed as a
-// dropdown link but preserved as a URL param for deep links.
-const TRADITIONAL_TYPES = ["kebaya", "kaftan"];
-
-type StoreCategory = "dresses" | "traditional" | "accessories";
-
-/**
- * Maps an item's `types.name` (plus any tag-based signal) to the
- * storefront's public category. Defaults to "dresses" — the catch-all
- * for any wearable garment (Dress, Set / Outer, Top, etc.).
- */
-function deriveStoreCategory(
-  typeName: string | null | undefined,
-  tags: string[],
-): StoreCategory {
-  const t = String(typeName || "")
-    .trim()
-    .toLowerCase();
-  const lowerTags = (tags || []).map((x) => String(x).toLowerCase());
-
-  if (ACCESSORY_TYPES.includes(t)) return "accessories";
-  if (TRADITIONAL_TYPES.includes(t)) return "traditional";
-  if (lowerTags.includes("kebaya") || lowerTags.includes("kaftan")) {
-    return "traditional";
-  }
-  return "dresses";
-}
-
-/* ── Date helpers ────────────────────────────────────────────────── */
-
-function toISODate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function addDaysISO(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  return toISODate(dt);
-}
-
-/* ── Page ────────────────────────────────────────────────────────── */
-
-export default async function ShopPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    q?: string;
-    category?: string;
-    filter?: string;
-    sort?: string;
-    brand?: string;
-    size?: string;
-    color?: string;
-    style?: string;
-  }>;
-}) {
-  const params = await searchParams;
-  const supabase = await createClient();
-
-  const { data: items } = await supabase
-    .from("items")
-    .select(
-      `
-      sku,
-      name,
-      size,
-      color,
-      tags,
-      rental_price,
-      status,
-      website_status,
-      date_added,
-      measurements,
-      buffer_override,
-      brands ( name ),
-      types ( name, default_buffer_days ),
-      item_images ( image_url, display_order )
-    `,
-    )
-    .eq("website_status", "Published")
-    .eq("is_archived", false)
-    .order("date_added", { ascending: false });
-
-  const rawItems = items || [];
-  const skus = rawItems.map((i: any) => i.sku);
-
-  /* ── Availability computation ──────────────────────────────────────
-     "Available This Week" means: the item's rental window does not
-     overlap the next 7 days, taking turnaround buffer into account.
-
-     We query every active order line (status Ordered / In Shipping /
-     Active) across the shown SKUs, then locally test each order's
-     effective window [pickup_date, return_date + buffer] against
-     [today, today + 7] — SQL can't do the buffer part because the
-     buffer is per-item (buffer_override, falling back to type default).
-  */
-  const todayISO = toISODate(new Date());
-  const weekAheadISO = addDaysISO(todayISO, 7);
-
-  // Per-item buffer lookup — mirrors the fallback chain used by
-  // guardAvailability (lib/orderLifecycle.ts).
-  const bufferMap: Record<string, number> = {};
-  for (const i of rawItems) {
-    bufferMap[i.sku] =
-      i.buffer_override ?? (i.types as any)?.default_buffer_days ?? 2;
-  }
-
-  const { data: conflicting } =
-    skus.length > 0
-      ? await supabase
-          .from("order_products")
-          .select(
-            `
-            item_sku,
-            orders!inner ( id, pickup_date, return_date, status )
-          `,
-          )
-          .in("item_sku", skus)
-          .in("orders.status", ["Ordered", "In Shipping", "Active"])
-          // Rough SQL cut — client-side filter below is authoritative.
-          .gte("orders.return_date", addDaysISO(todayISO, -30))
-      : { data: [] };
-
-  const busyThisWeek = new Set<string>();
-  for (const b of conflicting || []) {
-    const order = (b as any).orders;
-    if (!order?.pickup_date || !order.return_date) continue;
-
-    const buffer = bufferMap[b.item_sku] ?? 2;
-    const windowStart = order.pickup_date;
-    const windowEnd = addDaysISO(order.return_date, buffer);
-
-    // Overlap test against [today, today + 7].
-    if (windowStart <= weekAheadISO && windowEnd >= todayISO) {
-      busyThisWeek.add(b.item_sku);
-    }
-  }
-
-  /* ── Normalise the shape the client expects ──────────────────────── */
-
-  const normalised = rawItems.map((i: any) => {
-    const images = (i.item_images || [])
-      .sort((a: any, b: any) => a.display_order - b.display_order)
-      .map((im: any) => im.image_url);
-
-    const tags: string[] = i.tags || [];
-    const category = deriveStoreCategory(i.types?.name, tags);
-
-    const sizeBucket = deriveSizeBucket({
-      size: i.size,
-      measurements: i.measurements,
-    });
-
-    return {
-      sku: i.sku,
-      name: i.name,
-      brand: i.brands?.name || "",
-      type: i.types?.name || "",
-      size: i.size || "",
-      sizeBucket,
-      color: i.color || "",
-      rentalPrice: Number(i.rental_price) || 0,
-      status: i.status,
-      tags,
-      coverImage: images[0] || null,
-      images,
-      dateAdded: i.date_added,
-      category,
-      availableThisWeek: !busyThisWeek.has(i.sku),
-    };
-  });
-
-  // Only show items that are physically rentable right now.
-  const availableItems = normalised.filter((i) => i.status === "Available");
-
-  // Facets — computed from the *available* set so counts are honest.
-  const brandSet = new Set<string>();
-  const sizeBucketSet = new Set<SizeBucket>();
-  const colorSet = new Set<string>();
-  const styleSet = new Set<string>();
-
-  for (const i of availableItems) {
-    if (i.brand) brandSet.add(i.brand);
-    if (i.sizeBucket) sizeBucketSet.add(i.sizeBucket);
-    if (i.color) colorSet.add(i.color);
-
-    for (const t of i.tags || []) {
-      const lower = String(t).toLowerCase();
-      const canonical = STYLE_TAGS.find((s) => s.toLowerCase() === lower);
-      if (canonical) styleSet.add(canonical);
-    }
-  }
-
-  // Preserve canonical ordering — XS · S · M · L · XL · Free Size
-  const sizeBuckets = SIZE_BUCKET_ORDER.filter((b) => sizeBucketSet.has(b));
-  const colors = Array.from(colorSet).sort();
-  const brands = Array.from(brandSet).sort();
-  // STYLE_TAGS order (Mini · Midi · Maxi · Hijab Friendly)
-  const styles = STYLE_TAGS.filter((s) => styleSet.has(s));
+export default function StorefrontHomePage() {
+  const featuredDresses = [
+    {
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp1.700.000",
+      image: "/images/home/featured-1.jpg",
+    },
+    {
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp1.700.000",
+      image: "/images/home/featured-2.jpg",
+    },
+    {
+      sku: "ZM19",
+      name: "Zimmermann Super Eight Ruffle Maxi",
+      price: "Rp1.700.000",
+      image: "/images/home/featured-3.jpg",
+    },
+  ];
 
   return (
-    <ShopClient
-      items={availableItems}
-      facets={{ brands, sizeBuckets, colors, styles }}
-      initial={{
-        q: params.q || "",
-        category: params.category || "",
-        filter: params.filter || "",
-        sort: params.sort || "date-desc",
-        brand: params.brand || "",
-        size: params.size || "",
-        color: params.color || "",
-        style: params.style || "",
-      }}
-    />
+    <div className="w-full overflow-x-hidden">
+      {/* =================================================================== */}
+      {/* SECTION 1: HERO CAROUSEL BANNER                                     */}
+      {/* =================================================================== */}
+      <HomeHeroCarousel />
+
+      {/* =================================================================== */}
+      {/* SECTION 2: "RENT ME ONCE, HEAD BE TURNING TWICE!"                   */}
+      {/* =================================================================== */}
+      <section className="max-w-[1512px] mx-auto w-full py-20 sm:py-24 px-6 sm:px-12">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+          <div>
+            <h2 className="font-serif text-[28px] sm:text-[36px] font-normal tracking-[0.01em] text-[#2D3828] mb-2">
+              Rent me once, Head be turning Twice!
+            </h2>
+            <p className="text-xs text-[#6A7563] max-w-xl">
+              Romanticize your life with high-quality designer pieces — for a
+              fraction of the price. Leave the commitment to us.
+            </p>
+          </div>
+
+          <Link
+            href="/shop"
+            className="self-start md:self-auto bg-[#64765B] text-white px-5 py-2.5 text-[10.5px] uppercase tracking-[0.16em] font-medium hover:bg-[#52624B] transition-colors"
+          >
+            See All Collection
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {featuredDresses.map((dress, index) => (
+            <Link
+              key={index}
+              href={`/shop/${dress.sku.toLowerCase()}`}
+              className="group flex flex-col"
+            >
+              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
+                <div
+                  className="w-full h-full bg-cover bg-center group-hover:scale-105 transition-transform duration-700"
+                  style={{ backgroundImage: `url('${dress.image}')` }}
+                />
+              </div>
+              <h3 className="font-serif text-[15px] text-[#242A20] group-hover:text-[#64765B] transition-colors line-clamp-1 font-normal">
+                {dress.sku}-{dress.name}
+              </h3>
+              <p className="text-xs font-mono text-[#54644C] mt-0.5">
+                {dress.price}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* SECTION 3: EDITORIAL SPLIT SHOWCASE                                 */}
+      {/* =================================================================== */}
+      <section className="relative w-full min-h-[580px] sm:min-h-[720px] bg-[#2E362A] text-white overflow-hidden flex items-center">
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-35"
+          style={{ backgroundImage: `url('/images/home/editorial-bg.jpg')` }}
+        />
+
+        <div className="relative z-10 max-w-[1512px] mx-auto w-full px-6 sm:px-12 py-16 grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,360px)_1fr] gap-8 items-center">
+          <div className="w-full text-center lg:text-left space-y-2">
+            <h2 className="font-serif text-[36px] sm:text-[48px] font-normal tracking-[0.02em] text-[#F3F1EC]">
+              New Arrivals
+            </h2>
+            <p className="text-xs tracking-wider text-[#DCD8CC] uppercase">
+              Fresh in, ready to rent
+            </p>
+          </div>
+
+          <div className="w-full flex justify-center">
+            <div className="relative w-full aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
+              <div
+                className="w-full h-full bg-cover bg-center"
+                style={{
+                  backgroundImage: `url('/images/home/editorial-center.jpg')`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="w-full flex justify-center lg:justify-end">
+            <Link
+              href="/shop"
+              className="bg-[#ECEBE4] text-[#1F261C] px-8 py-3 text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-white transition-colors shadow-lg"
+            >
+              See What&apos;s New
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* SECTION 4: "AVAILABLE THIS WEEK"                                    */}
+      {/* =================================================================== */}
+      <section className="w-full py-24 sm:py-28 px-6 bg-[#F2F0E9]">
+        <div className="mx-auto max-w-[600px] flex flex-col items-center text-center">
+          <div className="w-full max-w-[420px] mx-auto mb-8">
+            <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
+              <div
+                className="w-full h-full bg-cover bg-center"
+                style={{
+                  backgroundImage: `url('/images/home/available-week.jpg')`,
+                }}
+              />
+            </div>
+          </div>
+
+          <h2 className="font-serif text-[32px] sm:text-[40px] font-normal tracking-[0.01em] text-[#2D3828] mb-2">
+            Available This Week
+          </h2>
+          <p className="text-xs text-[#6A7563] max-w-sm mb-6">
+            Got an event coming up? These pieces are ready for you.
+          </p>
+          <Link
+            href="/shop?filter=available-now"
+            className="bg-[#64765B] text-white px-9 py-2.5 text-[11px] uppercase tracking-[0.18em] font-medium hover:bg-[#52624B] transition-colors"
+          >
+            Rent Now
+          </Link>
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* SECTION 5: "HOW IT WORKS" — 4 CONNECTED STEPS                       */}
+      {/* =================================================================== */}
+      <section className="w-full py-24 sm:py-28 px-6 bg-[#DDDBCF] border-t border-[#CECBC0] flex flex-col items-center">
+        <div className="text-center mb-16 sm:mb-20">
+          <h2 className="font-serif text-[36px] sm:text-[46px] font-normal tracking-[0.01em] text-[#364230] mb-3">
+            How It Works
+          </h2>
+          <p className="text-[13px] text-[#5D6B56]">
+            Designer dresses, four simple steps
+          </p>
+        </div>
+
+        {/* Desktop / tablet: connected circles */}
+        <div className="hidden md:flex items-start justify-center w-full max-w-[1280px] mb-16">
+          {STEPS.map((step, i) => {
+            const Icon = step.Icon;
+            return (
+              <Fragment key={step.n}>
+                <div
+                  className="flex flex-col items-center"
+                  style={{ width: "220px" }}
+                >
+                  <div className="w-[220px] h-[220px] rounded-full border border-[#7A8B73] flex flex-col items-center justify-center gap-3">
+                    <Icon className="w-12 h-12 text-[#64765B]" />
+                    <h3 className="font-serif text-[22px] text-[#364230] font-normal tracking-[0.005em]">
+                      {step.title}
+                    </h3>
+                  </div>
+                  <p className="text-[12px] text-[#5D6B56] text-center mt-6 max-w-[200px] leading-[1.6]">
+                    {step.body}
+                  </p>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div
+                    className="flex-1 h-px bg-[#7A8B73]"
+                    style={{ marginTop: "110px" }}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
+        </div>
+
+        {/* Mobile: stacked 2-col grid, no connector lines */}
+        <div className="md:hidden grid grid-cols-2 gap-x-4 gap-y-10 mb-16 w-full max-w-[420px]">
+          {STEPS.map((step) => {
+            const Icon = step.Icon;
+            return (
+              <div key={step.n} className="flex flex-col items-center">
+                <div className="w-[140px] h-[140px] rounded-full border border-[#7A8B73] flex flex-col items-center justify-center gap-2 px-2">
+                  <Icon className="w-9 h-9 text-[#64765B]" />
+                  <h3 className="font-serif text-[14px] text-[#364230] font-normal text-center leading-tight">
+                    {step.title}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-[#5D6B56] text-center mt-4 max-w-[140px] leading-[1.5]">
+                  {step.body}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <Link
+          href="/how-to-rent"
+          className="bg-[#64765B] text-white px-8 py-3 text-[11px] uppercase tracking-[0.18em] font-medium hover:bg-[#52624B] transition-colors shadow-sm"
+        >
+          Learn How To Rent
+        </Link>
+      </section>
+    </div>
   );
 }
