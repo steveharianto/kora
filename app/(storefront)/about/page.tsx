@@ -1,12 +1,11 @@
+import { MessageCircle, Mail } from "lucide-react";
 import {
-  Heart,
-  Cake,
-  Flower2,
-  GraduationCap,
-  Wine,
-  MessageCircle,
-  Mail,
-} from "lucide-react";
+  WeddingIcon,
+  BirthdayIcon,
+  BridalShowerIcon,
+  GraduationIcon,
+  DateNightIcon,
+} from "@/components/icons";
 
 export const metadata = {
   title: "About KORA",
@@ -15,11 +14,11 @@ export const metadata = {
 };
 
 const OCCASIONS = [
-  { icon: Heart, label: "Weddings" },
-  { icon: Cake, label: "Birthdays" },
-  { icon: Flower2, label: "Bridal Showers" },
-  { icon: GraduationCap, label: "Graduations" },
-  { icon: Wine, label: "Date Nights" },
+  { Icon: WeddingIcon, label: "Weddings" },
+  { Icon: BirthdayIcon, label: "Birthdays" },
+  { Icon: BridalShowerIcon, label: "Bridal Showers" },
+  { Icon: GraduationIcon, label: "Graduations" },
+  { Icon: DateNightIcon, label: "Date Nights" },
 ];
 
 export default function AboutPage() {
@@ -63,13 +62,9 @@ export default function AboutPage() {
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-12">
-            {OCCASIONS.map(({ icon: Icon, label }) => (
-              <div key={label} className="flex flex-col items-center gap-4">
-                <Icon
-                  className="w-10 h-10 text-store-accent"
-                  strokeWidth={1}
-                  absoluteStrokeWidth
-                />
+            {OCCASIONS.map(({ Icon, label }) => (
+              <div key={label} className="flex flex-col items-center gap-5">
+                <Icon className="w-14 h-14 text-store-accent" />
                 <span className="text-[12.5px] text-store-fg tracking-wide">
                   {label}
                 </span>
