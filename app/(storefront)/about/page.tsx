@@ -1,10 +1,12 @@
-import { MessageCircle, Mail } from "lucide-react";
 import {
   WeddingIcon,
   BirthdayIcon,
   BridalShowerIcon,
   GraduationIcon,
   DateNightIcon,
+  WhatsAppIcon,
+  EmailIcon,
+  InstagramIcon,
 } from "@/components/icons";
 
 export const metadata = {
@@ -133,11 +135,7 @@ export default function AboutPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-14">
             <div className="flex flex-col items-center gap-4">
-              <MessageCircle
-                className="w-9 h-9 text-store-fg"
-                strokeWidth={1.2}
-                absoluteStrokeWidth
-              />
+              <WhatsAppIcon className="w-10 h-10 text-store-accent" />
               <p className="font-serif text-[17px] text-store-fg">Whatsapp</p>
               <div className="text-[12px] text-store-fg-muted leading-relaxed space-y-1">
                 <p>
@@ -166,11 +164,7 @@ export default function AboutPage() {
             </div>
 
             <div className="flex flex-col items-center gap-4">
-              <Mail
-                className="w-9 h-9 text-store-fg"
-                strokeWidth={1.2}
-                absoluteStrokeWidth
-              />
+              <EmailIcon className="w-10 h-10 text-store-accent" />
               <p className="font-serif text-[17px] text-store-fg">Email</p>
               <a
                 href="mailto:daysinkora@gmail.com"
@@ -181,20 +175,7 @@ export default function AboutPage() {
             </div>
 
             <div className="flex flex-col items-center gap-4">
-              <svg
-                className="w-9 h-9 text-store-fg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-              </svg>
+              <InstagramIcon className="w-10 h-10 text-store-accent" />
               <p className="font-serif text-[17px] text-store-fg">Instagram</p>
               <a
                 href="https://instagram.com/daysinkora"
