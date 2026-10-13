@@ -16,7 +16,7 @@ import {
 } from "@/app/actions/inventory";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
-import { STYLE_TAGS, normalizeStyleTags } from "@/lib/styleTags";
+import { STYLE_TAGS, normalizeStyleTags, type StyleTag } from "@/lib/styleTags";
 
 export default function ItemForm({
   isNew,
@@ -63,6 +63,14 @@ export default function ItemForm({
     };
   }, [initialData]);
 
+  /*
+   * No explicit useState generic here — letting TS infer types from the
+   * initial object keeps `rental_price` and `buffer_override` compatible
+   * with both their text input handlers and RupiahInput (which emits a
+   * number, not a string). The one field that MUST stay narrowly typed
+   * is `tags`, which is inferred as `StyleTag[]` from normalizeStyleTags
+   * — that's what makes toggleStyleTag(tag: StyleTag) type-check.
+   */
   const [formData, setFormData] = useState({
     sku: viewData.sku || "",
     brand_id: viewData.brand_id || "",
@@ -191,7 +199,7 @@ export default function ItemForm({
   }, [orders, effectiveBuffer]);
 
   const calculatedDeposit = useMemo(() => {
-    const price = parseFloat(formData.rental_price) || 0;
+    const price = parseFloat(String(formData.rental_price)) || 0;
     const tier =
       depositTiers.find((t: any) => price <= t.price_up_to) ||
       depositTiers[depositTiers.length - 1];
@@ -214,12 +222,15 @@ export default function ItemForm({
   /**
    * Toggle a canonical style tag. Only STYLE_TAGS values can enter
    * formData.tags — freeform text is no longer accepted.
+   *
+   * `tag` is typed as `StyleTag` (not `string`) so `prev.tags.includes(tag)`
+   * type-checks against the inferred `StyleTag[]` on the state shape.
    */
-  const toggleStyleTag = (tag: string) => {
+  const toggleStyleTag = (tag: StyleTag) => {
     setFormData((prev) => {
       const has = prev.tags.includes(tag);
       const next = has
-        ? prev.tags.filter((t: string) => t !== tag)
+        ? prev.tags.filter((t) => t !== tag)
         : // Re-sort through STYLE_TAGS order so the saved array is canonical
           normalizeStyleTags([...prev.tags, tag]);
       return { ...prev, tags: next };
