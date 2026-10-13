@@ -1,12 +1,12 @@
-import {
-  CalendarX,
-  CalendarDays,
-  Truck,
-  Sparkles,
-  PackageCheck,
-} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
+import {
+  BrowseIcon,
+  BookDatesIcon,
+  PackageArrivesIcon,
+  WearItIcon,
+  ReturnItIcon,
+} from "@/components/icons";
 import FaqAccordion from "./FaqAccordion";
 
 export const metadata = {
@@ -18,31 +18,31 @@ export const metadata = {
 const STEPS = [
   {
     n: 1,
-    icon: CalendarX,
+    Icon: BrowseIcon,
     title: "Browse & Pick your Date",
     body: "Find your dress and choose your event date. Optionally, book a showroom fitting first.",
   },
   {
     n: 2,
-    icon: CalendarDays,
+    Icon: BookDatesIcon,
     title: "Book & Pay",
     body: "Your dress is secured once payment is made. A fitting alone doesn't reserve it.",
   },
   {
     n: 3,
-    icon: Truck,
+    Icon: PackageArrivesIcon,
     title: "It Arrives",
     body: "Your dress arrives clean and ready, one day before your event.",
   },
   {
     n: 4,
-    icon: Sparkles,
+    Icon: WearItIcon,
     title: "Wear It",
     body: "Enjoy your moment. Turn heads.",
   },
   {
     n: 5,
-    icon: PackageCheck,
+    Icon: ReturnItIcon,
     title: "Return It",
     body: "Send it back within your return window. We'll handle the cleaning.",
   },
@@ -124,19 +124,15 @@ export default async function HowToRentPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-[1320px] mx-auto">
-          {STEPS.map(({ n, icon: Icon, title, body }) => (
+          {STEPS.map(({ n, Icon, title, body }) => (
             <div
               key={n}
-              className="bg-[#F1EFE1] border border-store-border px-5 py-8 flex flex-col items-center text-center min-h-[220px]"
+              className="bg-[#F1EFE1] border border-store-border px-5 py-8 flex flex-col items-center text-center min-h-[230px]"
             >
               <span className="w-7 h-7 flex items-center justify-center bg-store-accent text-white text-[12px] font-medium mb-5">
                 {n}
               </span>
-              <Icon
-                className="w-8 h-8 text-store-accent mb-5"
-                strokeWidth={1}
-                absoluteStrokeWidth
-              />
+              <Icon className="w-11 h-11 text-store-accent mb-5" />
               <h3 className="text-store-accent text-[13px] tracking-[0.02em] mb-2 font-normal leading-tight">
                 {title}
               </h3>
@@ -255,6 +251,8 @@ export default async function HowToRentPage() {
     </div>
   );
 }
+
+/* ── Layout helpers ────────────────────────────────────────────────── */
 
 function Table({
   headers,
