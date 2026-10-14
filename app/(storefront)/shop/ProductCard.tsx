@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { formatRupiah } from "@/lib/utils";
 
 interface Item {
@@ -18,27 +19,16 @@ export default function ProductCard({
   appearDelay,
 }: {
   item: Item;
-  /** Above-the-fold batch: eager + preload. */
   priority?: boolean;
-  /**
-   * When defined, the card is held at opacity:0 until its cover image
-   * fires `onLoad`, then it transitions in with this delay (ms).
-   * Undefined = static (used for the initial PAGE_SIZE batch, which is
-   * already gated by PageLoader).
-   */
   appearDelay?: number;
 }) {
+  const router = useRouter();
   const href = `/shop/${item.sku.toLowerCase()}`;
   const [imgLoaded, setImgLoaded] = useState(false);
 
   const isAnimated = appearDelay !== undefined;
-  // Cards with no cover image never wait.
   const ready = imgLoaded || !item.coverImage;
 
-  // Timing — 400ms ease-out with a slight overshoot curve. Stagger is
-  // applied by the parent via `appearDelay`. Filling both `both` and
-  // `forwards` isn't needed because we drive the end state via inline
-  // style, not the animation's fill mode.
   const ease = "cubic-bezier(0.22, 1, 0.36, 1)";
   const style: React.CSSProperties = isAnimated
     ? {
@@ -50,8 +40,12 @@ export default function ProductCard({
     : {};
 
   return (
-    <Link href={href} className="group block" style={style}>
-      {/* No grey backdrop — page bg shows through while the image paints. */}
+    <Link
+      href={href}
+      onMouseEnter={() => router.prefetch(href)}
+      className="group block"
+      style={style}
+    >
       <div className="relative aspect-[3/4] w-full overflow-hidden mb-3">
         {item.coverImage ? (
           <Image

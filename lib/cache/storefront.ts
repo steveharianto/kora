@@ -7,8 +7,8 @@
 // They must NOT use `createClient()` from `lib/supabase/server` because
 // that reads cookies — a dynamic data source forbidden inside `unstable_cache`.
 
-import { unstable_cache } from 'next/cache';
-import { createStaticClient } from '@/lib/supabase/static';
+import { unstable_cache } from "next/cache";
+import { createStaticClient } from "@/lib/supabase/static";
 
 /* ── Items ────────────────────────────────────────────────────────── */
 
@@ -16,8 +16,9 @@ export const getCachedShopRawItems = unstable_cache(
   async () => {
     const supabase = createStaticClient();
     const { data } = await supabase
-      .from('items')
-      .select(`
+      .from("items")
+      .select(
+        `
         sku,
         name,
         size,
@@ -32,15 +33,16 @@ export const getCachedShopRawItems = unstable_cache(
         brands ( name ),
         types ( name, default_buffer_days ),
         item_images ( image_url, display_order )
-      `)
-      .eq('website_status', 'Published')
-      .eq('is_archived', false)
-      .order('date_added', { ascending: false });
+      `,
+      )
+      .eq("website_status", "Published")
+      .eq("is_archived", false)
+      .order("date_added", { ascending: false });
 
     return data || [];
   },
-  ['shop-raw-items'],
-  { revalidate: 60, tags: ['items'] },
+  ["shop-raw-items"],
+  { revalidate: 60, tags: ["items"] },
 );
 
 /* ── Deposit tiers ────────────────────────────────────────────────── */
@@ -54,20 +56,20 @@ export const getCachedDepositTiers = unstable_cache(
   async (): Promise<DepositTier[]> => {
     const supabase = createStaticClient();
     const { data } = await supabase
-      .from('deposit_tiers')
-      .select('price_up_to, deposit_value')
-      .order('price_up_to', { ascending: true });
+      .from("deposit_tiers")
+      .select("price_up_to, deposit_value")
+      .order("price_up_to", { ascending: true });
 
     return (data || []).map((t: any) => ({
       price_up_to: Number(t.price_up_to),
       deposit_value: Number(t.deposit_value),
     }));
   },
-  ['deposit-tiers'],
-  { revalidate: 300, tags: ['settings', 'deposit-tiers'] },
+  ["deposit-tiers"],
+  { revalidate: 300, tags: ["settings", "deposit-tiers"] },
 );
 
-/* ── Rental rules (late fees, deposit policy text) ────────────────── */
+/* ── Rental rules ─────────────────────────────────────────────────── */
 
 export interface RentalRules {
   late_fee_schedule?: { label: string; fee: number }[];
@@ -79,18 +81,18 @@ export const getCachedRentalRules = unstable_cache(
   async (): Promise<RentalRules | null> => {
     const supabase = createStaticClient();
     const { data } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'rental_rules')
+      .from("app_settings")
+      .select("value")
+      .eq("key", "rental_rules")
       .single();
 
     return (data?.value as RentalRules) || null;
   },
-  ['rental-rules'],
-  { revalidate: 300, tags: ['settings', 'rental-rules'] },
+  ["rental-rules"],
+  { revalidate: 300, tags: ["settings", "rental-rules"] },
 );
 
-/* ── Brands / Types (admin reference lists) ───────────────────────── */
+/* ── Brands / Types / Categories ──────────────────────────────────── */
 
 export interface NamedRef {
   id: number;
@@ -100,32 +102,223 @@ export interface NamedRef {
 export const getCachedBrands = unstable_cache(
   async (): Promise<NamedRef[]> => {
     const supabase = createStaticClient();
-    const { data } = await supabase.from('brands').select('id, name').order('name');
+    const { data } = await supabase
+      .from("brands")
+      .select("id, name")
+      .order("name");
     return data || [];
   },
-  ['brands'],
-  { revalidate: 300, tags: ['reference'] },
+  ["brands"],
+  { revalidate: 300, tags: ["reference"] },
 );
 
 export const getCachedTypes = unstable_cache(
   async (): Promise<NamedRef[]> => {
     const supabase = createStaticClient();
-    const { data } = await supabase.from('types').select('id, name').order('name');
+    const { data } = await supabase
+      .from("types")
+      .select("id, name")
+      .order("name");
     return data || [];
   },
-  ['types'],
-  { revalidate: 300, tags: ['reference'] },
+  ["types"],
+  { revalidate: 300, tags: ["reference"] },
 );
 
 export const getCachedCategories = unstable_cache(
   async (): Promise<NamedRef[]> => {
     const supabase = createStaticClient();
     const { data } = await supabase
-      .from('categories')
-      .select('id, name')
-      .order('name');
+      .from("categories")
+      .select("id, name")
+      .order("name");
     return data || [];
   },
-  ['categories'],
-  { revalidate: 300, tags: ['reference'] },
+  ["categories"],
+  { revalidate: 300, tags: ["reference"] },
+);
+
+/* ── Product detail (item + related + accessories + shipping) ─────── */
+
+export interface ProductDetailItem {
+  sku: string;
+  name: string;
+  brand: string;
+  type: string;
+  description: string;
+  size: string;
+  color: string;
+  tags: string[];
+  rentalPrice: number;
+  measurements: Record<string, any>;
+  images: string[];
+}
+
+export interface ProductDetailRelated {
+  sku: string;
+  name: string;
+  rentalPrice: number;
+  coverImage: string | null;
+}
+
+export interface ProductDetailAccessory {
+  sku: string;
+  name: string;
+  rentalPrice: number;
+  image: string | null;
+}
+
+export interface ProductDetailLeadTime {
+  prefix: string;
+  region: string;
+  days: number;
+}
+
+export interface ProductDetailPayload {
+  item: ProductDetailItem | null;
+  relatedItems: ProductDetailRelated[];
+  accessories: ProductDetailAccessory[];
+  deliveryLeadTimes: ProductDetailLeadTime[];
+}
+
+// Single cached fetcher for the entire product page. Items + shipping +
+// accessories fire in parallel; related + filler collapse into one query
+// with an in-memory same-brand sort.
+//
+// Tagged 'items' so admin edits (revalidateTag('items', 'max')) bust this
+// along with the shop list. SKU normalization happens at the call site
+// so 'zm19' and 'ZM19' share one cache entry.
+export const getCachedProductDetail = unstable_cache(
+  async (sku: string): Promise<ProductDetailPayload> => {
+    const canonicalSku = sku.toUpperCase();
+    const supabase = createStaticClient();
+
+    const [itemRes, shippingRes, accessoriesRes] = await Promise.all([
+      supabase
+        .from("items")
+        .select(
+          `
+          sku, name, description, size, color, tags, rental_price, measurements,
+          brands ( id, name ),
+          types ( name ),
+          item_images ( image_url, display_order )
+        `,
+        )
+        .eq("sku", canonicalSku)
+        .eq("website_status", "Published")
+        .eq("is_archived", false)
+        .maybeSingle(),
+
+      supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "shipping")
+        .single(),
+
+      supabase
+        .from("items")
+        .select(
+          "sku, name, rental_price, item_images(image_url, display_order)",
+        )
+        .eq("website_status", "Published")
+        .eq("is_archived", false)
+        .eq("status", "Available")
+        .neq("sku", canonicalSku)
+        .limit(3),
+    ]);
+
+    const item = itemRes.data;
+
+    if (!item) {
+      return {
+        item: null,
+        relatedItems: [],
+        accessories: [],
+        deliveryLeadTimes: [],
+      };
+    }
+
+    const brandId = (item.brands as any)?.id;
+
+    // One query for related + filler. Over-fetch, sort same-brand first
+    // in memory, take the top 4.
+    const { data: relatedData } = await supabase
+      .from("items")
+      .select(
+        `
+        sku, name, rental_price,
+        brands ( id ),
+        item_images ( image_url, display_order )
+      `,
+      )
+      .eq("website_status", "Published")
+      .eq("is_archived", false)
+      .eq("status", "Available")
+      .neq("sku", canonicalSku)
+      .limit(12);
+
+    const sortedRelated = (relatedData || [])
+      .slice()
+      .sort((a: any, b: any) => {
+        const aMatch = (a.brands as any)?.id === brandId ? 1 : 0;
+        const bMatch = (b.brands as any)?.id === brandId ? 1 : 0;
+        return bMatch - aMatch;
+      })
+      .slice(0, 4);
+
+    const relatedItems: ProductDetailRelated[] = sortedRelated.map((r: any) => {
+      const imgs = (r.item_images || []).sort(
+        (a: any, b: any) => a.display_order - b.display_order,
+      );
+      return {
+        sku: r.sku,
+        name: r.name,
+        rentalPrice: Number(r.rental_price) || 0,
+        coverImage: imgs[0]?.image_url || null,
+      };
+    });
+
+    const accessories: ProductDetailAccessory[] = (
+      accessoriesRes.data || []
+    ).map((i: any) => {
+      const imgs = (i.item_images || []).sort(
+        (a: any, b: any) => a.display_order - b.display_order,
+      );
+      return {
+        sku: i.sku,
+        name: i.name,
+        rentalPrice: Number(i.rental_price) || 0,
+        image: imgs[0]?.image_url || null,
+      };
+    });
+
+    const deliveryLeadTimes: ProductDetailLeadTime[] =
+      (shippingRes.data?.value?.delivery_lead_times as any[]) || [];
+
+    const images = (item.item_images || [])
+      .slice()
+      .sort((a: any, b: any) => a.display_order - b.display_order)
+      .map((im: any) => im.image_url);
+
+    return {
+      item: {
+        sku: item.sku,
+        name: item.name,
+        brand: (item.brands as any)?.name || "",
+        type: (item.types as any)?.name || "",
+        description: item.description || "",
+        size: item.size || "",
+        color: item.color || "",
+        tags: item.tags || [],
+        rentalPrice: Number(item.rental_price) || 0,
+        measurements: item.measurements || {},
+        images,
+      },
+      relatedItems,
+      accessories,
+      deliveryLeadTimes,
+    };
+  },
+  ["product-detail"],
+  { revalidate: 300, tags: ["items"] },
 );

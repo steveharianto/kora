@@ -68,13 +68,11 @@ export default function ProductDetail({
   item,
   relatedItems,
   accessories,
-  fittingPrefill,
   deliveryLeadTimes,
 }: {
   item: Item;
   relatedItems: RelatedItem[];
   accessories: Accessory[];
-  fittingPrefill: { date: string; slot: string } | null;
   deliveryLeadTimes: LeadTime[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("size");
@@ -178,10 +176,6 @@ export default function ProductDetail({
     }
   };
 
-  const prefillLabel = fittingPrefill
-    ? formatPrefillLine(fittingPrefill.date, fittingPrefill.slot)
-    : null;
-
   return (
     <div className="w-full">
       <div className="max-w-[1512px] mx-auto">
@@ -213,8 +207,6 @@ export default function ProductDetail({
               </div>
             )}
 
-            {/* Main image: gated on data-preload so PageLoader holds the
-                page behind LoaderShell until it paints. No grey backdrop. */}
             <div className="relative flex-1 aspect-[3/4] overflow-hidden">
               {item.images[activeImg] ? (
                 <Image
@@ -253,32 +245,13 @@ export default function ProductDetail({
                 See Availability
               </button>
 
-              {fittingPrefill ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    addToFittingCart({
-                      date: fittingPrefill.date,
-                      slot: fittingPrefill.slot,
-                      sku: item.sku,
-                    })
-                  }
-                  className="px-6 py-2 border border-store-fg text-[11px] tracking-[0.18em] uppercase font-medium text-store-fg hover:bg-store-hover/50 transition-colors cursor-pointer text-left leading-tight"
-                >
-                  <span className="block">Book Fitting Session</span>
-                  <span className="block text-[9px] tracking-[0.14em] text-store-fg-muted mt-0.5">
-                    {prefillLabel}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setFitOpen(true)}
-                  className="px-6 py-3 border border-store-fg text-[11px] tracking-[0.18em] uppercase font-medium text-store-fg hover:bg-store-hover/50 transition-colors cursor-pointer"
-                >
-                  Book Fitting Session
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setFitOpen(true)}
+                className="px-6 py-3 border border-store-fg text-[11px] tracking-[0.18em] uppercase font-medium text-store-fg hover:bg-store-hover/50 transition-colors cursor-pointer"
+              >
+                Book Fitting Session
+              </button>
             </div>
 
             <div className="border-b border-store-border mb-6">
@@ -524,17 +497,4 @@ function MeasurementBlock({
       </div>
     </div>
   );
-}
-
-function formatPrefillLine(dateStr: string, slot: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  const weekday = dt
-    .toLocaleDateString("en-GB", { weekday: "long" })
-    .toUpperCase();
-  const dd = String(d).padStart(2, "0");
-  const month = dt.toLocaleDateString("en-GB", { month: "long" }).toUpperCase();
-  const hh = slot.split(":")[0];
-  const nextHH = String(parseInt(hh, 10) + 1).padStart(2, "0");
-  return `${weekday}, ${dd} ${month} ${y} ${hh}.00-${nextHH}.00`;
 }
