@@ -1,9 +1,21 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Fragment } from "react";
+import { getBusinessInfo } from "@/lib/settings/businessInfo.server";
+import { formatOperatingHoursLines } from "@/lib/settings/businessInfo";
 
-const GOOGLE_MAPS_URL = "https://maps.app.goo.gl/YKkwsJQkRBMXixe26";
+/**
+ * Storefront footer.
+ *
+ * Location + Working Hours are read live from app_settings.business_info.
+ * The address is rendered as plain text — no Google Maps hyperlink, since
+ * the showroom address is admin-editable and a hardcoded link would drift.
+ * Working hours are grouped per-day (see formatOperatingHoursLines).
+ */
+export default async function StorefrontFooter() {
+  const info = await getBusinessInfo();
+  const hourLines = formatOperatingHoursLines(info.operating_hours);
 
-export default function StorefrontFooter() {
   return (
     <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-20 pb-10 px-6 sm:px-12 border-t border-[#54644C]">
       <div className="max-w-[1512px] mx-auto">
@@ -12,13 +24,6 @@ export default function StorefrontFooter() {
             Column layout matches the Figma:
               [ Logo ] [ Location + Working Hours ] [ Navigation ] [ Social ] [ Legal ]
             Location and Working Hours live in the SAME column, stacked.
-
-            Grid spans tuned for visual balance:
-              Logo            3/12  — pulled back so it reads as a mark, not a banner
-              Location+Hours  4/12  — widest text column (address needs the room)
-              Navigation      2/12
-              Social          2/12
-              Legal           1/12
         */}
         <div className="grid grid-cols-2 md:grid-cols-12 gap-x-8 gap-y-14 pb-16">
           {/* Logo */}
@@ -45,17 +50,9 @@ export default function StorefrontFooter() {
               <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
                 Location
               </h4>
-              <a
-                href={GOOGLE_MAPS_URL}
-                target="_blank"
-                rel="noreferrer"
-                title="Open KORA showroom in Google Maps"
-                className="block text-[12px] text-[#ECEBE4]/80 leading-[1.7] hover:text-white hover:underline underline-offset-4 transition-colors"
-              >
-                Jl. Darmawangsa VI No. 42 Pulo,
-                <br />
-                Kebayoran Baru, South Jakarta 12160
-              </a>
+              <p className="text-[12px] text-[#ECEBE4]/80 leading-[1.7] whitespace-pre-line">
+                {info.showroom}
+              </p>
             </div>
 
             <div>
@@ -63,9 +60,12 @@ export default function StorefrontFooter() {
                 Working Hours
               </h4>
               <p className="text-[12px] text-[#ECEBE4]/80 leading-[1.7]">
-                Monday–Friday: 10 AM – 5 PM
-                <br />
-                Saturday: 10 AM – 1 PM
+                {hourLines.map((line, i) => (
+                  <Fragment key={i}>
+                    {line}
+                    {i < hourLines.length - 1 && <br />}
+                  </Fragment>
+                ))}
               </p>
             </div>
           </div>
