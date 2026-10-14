@@ -15,12 +15,11 @@ import { Lock, X } from "lucide-react";
 import RupiahInput from "@/components/RupiahInput";
 import AddressMapPicker from "@/components/AddressMapPicker";
 import {
-  DEFAULT_BUSINESS_INFO,
-  normaliseBusinessInfo,
   DAY_ORDER,
   DAY_LABEL,
-  type BusinessInfo,
+  normaliseOperatingHours,
   type DayKey,
+  type OperatingHours,
 } from "@/lib/settings/businessInfo";
 
 interface SettingsClientProps {
@@ -47,8 +46,7 @@ const TABS = [
 
 /* ── Showroom origin card ────────────────────────────────────────────
    Renders one dispatch address (primary or secondary) using the same
-   AddressMapPicker used by every other address form in the app —
-   Customer Detail, Order Form quick-add, Storefront Account, Returns.
+   AddressMapPicker used by every other address form in the app.
    Contact name + phone are showroom-specific extras that ride above
    the map; phone auto-normalises from local 08… to 62… on every
    keystroke, matching the AddCustomerModal / OrderForm pattern.
@@ -93,10 +91,6 @@ function ShowroomOriginCard({
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Strip non-digits; upgrade a leading local 0 to the 62 country code.
-    // Same rule used in AddCustomerModal and the OrderForm quick-add modal
-    // so a showroom number entered as "0812…" or "62812…" lands in the DB
-    // as "62812…".
     let v = e.target.value.replace(/\D/g, "");
     if (v.startsWith("0")) v = "62" + v.slice(1);
     updateOrigin({ phone: v });
@@ -109,8 +103,6 @@ function ShowroomOriginCard({
         <p className="text-muted text-[12.5px]">{description}</p>
       </div>
 
-      {/* Contact identity — showroom-specific fields above the map,
-          mirroring how AddCustomerModal puts name/phone before address. */}
       <div className="grid grid-cols-2 gap-3.5">
         <div>
           <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
@@ -142,9 +134,6 @@ function ShowroomOriginCard({
         </div>
       </div>
 
-      {/* Address — same search + pin experience as every other
-          address form on the site. The picker emits street_address,
-          city, postal_code, latitude, and longitude together. */}
       <div>
         <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-2">
           Address
@@ -190,7 +179,7 @@ export default function SettingsClient({
   const isSuperAdmin =
     currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, "") === "superadmin";
 
-  // ---- Automation (unchanged) ----
+  // ---- Automation ----
   const [automation, setAutomation] = useState(
     settingsMap.automation || {
       dress_buffers: [
@@ -209,7 +198,7 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Rental rules (unchanged) ----
+  // ---- Rental rules ----
   const [rentalRules, setRentalRules] = useState(
     settingsMap.rental_rules || {
       period: {
@@ -230,7 +219,7 @@ export default function SettingsClient({
   );
   const [depositTiers, setDepositTiers] = useState(initialDepositTiers);
 
-  // ---- Orders tab state (unchanged) ----
+  // ---- Orders ----
   const [ordersSettings, setOrdersSettings] = useState(
     settingsMap.orders || {
       draft_stale_days: 30,
@@ -238,7 +227,7 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Fittings (unchanged) ----
+  // ---- Fittings ----
   const [fittings, setFittings] = useState(
     settingsMap.fittings || {
       operating_hours: {
@@ -254,12 +243,12 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Notifications (unchanged) ----
+  // ---- Notifications ----
   const [notifications, setNotifications] = useState(
     settingsMap.notifications || {},
   );
 
-  // ---- Shipping — origins standardised to AddressMapPicker ----
+  // ---- Shipping ----
   const [shipping, setShipping] = useState(() => {
     const raw = settingsMap.shipping || {};
     const rawPrimary = raw.dispatch_addresses?.primary;
@@ -312,14 +301,12 @@ export default function SettingsClient({
       },
       refund_payout_methods:
         raw.refund_payout_methods || "Bank transfer, Dana, OVO, GoPay, Cash",
-
       booking_window_days: Number(raw.booking_window_days ?? 3),
       default_item_weight_g: Number(raw.default_item_weight_g ?? 800),
       item_weight_overrides: raw.item_weight_overrides || {},
     };
   });
 
-  // Textarea representation of overrides
   const overridesText = useState(() => {
     const obj = shipping.item_weight_overrides || {};
     return Object.entries(obj)
@@ -328,12 +315,12 @@ export default function SettingsClient({
   });
   const [overridesDraft, setOverridesDraft] = overridesText;
 
-  // ---- Website content (unchanged) ----
+  // ---- Website content ----
   const [websiteContent, setWebsiteContent] = useState(
     settingsMap.website_content || { shipping_return_policy: "" },
   );
 
-  // ---- Permissions (unchanged) ----
+  // ---- Permissions ----
   const [permissions, setPermissions] = useState(
     settingsMap.permissions || {
       reset_order_draft: "superadmin_only",
@@ -353,25 +340,18 @@ export default function SettingsClient({
     role: "staff",
   });
 
-  // ---- Business info (unchanged) ----
-  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(() =>
-    normaliseBusinessInfo(settingsMap.business_info),
+  // ---- Business info — operating hours only ----
+  const [operatingHours, setOperatingHours] = useState<OperatingHours>(() =>
+    normaliseOperatingHours(settingsMap.business_info?.operating_hours),
   );
 
-  /** Immutable per-day hour updater. */
-  const updateDay = (
-    key: DayKey,
-    patch: Partial<BusinessInfo["operating_hours"][DayKey]>,
-  ) =>
-    setBusinessInfo((prev) => ({
+  const updateDay = (key: DayKey, patch: Partial<OperatingHours[DayKey]>) =>
+    setOperatingHours((prev) => ({
       ...prev,
-      operating_hours: {
-        ...prev.operating_hours,
-        [key]: { ...prev.operating_hours[key], ...patch },
-      },
+      [key]: { ...prev[key], ...patch },
     }));
 
-  // ---- Change password (unchanged) ----
+  // ---- Change password ----
   const [pwForm, setPwForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -519,7 +499,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 1. AUTOMATION — unchanged */}
+      {/* 1. AUTOMATION */}
       {activeTab === "automation" && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -602,7 +582,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 2. RENTAL RULES — unchanged */}
+      {/* 2. RENTAL RULES */}
       {activeTab === "rental-rules" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -743,7 +723,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 3. ORDERS — unchanged */}
+      {/* 3. ORDERS */}
       {activeTab === "orders" && (
         <div className="space-y-4">
           <div className="bg-card border border-line rounded-[10px] p-5 max-w-2xl space-y-4">
@@ -804,7 +784,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 4. FITTINGS — unchanged */}
+      {/* 4. FITTINGS */}
       {activeTab === "fittings" && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -914,7 +894,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 5. NOTIFICATIONS — unchanged */}
+      {/* 5. NOTIFICATIONS */}
       {activeTab === "notifications" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5 space-y-4">
@@ -954,7 +934,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 6. SHIPPING — standardised to AddressMapPicker */}
+      {/* 6. SHIPPING */}
       {activeTab === "shipping" && (
         <div className="space-y-4">
           <ShowroomOriginCard
@@ -975,7 +955,6 @@ export default function SettingsClient({
             disabled={!isSuperAdmin}
           />
 
-          {/* Courier booking rules — unchanged */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">
               Courier booking rules
@@ -1063,7 +1042,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 7. WEBSITE CONTENT — unchanged */}
+      {/* 7. WEBSITE CONTENT */}
       {activeTab === "website-content" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-4 max-w-2xl">
@@ -1094,7 +1073,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 8. USERS & ROLES — unchanged */}
+      {/* 8. USERS & ROLES */}
       {activeTab === "users-roles" && (
         <div className="space-y-5">
           <div className="bg-card border border-line rounded-[10px] p-5">
@@ -1163,7 +1142,6 @@ export default function SettingsClient({
             </table>
           </div>
 
-          {/* Workflow permissions */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">
               Workflow permissions
@@ -1311,7 +1289,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 9. CHANGE PASSWORD — unchanged */}
+      {/* 9. CHANGE PASSWORD */}
       {activeTab === "change-password" && (
         <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-xl space-y-3.5">
           <div>
@@ -1402,48 +1380,10 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 10. BUSINESS INFO — unchanged from previous revision */}
+      {/* 10. BUSINESS INFO — only Operating Hours editable */}
       {activeTab === "business-info" && (
-        <div>
-          <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-2xl space-y-6">
-            {/* Brand Name — fixed, not editable */}
-            <div>
-              <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                Brand Name
-              </label>
-              <input
-                disabled
-                readOnly
-                value={DEFAULT_BUSINESS_INFO.brand_name}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#F6F4EF] text-muted cursor-not-allowed"
-              />
-              <p className="text-[11px] text-muted mt-1">
-                Fixed — the brand name is applied consistently across the
-                storefront.
-              </p>
-            </div>
-
-            {/* Showroom */}
-            <div>
-              <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                Showroom Address
-              </label>
-              <textarea
-                rows={2}
-                disabled={!isSuperAdmin}
-                value={businessInfo.showroom}
-                onChange={(e) =>
-                  setBusinessInfo({ ...businessInfo, showroom: e.target.value })
-                }
-                placeholder={DEFAULT_BUSINESS_INFO.showroom}
-                className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none disabled:bg-[#F6F4EF] disabled:cursor-not-allowed resize-none leading-relaxed"
-              />
-              <p className="text-[11px] text-muted mt-1">
-                Shown in the storefront footer. Line breaks are preserved.
-              </p>
-            </div>
-
-            {/* Operating Hours — per-day rows */}
+        <div className="space-y-4">
+          <div className="bg-card border border-line rounded-[10px] p-5 max-w-2xl">
             <div>
               <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-3">
                 Operating Hours
@@ -1451,7 +1391,7 @@ export default function SettingsClient({
 
               <div className="space-y-2">
                 {DAY_ORDER.map((key) => {
-                  const day = businessInfo.operating_hours[key];
+                  const day = operatingHours[key];
                   return (
                     <div key={key} className="flex items-center gap-3">
                       <span className="w-20 text-[12.5px] text-ink flex-shrink-0">
@@ -1519,7 +1459,9 @@ export default function SettingsClient({
 
           <button
             type="button"
-            onClick={() => handleSave("business_info", businessInfo)}
+            onClick={() =>
+              handleSave("business_info", { operating_hours: operatingHours })
+            }
             disabled={loading || !isSuperAdmin}
             className="font-medium bg-wine text-white rounded-lg px-4 py-2 text-sm hover:bg-[#181E15] transition disabled:opacity-50"
           >

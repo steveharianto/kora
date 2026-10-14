@@ -8,9 +8,9 @@
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { normaliseBusinessInfo, type BusinessInfo } from "./businessInfo";
+import { normaliseOperatingHours, type OperatingHours } from "./businessInfo";
 
-export const getBusinessInfo = cache(async (): Promise<BusinessInfo> => {
+export const getOperatingHours = cache(async (): Promise<OperatingHours> => {
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -19,5 +19,7 @@ export const getBusinessInfo = cache(async (): Promise<BusinessInfo> => {
     .eq("key", "business_info")
     .maybeSingle();
 
-  return normaliseBusinessInfo(data?.value);
+  return normaliseOperatingHours(
+    (data?.value as Record<string, unknown> | null)?.operating_hours,
+  );
 });

@@ -1,20 +1,28 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Fragment } from "react";
-import { getBusinessInfo } from "@/lib/settings/businessInfo.server";
+import { getOperatingHours } from "@/lib/settings/businessInfo.server";
 import { formatOperatingHoursLines } from "@/lib/settings/businessInfo";
+import {
+  SHOWROOM_ADDRESS,
+  GOOGLE_MAPS_URL,
+  WHATSAPP_ADMINS,
+  INSTAGRAM_URL,
+  TIKTOK_URL,
+  CONTACT_EMAIL,
+} from "@/lib/business/contactInfo";
 
 /**
  * Storefront footer.
  *
- * Location + Working Hours are read live from app_settings.business_info.
- * The address is rendered as plain text — no Google Maps hyperlink, since
- * the showroom address is admin-editable and a hardcoded link would drift.
- * Working hours are grouped per-day (see formatOperatingHoursLines).
+ * • Location — hardcoded in lib/business/contactInfo.ts, linked to Google Maps.
+ * • Working Hours — read live from app_settings.business_info.operating_hours,
+ *   grouped into consecutive-day runs.
+ * • Social — hardcoded URLs from contactInfo.
  */
 export default async function StorefrontFooter() {
-  const info = await getBusinessInfo();
-  const hourLines = formatOperatingHoursLines(info.operating_hours);
+  const hours = await getOperatingHours();
+  const hourLines = formatOperatingHoursLines(hours);
 
   return (
     <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-20 pb-10 px-6 sm:px-12 border-t border-[#54644C]">
@@ -50,9 +58,15 @@ export default async function StorefrontFooter() {
               <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
                 Location
               </h4>
-              <p className="text-[12px] text-[#ECEBE4]/80 leading-[1.7] whitespace-pre-line">
-                {info.showroom}
-              </p>
+              <a
+                href={GOOGLE_MAPS_URL}
+                target="_blank"
+                rel="noreferrer"
+                title="Open KORA showroom in Google Maps"
+                className="block text-[12px] text-[#ECEBE4]/80 leading-[1.7] whitespace-pre-line hover:text-white hover:underline underline-offset-4 transition-colors"
+              >
+                {SHOWROOM_ADDRESS}
+              </a>
             </div>
 
             <div>
@@ -127,7 +141,7 @@ export default async function StorefrontFooter() {
             <ul className="space-y-3 text-[11px] tracking-[0.12em] uppercase text-[#ECEBE4]/80">
               <li>
                 <a
-                  href="https://instagram.com"
+                  href={INSTAGRAM_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="hover:text-white transition-colors"
@@ -137,7 +151,7 @@ export default async function StorefrontFooter() {
               </li>
               <li>
                 <a
-                  href="https://tiktok.com"
+                  href={TIKTOK_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="hover:text-white transition-colors"
@@ -145,19 +159,22 @@ export default async function StorefrontFooter() {
                   TikTok
                 </a>
               </li>
+              {WHATSAPP_ADMINS.map((admin) => (
+                <li key={admin.waUrl}>
+                  <a
+                    href={admin.waUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Chat with ${admin.name} on WhatsApp (${admin.display})`}
+                    className="hover:text-white transition-colors"
+                  >
+                    WhatsApp · {admin.name}
+                  </a>
+                </li>
+              ))}
               <li>
                 <a
-                  href="https://wa.me/6281234567890"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-white transition-colors"
-                >
-                  WhatsApp
-                </a>
-              </li>
-              <li>
-                <a
-                  href="mailto:contact@kora.com"
+                  href={`mailto:${CONTACT_EMAIL}`}
                   className="hover:text-white transition-colors"
                 >
                   Email

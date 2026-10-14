@@ -1,13 +1,18 @@
 // lib/settings/businessInfo.ts
 //
-// Shared types + helpers for the `business_info` app_setting.
+// Client-safe helpers for the `business_info` app_setting.
 //
-// IMPORTANT: this file must remain client-safe. It is imported by the
-// admin Settings form (a client component) and by the storefront footer
-// (a server component). Anything that touches `next/headers` or the
-// Supabase server client lives in businessInfo.server.ts instead.
+// The setting now only carries `operating_hours` — showroom address,
+// brand name, and contact numbers live in `lib/business/contactInfo.ts`
+// as hardcoded constants (see that file for why).
+//
+// The normaliser tolerates three historical shapes for `operating_hours`:
+//
+//   v3 (current) — { mon: { open, close, closed }, tue: {...}, … }
+//   v2           — { mon_fri_open, mon_fri_close, sat_open, sat_close }
+//   v1 / null    — free-text string or missing row → defaults
 
-/* ── Operating hours ─────────────────────────────────────────────── */
+/* ── Types ──────────────────────────────────────────────────────── */
 
 export type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
@@ -15,7 +20,7 @@ export interface DayHours {
   /** "HH:MM" 24-hour, e.g. "10:00". Ignored when `closed` is true. */
   open: string;
   close: string;
-  /** When true, the showroom is closed on this day and no time inputs apply. */
+  /** When true, the showroom is closed on this day. */
   closed: boolean;
 }
 
@@ -41,6 +46,8 @@ export const DAY_LABEL: Record<DayKey, string> = {
   sun: "Sunday",
 };
 
+/* ── Defaults ───────────────────────────────────────────────────── */
+
 /**
  * Returns a fresh default schedule on every call — avoids shared object
  * references leaking between React state trees.
@@ -64,25 +71,7 @@ export function defaultOperatingHours(): OperatingHours {
 
 export const DEFAULT_OPERATING_HOURS: OperatingHours = defaultOperatingHours();
 
-/* ── Business info ───────────────────────────────────────────────── */
-
-export interface BusinessInfo {
-  brand_name: string;
-  showroom: string;
-  operating_hours: OperatingHours;
-}
-
-export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
-  // Brand is a constant — the storefront logo, invoice header, and
-  // WhatsApp brand line all hardcode KORA, so this field is read-only.
-  brand_name: "KORA",
-  // Fallback whenever the DB row is missing or the showroom field is empty.
-  showroom:
-    "Jl. Darmawangsa VI No. 42 Pulo,\nKebayoran Baru, South Jakarta 12160",
-  operating_hours: DEFAULT_OPERATING_HOURS,
-};
-
-/* ── Normalisers ─────────────────────────────────────────────────── */
+/* ── Normalisers ────────────────────────────────────────────────── */
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -104,14 +93,6 @@ function coerceDay(raw: unknown): DayHours {
   };
 }
 
-/**
- * Normalises a raw `operating_hours` value from the DB into the current
- * per-day shape. Handles three historical formats:
- *
- *   v3 (current) — { mon: { open, close, closed }, tue: {...}, … }
- *   v2           — { mon_fri_open, mon_fri_close, sat_open, sat_close }
- *   v1 / null    — free-text string or missing row → defaults
- */
 export function normaliseOperatingHours(raw: unknown): OperatingHours {
   // v3
   if (raw && typeof raw === "object" && "mon" in raw) {
@@ -136,11 +117,7 @@ export function normaliseOperatingHours(raw: unknown): OperatingHours {
       close: coerceTime(r.sat_close, "13:00"),
       closed: false,
     };
-    const sunday: DayHours = {
-      open: "10:00",
-      close: "13:00",
-      closed: true,
-    };
+    const sunday: DayHours = { open: "10:00", close: "13:00", closed: true };
     return {
       mon: { ...weekday },
       tue: { ...weekday },
@@ -156,27 +133,7 @@ export function normaliseOperatingHours(raw: unknown): OperatingHours {
   return defaultOperatingHours();
 }
 
-export function normaliseBusinessInfo(raw: unknown): BusinessInfo {
-  if (!raw || typeof raw !== "object") {
-    return {
-      ...DEFAULT_BUSINESS_INFO,
-      operating_hours: defaultOperatingHours(),
-    };
-  }
-  const r = raw as Record<string, unknown>;
-
-  return {
-    // Brand is fixed at KORA regardless of what the DB row holds.
-    brand_name: DEFAULT_BUSINESS_INFO.brand_name,
-    showroom:
-      typeof r.showroom === "string" && r.showroom.trim()
-        ? r.showroom
-        : DEFAULT_BUSINESS_INFO.showroom,
-    operating_hours: normaliseOperatingHours(r.operating_hours),
-  };
-}
-
-/* ── Display helpers ─────────────────────────────────────────────── */
+/* ── Display helpers ────────────────────────────────────────────── */
 
 /**
  * "14:00" → "2 PM" · "14:30" → "2:30 PM" · "10:00" → "10 AM".
@@ -207,12 +164,6 @@ function isSameDay(a: DayHours, b: DayHours): boolean {
  *
  *   Mon–Fri 10:00–17:00, Sat 10:00–13:00, Sun closed
  *     → ["Monday–Friday: 10 AM – 5 PM", "Saturday: 10 AM – 1 PM", "Sunday: Closed"]
- *
- *   All 7 days identical 10:00–17:00
- *     → ["Monday–Sunday: 10 AM – 5 PM"]
- *
- *   Only Saturday open
- *     → ["Monday–Friday: Closed", "Saturday: 10 AM – 5 PM", "Sunday: Closed"]
  */
 export function formatOperatingHoursLines(oh: OperatingHours): string[] {
   const lines: string[] = [];
