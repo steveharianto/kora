@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { Menu, X } from "lucide-react";
 import { RentalCartBadge, FittingCartBadge } from "./CartBadges";
 import RentalCartDrawer from "@/components/storefront/RentalCartDrawer";
 import FittingCartDrawer from "@/components/storefront/FittingCartDrawer";
@@ -18,18 +19,54 @@ import {
 import { getCurrentCustomer } from "@/app/actions/customerAuth";
 import type { CustomerPreview } from "@/lib/auth/customerPreview";
 
+const MOBILE_NAV: { label: string; href: string }[] = [
+  { label: "Shop All", href: "/shop" },
+  { label: "New Arrivals", href: "/shop?filter=new" },
+  { label: "Available This Week", href: "/shop?filter=available-now" },
+  { label: "Dresses", href: "/shop?category=dresses" },
+  { label: "Accessories", href: "/shop?category=accessories" },
+  { label: "How to Rent", href: "/how-to-rent" },
+  { label: "About Kora", href: "/about" },
+];
+
 export default function StorefrontHeader({
   customerPreview,
 }: {
-  /** Cosmetic-only preview from a cookie — no DB fetch. */
   customerPreview: CustomerPreview | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openCart, setOpenCart] = useState<"rental" | "fitting" | null>(null);
   const [openKtpModal, setOpenKtpModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while the mobile drawer is open.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isMenuOpen]);
+
+  // Escape closes the mobile drawer.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isMenuOpen]);
 
   const showToast = (text: string) => {
     setToast(text);
@@ -39,8 +76,6 @@ export default function StorefrontHeader({
   const handleCheckout = async () => {
     setOpenCart(null);
 
-    // Fresh server-side read — the preview cookie doesn't carry status
-    // or credit, so we always re-validate here.
     const current = await getCurrentCustomer();
 
     if (!current) {
@@ -69,21 +104,36 @@ export default function StorefrontHeader({
     <>
       <header className="sticky top-0 z-50 w-full bg-[#ECEBE4] border-b border-[#DFDDD4] transition-colors">
         <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between">
-          <Link
-            href="/"
-            aria-label="KORA — Home"
-            className="hover:opacity-85 transition-opacity inline-flex items-center"
-          >
-            <Image
-              src="/images/logo.png"
-              alt="KORA"
-              width={160}
-              height={48}
-              priority
-              className="h-6 sm:h-7 w-auto"
-            />
-          </Link>
+          {/* Left cluster — hamburger (mobile only) + logo */}
+          <div className="flex items-center gap-3 md:gap-0">
+            <button
+              type="button"
+              aria-label="Open menu"
+              aria-expanded={isMenuOpen}
+              aria-controls="mobile-nav-drawer"
+              onClick={() => setIsMenuOpen(true)}
+              className="md:hidden flex items-center justify-center w-6 h-6 text-[#485642] hover:text-[#1F261C] transition-colors cursor-pointer"
+            >
+              <Menu className="w-5 h-5" strokeWidth={1.8} />
+            </button>
 
+            <Link
+              href="/"
+              aria-label="KORA — Home"
+              className="hover:opacity-85 transition-opacity inline-flex items-center"
+            >
+              <Image
+                src="/images/logo.png"
+                alt="KORA"
+                width={160}
+                height={48}
+                priority
+                className="h-6 sm:h-7 w-auto"
+              />
+            </Link>
+          </div>
+
+          {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8 text-[12px] tracking-[0.14em] text-[#3B4736] font-medium uppercase">
             <div
               className="relative"
@@ -139,7 +189,8 @@ export default function StorefrontHeader({
             </Link>
           </nav>
 
-          <div className="flex items-center gap-5 sm:gap-6 text-[#485642]">
+          {/* Right cluster — icons */}
+          <div className="flex items-center gap-4 sm:gap-6 text-[#485642]">
             <button
               type="button"
               aria-label={isSearchOpen ? "Close search" : "Search"}
@@ -193,6 +244,76 @@ export default function StorefrontHeader({
         />
       </header>
 
+      {/* Mobile navigation drawer */}
+      {isMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-[100] md:hidden"
+            onClick={() => setIsMenuOpen(false)}
+            aria-hidden
+          />
+          <aside
+            id="mobile-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className="fixed inset-y-0 left-0 z-[110] md:hidden w-[85vw] max-w-[360px] bg-[#ECEBE4] flex flex-col shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-6 h-16 border-b border-[#DFDDD4]">
+              <Link
+                href="/"
+                aria-label="KORA — Home"
+                onClick={() => setIsMenuOpen(false)}
+                className="inline-flex items-center"
+              >
+                <Image
+                  src="/images/logo.png"
+                  alt="KORA"
+                  width={160}
+                  height={48}
+                  className="h-6 w-auto"
+                />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsMenuOpen(false)}
+                aria-label="Close menu"
+                className="text-[#485642] hover:text-[#1F261C] transition-colors cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" strokeWidth={1.8} />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto px-6 py-8">
+              <ul className="space-y-1">
+                {MOBILE_NAV.map((item) => (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="block py-3 text-[12px] tracking-[0.16em] uppercase text-[#3B4736] hover:text-[#1F261C] transition-colors border-b border-[#DFDDD4] last:border-none"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <div className="px-6 py-5 border-t border-[#DFDDD4]">
+              <Link
+                href="/account"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-3 text-[12px] tracking-[0.16em] uppercase text-[#3B4736] hover:text-[#1F261C] transition-colors"
+              >
+                <AccountIcon className="w-5 h-5 flex-shrink-0" />
+                {displayName ? `Hi, ${displayName}` : "Sign in"}
+              </Link>
+            </div>
+          </aside>
+        </>
+      )}
+
       <RentalCartDrawer
         isOpen={openCart === "rental"}
         onClose={() => setOpenCart(null)}
@@ -209,7 +330,7 @@ export default function StorefrontHeader({
       />
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] max-w-[92vw] bg-store-fg text-white text-[12px] tracking-wider px-6 py-3 shadow-xl">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] max-w-[92vw] bg-store-fg text-white text-[12px] tracking-wider px-6 py-3 shadow-xl">
           {toast}
         </div>
       )}
