@@ -1,5 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
 import ShopClient from "./ShopClient";
+import { createClient } from "@/lib/supabase/server";
+import { getCachedShopRawItems } from "@/lib/cache/storefront";
 import {
   deriveSizeBucket,
   SIZE_BUCKET_ORDER,
@@ -14,7 +15,6 @@ export const metadata = {
 
 /* ── Storefront category taxonomy ────────────────────────────────── */
 
-// Types table names that map to the "Accessories" storefront category.
 const ACCESSORY_TYPES = [
   "veil",
   "belt / sash",
@@ -24,17 +24,10 @@ const ACCESSORY_TYPES = [
   "bag/clutch",
 ];
 
-// Types that map to the "Traditional" derived bucket. Not exposed as a
-// dropdown link but preserved as a URL param for deep links.
 const TRADITIONAL_TYPES = ["kebaya", "kaftan"];
 
 type StoreCategory = "dresses" | "traditional" | "accessories";
 
-/**
- * Maps an item's `types.name` (plus any tag-based signal) to the
- * storefront's public category. Defaults to "dresses" — the catch-all
- * for any wearable garment (Dress, Set / Outer, Top, etc.).
- */
 function deriveStoreCategory(
   typeName: string | null | undefined,
   tags: string[],
@@ -81,44 +74,22 @@ export default async function ShopPage({
   }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
 
-  const { data: items } = await supabase
-    .from("items")
-    .select(
-      `
-      sku,
-      name,
-      size,
-      color,
-      tags,
-      rental_price,
-      status,
-      website_status,
-      date_added,
-      measurements,
-      buffer_override,
-      brands ( name ),
-      types ( name, default_buffer_days ),
-      item_images ( image_url, display_order )
-    `,
-    )
-    .eq("website_status", "Published")
-    .eq("is_archived", false)
-    .order("date_added", { ascending: false });
+  // Items come from the tag-invalidated cache. Admin writes call
+  // revalidateTag('items'), so the list refreshes on the next request
+  // after an edit; otherwise it's served from cache for up to 60s.
+  const rawItems = await getCachedShopRawItems();
 
-  const rawItems = items || [];
   const skus = rawItems.map((i: any) => i.sku);
 
-  /* ── Availability computation ──────────────────────────────────────
-     "Available This Week" means: the item's rental window does not
-     overlap the next 7 days, taking turnaround buffer into account.
-  */
+  /* ── Availability computation (fresh, per-request) ─────────────────
+     "Available This Week" depends on today's date, so this stays
+     uncached. It's a single indexed query. */
+  const supabase = await createClient();
+
   const todayISO = toISODate(new Date());
   const weekAheadISO = addDaysISO(todayISO, 7);
 
-  // Per-item buffer lookup — mirrors the fallback chain used by
-  // guardAvailability (lib/orderLifecycle.ts).
   const bufferMap: Record<string, number> = {};
   for (const i of rawItems) {
     bufferMap[i.sku] =
@@ -137,7 +108,6 @@ export default async function ShopPage({
           )
           .in("item_sku", skus)
           .in("orders.status", ["Ordered", "In Shipping", "Active"])
-          // Rough SQL cut — client-side filter below is authoritative.
           .gte("orders.return_date", addDaysISO(todayISO, -30))
       : { data: [] };
 
@@ -150,7 +120,6 @@ export default async function ShopPage({
     const windowStart = order.pickup_date;
     const windowEnd = addDaysISO(order.return_date, buffer);
 
-    // Overlap test against [today, today + 7].
     if (windowStart <= weekAheadISO && windowEnd >= todayISO) {
       busyThisWeek.add(b.item_sku);
     }
@@ -190,10 +159,10 @@ export default async function ShopPage({
     };
   });
 
-  // Only show items that are physically rentable right now.
   const availableItems = normalised.filter((i) => i.status === "Available");
 
-  // Facets — computed from the *available* set so counts are honest.
+  /* ── Facets ──────────────────────────────────────────────────────── */
+
   const brandSet = new Set<string>();
   const sizeBucketSet = new Set<SizeBucket>();
   const colorSet = new Set<string>();
@@ -211,11 +180,9 @@ export default async function ShopPage({
     }
   }
 
-  // Preserve canonical ordering — XS · S · M · L · XL · Free Size
   const sizeBuckets = SIZE_BUCKET_ORDER.filter((b) => sizeBucketSet.has(b));
   const colors = Array.from(colorSet).sort();
   const brands = Array.from(brandSet).sort();
-  // STYLE_TAGS order (Mini · Midi · Maxi · Hijab Friendly)
   const styles = STYLE_TAGS.filter((s) => styleSet.has(s));
 
   return (

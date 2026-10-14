@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { createClient } from "@/lib/supabase/server";
 import { formatRupiah } from "@/lib/utils";
 import {
   BrowseIcon,
@@ -9,6 +8,10 @@ import {
   ReturnItIcon,
 } from "@/components/icons";
 import FaqAccordion from "./FaqAccordion";
+import {
+  getCachedDepositTiers,
+  getCachedRentalRules,
+} from "@/lib/cache/storefront";
 
 export const metadata = {
   title: "How to Rent | KORA",
@@ -63,32 +66,17 @@ const FALLBACK_LATE_FEES = [
 ];
 
 export default async function HowToRentPage() {
-  const supabase = await createClient();
-
-  const [tiersRes, rulesRes] = await Promise.all([
-    supabase
-      .from("deposit_tiers")
-      .select("price_up_to, deposit_value")
-      .order("price_up_to", { ascending: true }),
-    supabase
-      .from("app_settings")
-      .select("value")
-      .eq("key", "rental_rules")
-      .single(),
+  const [cachedTiers, cachedRules] = await Promise.all([
+    getCachedDepositTiers(),
+    getCachedRentalRules(),
   ]);
 
-  const tiers =
-    tiersRes.data && tiersRes.data.length > 0
-      ? tiersRes.data.map((t: any) => ({
-          price_up_to: Number(t.price_up_to),
-          deposit_value: Number(t.deposit_value),
-        }))
-      : FALLBACK_DEPOSIT_TIERS;
+  const tiers = cachedTiers.length > 0 ? cachedTiers : FALLBACK_DEPOSIT_TIERS;
 
   const lateFees: { label: string; fee: number }[] = (
-    rulesRes.data?.value?.late_fee_schedule as any[] | undefined
+    cachedRules?.late_fee_schedule as any[] | undefined
   )?.length
-    ? rulesRes.data!.value.late_fee_schedule.map((r: any) => ({
+    ? cachedRules!.late_fee_schedule.map((r: any) => ({
         label: String(r.label),
         fee: Number(r.fee),
       }))

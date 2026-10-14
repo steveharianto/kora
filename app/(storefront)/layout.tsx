@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import StorefrontHeader from "@/components/navigation/StorefrontHeader";
 import StorefrontFooter from "@/components/navigation/StorefrontFooter";
 import PageLoader from "@/components/storefront/PageLoader";
-import { getCurrentCustomer } from "@/app/actions/customerAuth";
+import {
+  CUSTOMER_PREVIEW_COOKIE,
+  parseCustomerPreview,
+} from "@/lib/auth/customerPreview";
 
 export const metadata: Metadata = {
   title: "KORA | Luxury Designer Dress Rental",
@@ -15,17 +19,18 @@ export default async function StorefrontLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Read the session server-side so the header renders the correct state
-  // on first paint — no client-side flash of "logged out".
-  const customer = await getCurrentCustomer();
+  // Read the cosmetic display cookie — no DB round-trip. Actual
+  // authorization still flows through the httpOnly session cookie and is
+  // enforced by the pages/actions that need it.
+  const cookieStore = await cookies();
+  const customerPreview = parseCustomerPreview(
+    cookieStore.get(CUSTOMER_PREVIEW_COOKIE)?.value,
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F6F2] text-[#242A20] font-sans antialiased selection:bg-[#64765B] selection:text-white">
-      {/* Full-screen image gate. Mounted once for the whole route group;
-          re-runs its effect on every pathname change to re-evaluate the
-          new page's `img[data-preload]` set. */}
       <PageLoader />
-      <StorefrontHeader customer={customer} />
+      <StorefrontHeader customerPreview={customerPreview} />
       <main className="flex-1">{children}</main>
       <StorefrontFooter />
     </div>

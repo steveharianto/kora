@@ -15,15 +15,14 @@ import {
   RentalBagIcon,
   FittingHangerIcon,
 } from "@/components/icons";
-import {
-  getCurrentCustomer,
-  type CustomerSession,
-} from "@/app/actions/customerAuth";
+import { getCurrentCustomer } from "@/app/actions/customerAuth";
+import type { CustomerPreview } from "@/lib/auth/customerPreview";
 
 export default function StorefrontHeader({
-  customer,
+  customerPreview,
 }: {
-  customer: CustomerSession | null;
+  /** Cosmetic-only preview from a cookie — no DB fetch. */
+  customerPreview: CustomerPreview | null;
 }) {
   const router = useRouter();
   const [isShopMenuOpen, setIsShopMenuOpen] = useState(false);
@@ -40,6 +39,8 @@ export default function StorefrontHeader({
   const handleCheckout = async () => {
     setOpenCart(null);
 
+    // Fresh server-side read — the preview cookie doesn't carry status
+    // or credit, so we always re-validate here.
     const current = await getCurrentCustomer();
 
     if (!current) {
@@ -60,8 +61,8 @@ export default function StorefrontHeader({
     router.push("/checkout");
   };
 
-  const displayName = customer
-    ? `${customer.firstName} ${customer.lastName || ""}`.trim()
+  const displayName = customerPreview
+    ? `${customerPreview.firstName} ${customerPreview.lastName || ""}`.trim()
     : null;
 
   return (
@@ -186,7 +187,6 @@ export default function StorefrontHeader({
           </div>
         </div>
 
-        {/* Inline search bar — expands inside the sticky header */}
         <SearchPanel
           isOpen={isSearchOpen}
           onClose={() => setIsSearchOpen(false)}

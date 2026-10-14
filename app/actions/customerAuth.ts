@@ -1,8 +1,13 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 import bcrypt from "bcryptjs";
 import { createClient } from "@/lib/supabase/server";
+import {
+  CUSTOMER_PREVIEW_COOKIE,
+  serializeCustomerPreview,
+} from "@/lib/auth/customerPreview";
 
 export interface CustomerSession {
   id: string;
@@ -18,9 +23,37 @@ export interface CustomerSession {
 const SESSION_COOKIE = "kora_customer_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
+/* ── Cookie helpers ──────────────────────────────────────────────── */
+
+interface CookieWriter {
+  set: (name: string, value: string, options: Record<string, unknown>) => void;
+  delete: (name: string) => void;
+}
+
+function writePreviewCookie(
+  cookieStore: CookieWriter,
+  firstName: string,
+  lastName: string | null,
+) {
+  cookieStore.set(
+    CUSTOMER_PREVIEW_COOKIE,
+    serializeCustomerPreview({ firstName, lastName }),
+    {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_MAX_AGE,
+    },
+  );
+}
+
 /* ── Login ───────────────────────────────────────────────────────── */
 
-export async function loginCustomer(formData: { email: string; password: string }) {
+export async function loginCustomer(formData: {
+  email: string;
+  password: string;
+}) {
   const supabase = await createClient();
   const email = formData.email.trim().toLowerCase();
   const password = formData.password;
@@ -31,7 +64,9 @@ export async function loginCustomer(formData: { email: string; password: string 
 
   const { data: customer, error } = await supabase
     .from("customers")
-    .select("id, first_name, last_name, email, phone, status, current_credit, date_joined, password")
+    .select(
+      "id, first_name, last_name, email, phone, status, current_credit, date_joined, password",
+    )
     .ilike("email", email)
     .maybeSingle();
 
@@ -41,8 +76,6 @@ export async function loginCustomer(formData: { email: string; password: string 
   }
 
   if (!customer || !customer.password) {
-    // Same generic message for both "no customer" and "no password set" to
-    // avoid leaking which emails exist in the system.
     return { error: "Invalid email or password." };
   }
 
@@ -56,17 +89,14 @@ export async function loginCustomer(formData: { email: string; password: string 
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(
-    SESSION_COOKIE,
-    JSON.stringify({ id: customer.id }),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: SESSION_MAX_AGE,
-    },
-  );
+  cookieStore.set(SESSION_COOKIE, JSON.stringify({ id: customer.id }), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_MAX_AGE,
+  });
+  writePreviewCookie(cookieStore, customer.first_name, customer.last_name);
 
   return { success: true };
 }
@@ -91,7 +121,6 @@ export async function registerCustomer(formData: {
     return { error: "Password must be at least 8 characters." };
   }
 
-  // Reject duplicate email
   const { data: existing } = await supabase
     .from("customers")
     .select("id")
@@ -99,7 +128,9 @@ export async function registerCustomer(formData: {
     .maybeSingle();
 
   if (existing) {
-    return { error: "An account with this email already exists. Please sign in." };
+    return {
+      error: "An account with this email already exists. Please sign in.",
+    };
   }
 
   const hashedPassword = await bcrypt.hash(formData.password, 10);
@@ -124,16 +155,17 @@ export async function registerCustomer(formData: {
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(
-    SESSION_COOKIE,
-    JSON.stringify({ id: created.id }),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: SESSION_MAX_AGE,
-    },
+  cookieStore.set(SESSION_COOKIE, JSON.stringify({ id: created.id }), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_MAX_AGE,
+  });
+  writePreviewCookie(
+    cookieStore,
+    formData.firstName.trim(),
+    formData.lastName?.trim() || null,
   );
 
   return { success: true };
@@ -144,44 +176,49 @@ export async function registerCustomer(formData: {
 export async function logoutCustomer() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(CUSTOMER_PREVIEW_COOKIE);
   return { success: true };
 }
 
-/* ── Session reader ──────────────────────────────────────────────── */
+/* ── Session reader (deduped via React cache) ────────────────────── */
 
-export async function getCurrentCustomer(): Promise<CustomerSession | null> {
-  const cookieStore = await cookies();
-  const cookie = cookieStore.get(SESSION_COOKIE);
-  if (!cookie?.value) return null;
+export const getCurrentCustomer = cache(
+  async (): Promise<CustomerSession | null> => {
+    const cookieStore = await cookies();
+    const cookie = cookieStore.get(SESSION_COOKIE);
+    if (!cookie?.value) return null;
 
-  let parsed: { id?: string };
-  try {
-    parsed = JSON.parse(cookie.value);
-  } catch {
-    return null;
-  }
-  if (!parsed?.id) return null;
+    let parsed: { id?: string };
+    try {
+      parsed = JSON.parse(cookie.value);
+    } catch {
+      return null;
+    }
+    if (!parsed?.id) return null;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("customers")
-    .select("id, first_name, last_name, email, phone, status, current_credit, date_joined")
-    .eq("id", parsed.id)
-    .maybeSingle();
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("customers")
+      .select(
+        "id, first_name, last_name, email, phone, status, current_credit, date_joined",
+      )
+      .eq("id", parsed.id)
+      .maybeSingle();
 
-  if (error || !data) return null;
+    if (error || !data) return null;
 
-  return {
-    id: data.id,
-    firstName: data.first_name,
-    lastName: data.last_name,
-    email: data.email,
-    phone: data.phone,
-    status: data.status,
-    currentCredit: Number(data.current_credit) || 0,
-    dateJoined: data.date_joined,
-  };
-}
+    return {
+      id: data.id,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      email: data.email,
+      phone: data.phone,
+      status: data.status,
+      currentCredit: Number(data.current_credit) || 0,
+      dateJoined: data.date_joined,
+    };
+  },
+);
 
 /* ── Change password (authenticated) ─────────────────────────────── */
 
@@ -238,8 +275,8 @@ export async function requestPasswordReset(email: string) {
   const clean = email.trim().toLowerCase();
   if (!clean) return { error: "Email is required." };
 
-  // TODO: wire up an email provider (Resend / SendGrid / Postmark).
-  // For now we always return success so we don't leak which emails exist.
+  // TODO: wire up an email provider. Always returns success so we don't
+  // leak which emails exist.
   const supabase = await createClient();
   await supabase
     .from("customers")
