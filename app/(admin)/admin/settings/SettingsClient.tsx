@@ -13,6 +13,7 @@ import {
 import { formatRupiah } from "@/lib/utils";
 import { Lock, X } from "lucide-react";
 import RupiahInput from "@/components/RupiahInput";
+import AddressMapPicker from "@/components/AddressMapPicker";
 import {
   DEFAULT_BUSINESS_INFO,
   normaliseBusinessInfo,
@@ -43,6 +44,135 @@ const TABS = [
   { key: "change-password", label: "Change password" },
   { key: "business-info", label: "Business info" },
 ];
+
+/* ── Showroom origin card ────────────────────────────────────────────
+   Renders one dispatch address (primary or secondary) using the same
+   AddressMapPicker used by every other address form in the app —
+   Customer Detail, Order Form quick-add, Storefront Account, Returns.
+   Contact name + phone are showroom-specific extras that ride above
+   the map; phone auto-normalises from local 08… to 62… on every
+   keystroke, matching the AddCustomerModal / OrderForm pattern.
+   ─────────────────────────────────────────────────────────────────── */
+
+interface DispatchAddress {
+  name?: string;
+  phone?: string;
+  street_address?: string;
+  city?: string;
+  postal_code?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+function ShowroomOriginCard({
+  title,
+  description,
+  addressKey,
+  shipping,
+  setShipping,
+  disabled,
+}: {
+  title: string;
+  description: string;
+  addressKey: "primary" | "secondary";
+  shipping: any;
+  setShipping: (s: any) => void;
+  disabled: boolean;
+}) {
+  const origin: DispatchAddress =
+    shipping.dispatch_addresses?.[addressKey] || {};
+
+  const updateOrigin = (patch: Partial<DispatchAddress>) => {
+    setShipping({
+      ...shipping,
+      dispatch_addresses: {
+        ...shipping.dispatch_addresses,
+        [addressKey]: { ...origin, ...patch },
+      },
+    });
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Strip non-digits; upgrade a leading local 0 to the 62 country code.
+    // Same rule used in AddCustomerModal and the OrderForm quick-add modal
+    // so a showroom number entered as "0812…" or "62812…" lands in the DB
+    // as "62812…".
+    let v = e.target.value.replace(/\D/g, "");
+    if (v.startsWith("0")) v = "62" + v.slice(1);
+    updateOrigin({ phone: v });
+  };
+
+  return (
+    <div className="bg-card border border-line rounded-[10px] p-5 space-y-4">
+      <div>
+        <h3 className="font-serif text-[18px] font-normal mb-1">{title}</h3>
+        <p className="text-muted text-[12.5px]">{description}</p>
+      </div>
+
+      {/* Contact identity — showroom-specific fields above the map,
+          mirroring how AddCustomerModal puts name/phone before address. */}
+      <div className="grid grid-cols-2 gap-3.5">
+        <div>
+          <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+            Contact Name
+          </label>
+          <input
+            disabled={disabled}
+            value={origin.name || ""}
+            onChange={(e) => updateOrigin({ name: e.target.value })}
+            className="w-full text-[13px] border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none disabled:bg-[#F6F4EF] disabled:cursor-not-allowed"
+          />
+        </div>
+        <div>
+          <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-1">
+            Phone Number
+          </label>
+          <input
+            type="tel"
+            inputMode="numeric"
+            disabled={disabled}
+            value={origin.phone || ""}
+            onChange={handlePhoneChange}
+            placeholder="628123456789"
+            className="w-full text-[13px] font-mono border border-line rounded-lg px-3 py-2 bg-[#FDFCFA] focus:ring-2 focus:ring-[#CAD3C5] focus:outline-none disabled:bg-[#F6F4EF] disabled:cursor-not-allowed"
+          />
+          <p className="text-[10.5px] text-muted mt-1">
+            Country code prefix — e.g. 62 for Indonesia, no leading zero.
+          </p>
+        </div>
+      </div>
+
+      {/* Address — same search + pin experience as every other
+          address form on the site. The picker emits street_address,
+          city, postal_code, latitude, and longitude together. */}
+      <div>
+        <label className="block text-[10.5px] tracking-[0.14em] uppercase text-muted mb-2">
+          Address
+        </label>
+        <div className={disabled ? "pointer-events-none opacity-70" : ""}>
+          <AddressMapPicker
+            initialData={{
+              street_address: origin.street_address || "",
+              city: origin.city || "",
+              postal_code: origin.postal_code || "",
+              latitude: origin.latitude ?? null,
+              longitude: origin.longitude ?? null,
+            }}
+            onChange={(loc) =>
+              updateOrigin({
+                street_address: loc.street_address,
+                city: loc.city,
+                postal_code: loc.postal_code,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+              })
+            }
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsClient({
   activeTab,
@@ -100,7 +230,7 @@ export default function SettingsClient({
   );
   const [depositTiers, setDepositTiers] = useState(initialDepositTiers);
 
-  // ---- Orders tab state ----
+  // ---- Orders tab state (unchanged) ----
   const [ordersSettings, setOrdersSettings] = useState(
     settingsMap.orders || {
       draft_stale_days: 30,
@@ -129,7 +259,7 @@ export default function SettingsClient({
     settingsMap.notifications || {},
   );
 
-  // ---- Shipping — extended ----
+  // ---- Shipping — origins standardised to AddressMapPicker ----
   const [shipping, setShipping] = useState(() => {
     const raw = settingsMap.shipping || {};
     const rawPrimary = raw.dispatch_addresses?.primary;
@@ -143,7 +273,7 @@ export default function SettingsClient({
             ? rawPrimary
             : {
                 name: "KORA Showroom Jakarta",
-                phone: "081234567890",
+                phone: "6281234567890",
                 street_address:
                   typeof rawPrimary === "string"
                     ? rawPrimary
@@ -158,7 +288,7 @@ export default function SettingsClient({
             ? rawSecondary
             : {
                 name: "KORA Studio Semarang",
-                phone: "081234567891",
+                phone: "6281234567891",
                 street_address:
                   typeof rawSecondary === "string"
                     ? rawSecondary
@@ -183,7 +313,6 @@ export default function SettingsClient({
       refund_payout_methods:
         raw.refund_payout_methods || "Bank transfer, Dana, OVO, GoPay, Cash",
 
-      // NEW fields
       booking_window_days: Number(raw.booking_window_days ?? 3),
       default_item_weight_g: Number(raw.default_item_weight_g ?? 800),
       item_weight_overrides: raw.item_weight_overrides || {},
@@ -204,7 +333,7 @@ export default function SettingsClient({
     settingsMap.website_content || { shipping_return_policy: "" },
   );
 
-  // ---- Permissions — extended ----
+  // ---- Permissions (unchanged) ----
   const [permissions, setPermissions] = useState(
     settingsMap.permissions || {
       reset_order_draft: "superadmin_only",
@@ -224,12 +353,12 @@ export default function SettingsClient({
     role: "staff",
   });
 
-  // ---- Business info ----
+  // ---- Business info (unchanged) ----
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(() =>
     normaliseBusinessInfo(settingsMap.business_info),
   );
 
-  /** Immutable per-day hour updater — keeps the reducer shape small. */
+  /** Immutable per-day hour updater. */
   const updateDay = (
     key: DayKey,
     patch: Partial<BusinessInfo["operating_hours"][DayKey]>,
@@ -614,7 +743,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 3. ORDERS */}
+      {/* 3. ORDERS — unchanged */}
       {activeTab === "orders" && (
         <div className="space-y-4">
           <div className="bg-card border border-line rounded-[10px] p-5 max-w-2xl space-y-4">
@@ -825,188 +954,28 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 6. SHIPPING — unchanged */}
+      {/* 6. SHIPPING — standardised to AddressMapPicker */}
       {activeTab === "shipping" && (
         <div className="space-y-4">
-          <div className="bg-card border border-line rounded-[10px] p-5">
-            <h3 className="font-serif text-[18px] font-normal mb-3">
-              Primary Origin (Showroom)
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                  Contact Name
-                </label>
-                <input
-                  disabled={!isSuperAdmin}
-                  value={shipping.dispatch_addresses?.primary?.name || ""}
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      dispatch_addresses: {
-                        ...shipping.dispatch_addresses,
-                        primary: {
-                          ...shipping.dispatch_addresses?.primary,
-                          name: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                  Phone Number
-                </label>
-                <input
-                  disabled={!isSuperAdmin}
-                  value={shipping.dispatch_addresses?.primary?.phone || ""}
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      dispatch_addresses: {
-                        ...shipping.dispatch_addresses,
-                        primary: {
-                          ...shipping.dispatch_addresses?.primary,
-                          phone: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                  Street
-                </label>
-                <input
-                  disabled={!isSuperAdmin}
-                  value={
-                    shipping.dispatch_addresses?.primary?.street_address || ""
-                  }
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      dispatch_addresses: {
-                        ...shipping.dispatch_addresses,
-                        primary: {
-                          ...shipping.dispatch_addresses?.primary,
-                          street_address: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                  City
-                </label>
-                <input
-                  disabled={!isSuperAdmin}
-                  value={shipping.dispatch_addresses?.primary?.city || ""}
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      dispatch_addresses: {
-                        ...shipping.dispatch_addresses,
-                        primary: {
-                          ...shipping.dispatch_addresses?.primary,
-                          city: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                  Postal Code
-                </label>
-                <input
-                  disabled={!isSuperAdmin}
-                  value={
-                    shipping.dispatch_addresses?.primary?.postal_code || ""
-                  }
-                  onChange={(e) =>
-                    setShipping({
-                      ...shipping,
-                      dispatch_addresses: {
-                        ...shipping.dispatch_addresses,
-                        primary: {
-                          ...shipping.dispatch_addresses?.primary,
-                          postal_code: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                    Latitude
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    disabled={!isSuperAdmin}
-                    value={shipping.dispatch_addresses?.primary?.latitude ?? ""}
-                    onChange={(e) =>
-                      setShipping({
-                        ...shipping,
-                        dispatch_addresses: {
-                          ...shipping.dispatch_addresses,
-                          primary: {
-                            ...shipping.dispatch_addresses?.primary,
-                            latitude: e.target.value
-                              ? parseFloat(e.target.value)
-                              : null,
-                          },
-                        },
-                      })
-                    }
-                    className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] tracking-wider uppercase text-muted mb-0.5">
-                    Longitude
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    disabled={!isSuperAdmin}
-                    value={
-                      shipping.dispatch_addresses?.primary?.longitude ?? ""
-                    }
-                    onChange={(e) =>
-                      setShipping({
-                        ...shipping,
-                        dispatch_addresses: {
-                          ...shipping.dispatch_addresses,
-                          primary: {
-                            ...shipping.dispatch_addresses?.primary,
-                            longitude: e.target.value
-                              ? parseFloat(e.target.value)
-                              : null,
-                          },
-                        },
-                      })
-                    }
-                    className="w-full border border-line rounded-lg px-2.5 py-1.5 bg-[#FDFCFA] disabled:bg-[#F6F4EF]"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <ShowroomOriginCard
+            title="Primary Origin (Showroom)"
+            description="Where outbound shipments depart from. Also used as the destination for all returns."
+            addressKey="primary"
+            shipping={shipping}
+            setShipping={setShipping}
+            disabled={!isSuperAdmin}
+          />
 
-          {/* Courier booking rules */}
+          <ShowroomOriginCard
+            title="Secondary Origin (Backup)"
+            description="Optional second hub. Not used for shipping today — reserved for future multi-location routing."
+            addressKey="secondary"
+            shipping={shipping}
+            setShipping={setShipping}
+            disabled={!isSuperAdmin}
+          />
+
+          {/* Courier booking rules — unchanged */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-1">
               Courier booking rules
@@ -1433,7 +1402,7 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 10. BUSINESS INFO */}
+      {/* 10. BUSINESS INFO — unchanged from previous revision */}
       {activeTab === "business-info" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-2xl space-y-6">
