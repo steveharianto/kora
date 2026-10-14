@@ -393,3 +393,49 @@ export async function searchProductsAndPages(query: string) {
 
   return { products, pages };
 }
+
+/**
+ * Returns the top N published, in-stock items ordered by most recently
+ * added. Used as the default "Trending Products" list in the header
+ * search panel when the customer hasn't typed a query yet.
+ *
+ * The name says "trending" but the ordering is deliberately simple
+ * (newest-first) — we don't have a popularity signal yet, and recency
+ * is the honest proxy. Swap the `.order()` clause when a rental-count
+ * or view-count column lands.
+ */
+export async function getTrendingProducts(
+  limit: number = 5,
+): Promise<SearchProductHit[]> {
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("items")
+    .select(
+      `
+      sku, name, description, rental_price,
+      brands ( name ),
+      item_images ( image_url, display_order )
+    `,
+    )
+    .eq("website_status", "Published")
+    .eq("is_archived", false)
+    .eq("status", "Available")
+    .order("date_added", { ascending: false })
+    .limit(Math.max(1, Math.min(limit, 12)));
+
+  return (data || []).map((p: any) => {
+    const imgs = (p.item_images || []).sort(
+      (a: any, b: any) => a.display_order - b.display_order,
+    );
+    const desc = (p.description || "").replace(/\s+/g, " ").trim();
+    return {
+      sku: p.sku,
+      name: p.name,
+      brand: p.brands?.name || "",
+      rentalPrice: Number(p.rental_price) || 0,
+      coverImage: imgs[0]?.image_url || null,
+      snippet: desc.length > 90 ? `${desc.slice(0, 90)}…` : desc,
+    };
+  });
+}

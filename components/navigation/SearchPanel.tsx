@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { SearchIcon } from "@/components/icons";
+import { Loader2, Search as SearchIcon, X } from "lucide-react";
 import {
   searchProductsAndPages,
+  getTrendingProducts,
   type SearchProductHit,
   type SearchPageHit,
 } from "@/app/actions/storefront";
@@ -18,15 +17,18 @@ interface Props {
 }
 
 /**
- * Inline header search bar.
+ * Floating header search dropdown.
  *
- * Renders inside the sticky <header> (see StorefrontHeader) directly below
- * the main nav row. When a query of ≥2 chars yields results, a full-width
- * dropdown overlays the page content underneath.
+ * Renders as an absolutely-positioned panel anchored under the header's
+ * right edge (see StorefrontHeader). Behaviour:
  *
- * Layout mirrors the Figma:
- *   [ 🔍 ]  SEARCH SOMETHING (placeholder, uppercase)            [ SEARCH ]
- *   ──────────────────────────────────────────────────────────────────────
+ *   • Opens on click of the header's search icon.
+ *   • On first open, fetches and caches a "Trending Products" list.
+ *   • As the user types, a debounced server call runs on every keystroke
+ *     (≥2 chars) and the panel swaps to live results.
+ *   • Query < 2 chars → falls back to Trending.
+ *   • Enter or the "See all results" CTA routes to /shop?q=… .
+ *   • Escape / outside click / clearing the input closes the panel.
  */
 export default function SearchPanel({ isOpen, onClose }: Props) {
   const router = useRouter();
@@ -37,47 +39,41 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
   const [products, setProducts] = useState<SearchProductHit[]>([]);
   const [pages, setPages] = useState<SearchPageHit[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showResults, setShowResults] = useState(false);
 
-  /* Focus on open; reset everything on close. */
+  // Trending — fetched lazily once per session when the panel first opens.
+  const [trending, setTrending] = useState<SearchProductHit[]>([]);
+  const [trendingLoaded, setTrendingLoaded] = useState(false);
+
+  /* ── Focus on open; reset transient state on close ─────────────── */
   useEffect(() => {
     if (isOpen) {
-      const t = setTimeout(() => inputRef.current?.focus(), 80);
+      const t = setTimeout(() => inputRef.current?.focus(), 60);
       return () => clearTimeout(t);
     }
     setQuery("");
     setProducts([]);
     setPages([]);
     setLoading(false);
-    setShowResults(false);
   }, [isOpen]);
 
-  /* Escape closes the bar. */
+  /* ── Load trending once, first time the panel opens ────────────── */
   useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose]);
-
-  /* Click outside collapses only the results dropdown — the bar stays open. */
-  useEffect(() => {
-    if (!isOpen || !showResults) return;
-    const onDown = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setShowResults(false);
+    if (!isOpen || trendingLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getTrendingProducts(5);
+        if (!cancelled) setTrending(res);
+      } finally {
+        if (!cancelled) setTrendingLoaded(true);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, showResults]);
+  }, [isOpen, trendingLoaded]);
 
-  /* Debounced server search. */
+  /* ── Debounced live search ─────────────────────────────────────── */
   useEffect(() => {
     if (!isOpen) return;
     const q = query.trim();
@@ -87,167 +83,207 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
       setLoading(false);
       return;
     }
+
     let cancelled = false;
     setLoading(true);
+
     const t = setTimeout(async () => {
       try {
         const res = await searchProductsAndPages(q);
         if (cancelled) return;
         setProducts(res.products);
         setPages(res.pages);
-        setShowResults(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }, 200);
+
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
   }, [query, isOpen]);
 
-  const trimmed = query.trim();
+  /* ── Escape closes the panel ───────────────────────────────────── */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
 
-  const submitSearch = () => {
+  /* ── Click outside closes the panel ────────────────────────────── */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [isOpen, onClose]);
+
+  /* ── Derived view state ────────────────────────────────────────── */
+  const trimmed = query.trim();
+  const showTrending = trimmed.length < 2;
+  const visibleProducts = showTrending ? trending : products;
+
+  const submit = () => {
     if (!trimmed) return;
     router.push(`/shop?q=${encodeURIComponent(trimmed)}`);
     onClose();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submitSearch();
-    }
-  };
-
   if (!isOpen) return null;
 
-  const noResults =
-    !loading &&
-    trimmed.length >= 2 &&
-    products.length === 0 &&
-    pages.length === 0;
+  const showEmptyTrending =
+    showTrending && trending.length === 0 && trendingLoaded;
+  const showNoResults =
+    !showTrending && !loading && products.length === 0 && pages.length === 0;
 
   return (
-    <div ref={containerRef} className="relative border-t border-[#DFDDD4]">
-      {/* ── Search row ─────────────────────────────────────────────── */}
-      <div className="max-w-[1512px] mx-auto px-6 sm:px-10 py-3 flex items-center gap-4">
-        <SearchIcon className="w-[18px] h-[18px] text-[#7A8471] flex-shrink-0" />
-
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-label="Product search"
+      className="absolute top-full right-4 sm:right-10 mt-2 w-[min(420px,calc(100vw-2rem))] bg-[#F5F2EA] border border-[#DDD9CE] shadow-[0_12px_36px_rgba(45,56,40,0.14)] z-50"
+    >
+      {/* ── Search input row ─────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-[#DDD9CE]">
+        <SearchIcon
+          className="w-[15px] h-[15px] text-[#6A7563] flex-shrink-0"
+          strokeWidth={2}
+        />
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => trimmed.length >= 2 && setShowResults(true)}
-          placeholder="SEARCH SOMETHING"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="What are you looking for?"
           autoComplete="off"
-          className="flex-1 min-w-0 bg-transparent border-0 text-[12px] tracking-[0.16em] text-[#3B4736] placeholder:text-[#B4B8A8] placeholder:tracking-[0.16em] focus:outline-none py-2"
+          spellCheck={false}
+          className="flex-1 min-w-0 bg-transparent border-0 text-[13px] text-[#2D3828] placeholder:text-[#A8AC9E] focus:outline-none"
         />
-
-        <button
-          type="button"
-          onClick={submitSearch}
-          disabled={!trimmed}
-          className="flex-shrink-0 bg-[#64765B] hover:bg-[#52624B] text-white text-[10.5px] tracking-[0.22em] uppercase font-medium px-7 sm:px-9 py-2.5 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          Search
-        </button>
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
+            aria-label="Clear search"
+            className="text-[#A8AC9E] hover:text-[#2D3828] transition-colors cursor-pointer flex-shrink-0 p-0.5"
+          >
+            <X className="w-3.5 h-3.5" strokeWidth={2} />
+          </button>
+        )}
       </div>
 
-      {/* ── Results dropdown ───────────────────────────────────────── */}
-      {showResults && trimmed.length >= 2 && (
-        <div className="absolute top-full left-0 right-0 bg-store-bg border-b border-[#DFDDD4] shadow-lg max-h-[70vh] overflow-y-auto z-40">
-          <div className="max-w-[1512px] mx-auto px-6 sm:px-10 py-8">
-            {loading && products.length === 0 && pages.length === 0 ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-[#7A8471]">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Searching…
-              </div>
-            ) : noResults ? (
-              <p className="text-center py-10 text-[12.5px] text-[#7A8471]">
-                No results for &ldquo;{trimmed}&rdquo;.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {products.length > 0 && (
-                  <section>
-                    <h3 className="font-serif text-[16px] text-[#3B4736] mb-4 font-normal">
-                      Products
-                    </h3>
-                    <ul className="space-y-4">
-                      {products.map((p) => (
-                        <li key={p.sku}>
-                          <Link
-                            href={`/shop/${p.sku.toLowerCase()}`}
-                            onClick={onClose}
-                            className="flex items-start gap-3 group"
-                          >
-                            <div className="relative w-12 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
-                              {p.coverImage ? (
-                                <Image
-                                  src={p.coverImage}
-                                  alt={p.name}
-                                  fill
-                                  sizes="48px"
-                                  className="object-cover"
-                                />
-                              ) : null}
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <p className="font-serif text-[14px] text-[#3B4736] group-hover:text-[#64765B] transition-colors leading-snug">
-                                {p.sku}-{p.name}
-                              </p>
-                              {p.brand && (
-                                <p className="text-[11.5px] text-[#7A8471] mt-0.5">
-                                  Brand: {p.brand}
-                                </p>
-                              )}
-                              {p.snippet && (
-                                <p className="text-[11px] text-[#9AA192] mt-0.5 line-clamp-1">
-                                  {p.snippet}
-                                </p>
-                              )}
-                            </div>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-
-                {pages.length > 0 && (
-                  <section>
-                    <h3 className="font-serif text-[16px] text-[#3B4736] mb-4 font-normal">
-                      Other Pages
-                    </h3>
-                    <ul className="space-y-3">
-                      {pages.map((pg) => (
-                        <li key={pg.href}>
-                          <Link
-                            href={pg.href}
-                            onClick={onClose}
-                            className="block group"
-                          >
-                            <p className="text-[13px] text-[#3B4736] group-hover:text-[#64765B] transition-colors">
-                              {pg.title}
-                            </p>
-                            <p className="text-[11.5px] text-[#7A8471] mt-0.5 line-clamp-1">
-                              {pg.subtitle}
-                            </p>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-              </div>
-            )}
-          </div>
+      {/* ── Body ──────────────────────────────────────────────────── */}
+      <div className="px-5 py-4 max-h-[min(520px,calc(100vh-180px))] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3 h-4">
+          <h3 className="text-[10px] tracking-[0.18em] uppercase text-[#6A7563] font-medium">
+            {showTrending ? "Trending Products" : "Results"}
+          </h3>
+          {loading && !showTrending && (
+            <Loader2
+              className="w-3.5 h-3.5 text-[#6A7563] animate-spin"
+              strokeWidth={2}
+            />
+          )}
         </div>
-      )}
+
+        {showEmptyTrending ? (
+          <p className="text-[12px] text-[#6A7563] py-4 text-center">
+            Nothing to show right now.
+          </p>
+        ) : showNoResults ? (
+          <p className="text-[12px] text-[#6A7563] py-4 text-center">
+            No results for &ldquo;{trimmed}&rdquo;.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {visibleProducts.map((p) => (
+              <li key={p.sku}>
+                <Link
+                  href={`/shop/${p.sku.toLowerCase()}`}
+                  onClick={onClose}
+                  className="flex items-center gap-3 group"
+                >
+                  <div className="w-12 h-16 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                    {p.coverImage && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.coverImage}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12.5px] text-[#2D3828] font-medium leading-snug truncate group-hover:text-[#64765B] transition-colors">
+                      {p.sku} -{p.name}
+                    </p>
+                    <p className="text-[11px] text-[#6A7563] mt-0.5 truncate">
+                      Brand: {p.brand || "—"}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Page hits — shown inline when the query matches a static route. */}
+        {!showTrending && pages.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-[#DDD9CE]">
+            <h3 className="text-[10px] tracking-[0.18em] uppercase text-[#6A7563] font-medium mb-3">
+              Pages
+            </h3>
+            <ul className="space-y-2.5">
+              {pages.map((pg) => (
+                <li key={pg.href}>
+                  <Link
+                    href={pg.href}
+                    onClick={onClose}
+                    className="block group"
+                  >
+                    <p className="text-[12.5px] text-[#2D3828] group-hover:text-[#64765B] transition-colors">
+                      {pg.title}
+                    </p>
+                    <p className="text-[11px] text-[#6A7563] mt-0.5 line-clamp-1">
+                      {pg.subtitle}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* CTA — routes to the full shop page with the query applied. */}
+        {!showTrending && products.length > 0 && (
+          <button
+            type="button"
+            onClick={submit}
+            className="mt-4 w-full text-[11px] tracking-[0.18em] uppercase text-[#64765B] font-medium hover:text-[#52624B] transition-colors text-center py-2 cursor-pointer"
+          >
+            See all results →
+          </button>
+        )}
+      </div>
     </div>
   );
 }
