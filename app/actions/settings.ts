@@ -40,9 +40,8 @@ export async function saveAppSetting(key: string, value: any) {
   });
 
   revalidatePath("/admin/settings");
-  revalidateTag("settings");
-  // Rental rules also feed the storefront terms + how-to-rent pages.
-  if (key === "rental_rules") revalidateTag("rental-rules");
+  revalidateTag("settings", "max");
+  if (key === "rental_rules") revalidateTag("rental-rules", "max");
   return { success: true };
 }
 
@@ -76,8 +75,8 @@ export async function saveDepositTiers(
 
   revalidatePath("/admin/settings");
   revalidatePath("/admin/inventory");
-  revalidateTag("settings");
-  revalidateTag("deposit-tiers");
+  revalidateTag("settings", "max");
+  revalidateTag("deposit-tiers", "max");
   return { success: true };
 }
 

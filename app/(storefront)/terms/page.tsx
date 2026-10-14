@@ -31,14 +31,14 @@ export default async function TermsPage() {
 
   const tiers = cachedTiers.length > 0 ? cachedTiers : FALLBACK_DEPOSIT_TIERS;
 
-  const lateFees: { label: string; fee: number }[] = (
-    cachedRules?.late_fee_schedule as any[] | undefined
-  )?.length
-    ? cachedRules!.late_fee_schedule.map((r: any) => ({
-        label: String(r.label),
-        fee: Number(r.fee),
-      }))
-    : FALLBACK_LATE_FEES;
+  const schedule = cachedRules?.late_fee_schedule;
+  const lateFees: { label: string; fee: number }[] =
+    Array.isArray(schedule) && schedule.length > 0
+      ? schedule.map((r: any) => ({
+          label: String(r.label),
+          fee: Number(r.fee),
+        }))
+      : FALLBACK_LATE_FEES;
 
   return (
     <div className="w-full bg-store-bg">

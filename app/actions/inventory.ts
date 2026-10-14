@@ -144,8 +144,7 @@ export async function saveItem(itemData: any, isNew: boolean) {
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${itemData.sku}`);
-  // Invalidate the storefront items cache.
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -241,7 +240,7 @@ export async function approvePendingChanges(sku: string) {
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -294,7 +293,7 @@ export async function rejectPendingAction(sku: string) {
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -345,7 +344,7 @@ export async function toggleArchive(sku: string, currentStatus: boolean) {
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -387,7 +386,7 @@ export async function deleteItem(sku: string) {
   });
 
   revalidatePath("/admin/inventory");
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -419,7 +418,7 @@ export async function addImageRecord(sku: string, url: string, order: number) {
     .single();
 
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   if (error) return { error: error.message };
   return { data };
 }
@@ -433,7 +432,7 @@ export async function deleteImageRecord(imageId: number, sku: string) {
   if (error) return { error: error.message };
 
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
 
@@ -450,6 +449,6 @@ export async function reorderImages(
     if (error) return { error: error.message };
   }
   revalidatePath(`/admin/inventory/${sku}`);
-  revalidateTag("items");
+  revalidateTag("items", "max");
   return { success: true };
 }
