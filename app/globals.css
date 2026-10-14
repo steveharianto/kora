@@ -19,7 +19,7 @@
     --color-info: #3a5a78;
     --color-info-bg: #eaeff4;
 
-    /* ── Storefront neutral scale (Figma N0–N900) ── */
+    /* ── Storefront neutral scale ── */
     --color-n0: #ffffff;
     --color-n10: #fbfbfb;
     --color-n20: #f8f8f8;
@@ -58,16 +58,12 @@
     --color-store-accent-fg: #ffffff;
     --color-store-hover: #e1dfce;
 
-    /* ── Typography families ──────────────────────────────────────
-       Remaps Tailwind's built-in font-serif / font-sans so existing
-       `font-serif` and `font-sans` classes across the app render in
-       the KORA design system fonts automatically.
+    /* ── Loader canvas — matched to the KORA monogram's own green so the
+       fading logo reads as if breathing on a seamless background. Tweak
+       if the logo's hex ever changes. ── */
+    --color-loader-bg: #3e4c3a;
 
-         font-serif  →  Cormorant   (Regular 400 for H1–H5)
-         font-sans   →  Fustat      (Light 300 / Regular 400 / Semibold 600)
-         font-mono   →  unchanged   (Tailwind default stack for SKUs,
-                                     phone numbers, waybills, etc.)
-    */
+    /* ── Typography families ── */
     --font-serif: var(--font-cormorant), Georgia, "Times New Roman", serif;
     --font-sans:
         var(--font-fustat), system-ui, -apple-system, "Segoe UI", Roboto,
@@ -82,41 +78,48 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   KORA TYPOGRAPHY SCALE
+   KORA LOADER — full-screen image gate animation
    ───────────────────────────────────────────────────────────────────────
-   Full design system from the Figma. These utilities set font-family,
-   size, weight, line-height, and tracking together so any component can
-   adopt a spec-accurate style with a single class:
+   Used by:
+     • app/(storefront)/loading.tsx  — server fallback during RSC fetch
+     • components/storefront/PageLoader.tsx — client gate on image load
 
-     <h1 className="type-h1">New Arrivals</h1>
-     <p  className="type-body">Designer dresses, ready to rent.</p>
-     <span className="type-label-caps">Collection</span>
-
-   Line-heights and letter-spacing aren't in the Figma spec — the values
-   below are editorial defaults tuned for each size. Adjust in one place
-   if the designer wants something different.
-
-   ┌───────────────────────────────────────────────────────────────┐
-   │ Figma name                       │ Utility class              │
-   ├──────────────────────────────────┼────────────────────────────┤
-   │ H1   — Cormorant Regular   60px  │ type-h1                    │
-   │ H2   — Cormorant Regular   40px  │ type-h2                    │
-   │ H3   — Cormorant Regular   32px  │ type-h3                    │
-   │ H4   — Cormorant Regular   24px  │ type-h4                    │
-   │ H5   — Cormorant Regular   18px  │ type-h5                    │
-   │ H6   — Fustat Light        24px  │ type-h6                    │
-   │ Body Large    — Fustat Reg 20px  │ type-body-lg               │
-   │ Body          — Fustat Reg 16px  │ type-body                  │
-   │ Body Semibold — Fustat Semi 16px │ type-body-semibold         │
-   │ Body Small    — Fustat Semi 14px │ type-body-sm               │
-   │ LABEL         — Fustat Lig 16px  │ type-label-caps  (uppercase)│
-   │ Label         — Fustat Lig 16px  │ type-label                 │
-   │ Label Small   — Fustat     12px  │ type-label-sm              │
-   │ LABEL SM BOLD — Fustat Semi 12px │ type-label-sm-bold         │
-   └───────────────────────────────────────────────────────────────┘
+   A single keyframe drives the breathing monogram. Ease-in-out with a
+   short hold at full opacity so the logo feels intentional, not blinking.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Headings — Cormorant Regular ──────────────────────────────────── */
+@keyframes kora-loader-breathe {
+    0% {
+        opacity: 0.15;
+    }
+    45% {
+        opacity: 1;
+    }
+    55% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0.15;
+    }
+}
+
+.kora-loader-logo {
+    animation: kora-loader-breathe 2s ease-in-out infinite;
+    will-change: opacity;
+}
+
+/* Respect users who prefer reduced motion — hold the logo at full
+   opacity instead of pulsing. */
+@media (prefers-reduced-motion: reduce) {
+    .kora-loader-logo {
+        animation: none;
+        opacity: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   KORA TYPOGRAPHY SCALE
+   ═══════════════════════════════════════════════════════════════════════ */
 
 @utility type-h1 {
     font-family: var(--font-serif);
@@ -158,8 +161,6 @@ body {
     letter-spacing: 0.01em;
 }
 
-/* ── H6 — Fustat Light 24px (switches to sans-serif) ───────────────── */
-
 @utility type-h6 {
     font-family: var(--font-sans);
     font-size: 24px;
@@ -167,8 +168,6 @@ body {
     font-weight: 300;
     letter-spacing: 0.005em;
 }
-
-/* ── Body — Fustat ─────────────────────────────────────────────────── */
 
 @utility type-body-lg {
     font-family: var(--font-sans);
@@ -202,9 +201,6 @@ body {
     letter-spacing: 0;
 }
 
-/* ── Labels — Fustat Light 16px ─────────────────────────────────────── */
-
-/* LABEL — uppercase, wide tracking (for section eyebrows, tags) */
 @utility type-label-caps {
     font-family: var(--font-sans);
     font-size: 16px;
@@ -214,7 +210,6 @@ body {
     text-transform: uppercase;
 }
 
-/* Label — no capitalization */
 @utility type-label {
     font-family: var(--font-sans);
     font-size: 16px;
@@ -222,8 +217,6 @@ body {
     font-weight: 300;
     letter-spacing: 0;
 }
-
-/* ── Label Small — Fustat 12px ─────────────────────────────────────── */
 
 @utility type-label-sm {
     font-family: var(--font-sans);
@@ -233,7 +226,6 @@ body {
     letter-spacing: 0.02em;
 }
 
-/* LABEL SMALL BOLD — uppercase semibold 12px */
 @utility type-label-sm-bold {
     font-family: var(--font-sans);
     font-size: 12px;
