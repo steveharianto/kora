@@ -27,13 +27,14 @@ const OCCASIONS = [
 export default function AboutPage() {
   return (
     <div className="w-full">
-      {/* Hero */}
+      {/* Hero — data-preload gates PageLoader on this image (LCP). */}
       <section className="relative w-full min-h-[440px] sm:min-h-[560px] lg:min-h-[640px] flex items-center justify-center overflow-hidden">
         <Image
           src="/images/about/hero.jpg"
           alt=""
           fill
           priority
+          data-preload=""
           sizes="100vw"
           className="object-cover"
           style={{ objectPosition: "center 40%" }}
@@ -52,7 +53,6 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Occasions */}
       <section className="w-full bg-store-bg py-20 sm:py-24 px-6">
         <div className="max-w-[1200px] mx-auto text-center">
           <h2 className="font-serif text-[30px] sm:text-[40px] font-normal tracking-[0.01em] text-store-fg leading-tight mb-3">
@@ -75,10 +75,9 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Showroom */}
       <section className="w-full bg-store-bg pb-20 sm:pb-24 px-6">
         <div className="max-w-[1200px] mx-auto">
-          <div className="relative w-full aspect-[1400/440] overflow-hidden bg-[#E2E0D6] mb-14">
+          <div className="relative w-full aspect-[1400/440] overflow-hidden mb-14">
             <Image
               src="/images/about/showroom.jpg"
               alt="KORA showroom on Jl. Darmawangsa VI"
@@ -121,7 +120,6 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Contact */}
       <section className="w-full bg-sand py-20 sm:py-24 px-6">
         <div className="max-w-[1100px] mx-auto text-center">
           <h2 className="font-serif text-[30px] sm:text-[38px] text-store-fg mb-3 font-normal">

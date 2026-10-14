@@ -113,7 +113,6 @@ export default async function HowToRentPage() {
 
   return (
     <div className="w-full bg-store-bg">
-      {/* 1. Rental Process */}
       <section className="max-w-[1512px] mx-auto px-6 sm:px-12 pt-14 sm:pt-20 pb-16">
         <div className="text-center mb-12">
           <h1 className="font-serif text-[38px] sm:text-[52px] text-store-fg font-normal tracking-[0.01em] mb-2">
@@ -145,7 +144,6 @@ export default async function HowToRentPage() {
         </div>
       </section>
 
-      {/* 2. Security Deposit & Damage Policy */}
       <section className="max-w-[1512px] mx-auto px-6 sm:px-12 pb-16">
         <h2 className="font-serif text-[30px] sm:text-[40px] text-store-fg text-center font-normal tracking-[0.01em] mb-10">
           Security Deposit &amp; Damage Policy
@@ -201,10 +199,9 @@ export default async function HowToRentPage() {
         </div>
       </section>
 
-      {/* 3. Cleaning & Returns */}
       <section className="max-w-[1320px] mx-auto px-6 sm:px-12 pb-20">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.05fr] gap-12 lg:gap-16 items-start">
-          <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#E2E0D6]">
+          <div className="relative w-full aspect-[4/3] overflow-hidden">
             <Image
               src="/images/how-to-rent/cleaning.jpg"
               alt="Rack of KORA rental dresses on wooden hangers"
@@ -239,7 +236,6 @@ export default async function HowToRentPage() {
         </div>
       </section>
 
-      {/* 4. FAQ */}
       <section className="w-full bg-sand py-20 sm:py-24 px-6">
         <div className="max-w-[1000px] mx-auto">
           <h2 className="font-serif text-[38px] sm:text-[48px] text-store-fg text-center font-normal tracking-[0.01em] mb-14">

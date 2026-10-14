@@ -136,7 +136,8 @@ function CartRow({
 
   return (
     <div className="flex gap-4 sm:gap-5">
-      <div className="relative w-20 sm:w-24 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+      {/* No grey backdrop — image fades in from the drawer bg. */}
+      <div className="relative w-20 sm:w-24 aspect-[3/4] flex-shrink-0 overflow-hidden">
         {item.image && (
           <Image
             src={item.image}

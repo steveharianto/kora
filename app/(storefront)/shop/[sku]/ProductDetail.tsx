@@ -213,18 +213,21 @@ export default function ProductDetail({
               </div>
             )}
 
-            <div className="relative flex-1 aspect-[3/4] bg-[#E2E0D6] overflow-hidden">
+            {/* Main image: gated on data-preload so PageLoader holds the
+                page behind LoaderShell until it paints. No grey backdrop. */}
+            <div className="relative flex-1 aspect-[3/4] overflow-hidden">
               {item.images[activeImg] ? (
                 <Image
                   src={item.images[activeImg]}
                   alt={item.name}
                   fill
                   priority
+                  data-preload=""
                   sizes="(max-width: 1024px) 100vw, 55vw"
                   className="object-cover"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-store-fg-subtle text-xs uppercase tracking-widest">
+                <div className="w-full h-full flex items-center justify-center text-store-fg-subtle text-xs uppercase tracking-widest border border-store-border">
                   No image
                 </div>
               )}
@@ -414,7 +417,7 @@ export default function ProductDetail({
                   href={`/shop/${r.sku.toLowerCase()}`}
                   className="group block"
                 >
-                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
+                  <div className="relative aspect-[3/4] w-full overflow-hidden mb-3">
                     {r.coverImage ? (
                       <Image
                         src={r.coverImage}
@@ -423,7 +426,11 @@ export default function ProductDetail({
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                         className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
                       />
-                    ) : null}
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-store-fg-subtle text-[11px] uppercase tracking-wider border border-store-border">
+                        No image
+                      </div>
+                    )}
                   </div>
                   <h3 className="font-serif text-[14px] text-store-fg group-hover:text-store-accent transition-colors line-clamp-2">
                     {r.sku}-{r.name}

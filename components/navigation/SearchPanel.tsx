@@ -200,7 +200,8 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
                   onClick={onClose}
                   className="flex items-center gap-3 group"
                 >
-                  <div className="relative w-12 h-16 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                  {/* No grey backdrop — image fades in from panel bg. */}
+                  <div className="relative w-12 h-16 flex-shrink-0 overflow-hidden">
                     {p.coverImage && (
                       <Image
                         src={p.coverImage}

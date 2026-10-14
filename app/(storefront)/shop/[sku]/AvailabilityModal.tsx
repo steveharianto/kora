@@ -814,7 +814,8 @@ export default function AvailabilityModal({
                           : a.rentalPrice;
                       return (
                         <div key={a.sku} className="flex items-center gap-3">
-                          <div className="relative w-12 h-12 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                          {/* Grey bg removed — no flash of placeholder. */}
+                          <div className="relative w-12 h-12 flex-shrink-0 overflow-hidden">
                             {a.image && (
                               <Image
                                 src={a.image}

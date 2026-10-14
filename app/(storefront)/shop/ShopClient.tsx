@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Plus, ChevronDown } from "lucide-react";
 import ProductCard from "./ProductCard";
 import SortDropdown from "./SortDropdown";
@@ -49,8 +50,8 @@ interface Props {
 
 const PAGE_SIZE = 12;
 const NEW_ARRIVALS_WINDOW_DAYS = 30;
-
-type Intent = "rent" | "fitting";
+const ABOVE_THE_FOLD = 4;
+const REVEAL_STAGGER_MS = 30;
 
 const LABEL_CLASS =
   "block text-[10px] tracking-[0.2em] uppercase text-store-fg-muted mb-2.5 font-medium";
@@ -70,6 +71,8 @@ function isoNDaysAgo(days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+type Intent = "rent" | "fitting";
+
 export default function ShopClient({ items, facets, initial }: Props) {
   const router = useRouter();
 
@@ -78,7 +81,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const [category, setCategory] = useState(initial.category);
   const [presetFilter, setPresetFilter] = useState(initial.filter);
   const [query] = useState(initial.q);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const [intent, setIntent] = useState<Intent>("rent");
   const [rentRange, setRentRange] = useState<DateRange | null>(null);
@@ -100,10 +102,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       };
     }
   }, [isFilterOpen]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [sortBy, category, presetFilter, filters, query]);
 
   const syncUrl = useCallback(
     (
@@ -210,8 +208,37 @@ export default function ShopClient({ items, facets, initial }: Props) {
     return list;
   }, [items, category, presetFilter, query, filters, sortBy]);
 
+  // ── Pagination state with synchronous reset on filter/sort change ──
+  //
+  // The previous implementation reset `visibleCount` inside a useEffect,
+  // which caused a one-frame intermediate render where the old
+  // visibleCount was still in effect on the NEW filtered array — briefly
+  // mounting animated cards that immediately unmounted. This pattern
+  // resets the count during render (a supported React technique), so the
+  // very first paint after a filter change already shows PAGE_SIZE.
+  const filterKey = `${sortBy}|${category}|${presetFilter}|${query}|${filters.brands.join(",")}|${filters.sizes.join(",")}|${filters.colors.join(",")}|${filters.styles.join(",")}`;
+
+  const [visibleState, setVisibleState] = useState({
+    key: filterKey,
+    count: PAGE_SIZE,
+  });
+
+  if (visibleState.key !== filterKey) {
+    // Adjust during render — React discards this pass and re-renders
+    // immediately with the reset value. No paint, no flash.
+    setVisibleState({ key: filterKey, count: PAGE_SIZE });
+  }
+
+  const visibleCount = visibleState.count;
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
+
+  const handleViewMore = () => {
+    setVisibleState((prev) => ({
+      ...prev,
+      count: Math.min(prev.count + PAGE_SIZE, filtered.length),
+    }));
+  };
 
   const { heading, subtitle } = useMemo(() => {
     if (category === "traditional")
@@ -395,9 +422,15 @@ export default function ShopClient({ items, facets, initial }: Props) {
               <ProductCard
                 key={item.sku}
                 item={item}
-                /* First 4 cards land above the fold on every breakpoint —
-                   preload them so LCP isn't a lazy-loaded image. */
-                priority={i < 4}
+                priority={i < ABOVE_THE_FOLD}
+                /* Animate only cards beyond the initial batch. Index-based
+                   modulo keeps the stagger fresh per wave — indices
+                   12–23, 24–35, 36–47 all get delays 0…330ms. */
+                appearDelay={
+                  i >= PAGE_SIZE
+                    ? (i % PAGE_SIZE) * REVEAL_STAGGER_MS
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -407,11 +440,58 @@ export default function ShopClient({ items, facets, initial }: Props) {
           <div className="flex justify-center mt-14">
             <button
               type="button"
-              onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+              onClick={handleViewMore}
               className="px-10 py-3 bg-store-accent text-store-accent-fg text-[11px] tracking-[0.2em] uppercase font-medium hover:bg-store-accent-hover transition-colors cursor-pointer"
             >
               View More
             </button>
+          </div>
+        )}
+
+        {/* ── Invisible preloader for the NEXT batch ──────────────────
+            Mounted off-screen the moment a batch is revealed. Uses the
+            same next/image props (fill + matching `sizes`) as the real
+            ProductCard so the requested URL — and therefore the Next.js
+            optimizer cache entry + browser cache key — is identical.
+            `loading="eager"` forces the fetch despite zero visual
+            footprint.
+
+            Result: by the time the user clicks View More, the images
+            are almost always already in cache, so `onLoad` on the real
+            cards fires immediately and the stagger animation runs
+            without any empty-image window. */}
+        {hasMore && (
+          <div
+            aria-hidden
+            style={{
+              position: "fixed",
+              top: -9999,
+              left: -9999,
+              width: 1,
+              height: 1,
+              overflow: "hidden",
+              opacity: 0,
+              pointerEvents: "none",
+            }}
+          >
+            {filtered
+              .slice(visibleCount, visibleCount + PAGE_SIZE)
+              .map((item) =>
+                item.coverImage ? (
+                  <div
+                    key={`preload-${item.sku}`}
+                    style={{ position: "relative", width: 1, height: 1 }}
+                  >
+                    <Image
+                      src={item.coverImage}
+                      alt=""
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      loading="eager"
+                    />
+                  </div>
+                ) : null,
+              )}
           </div>
         )}
       </div>

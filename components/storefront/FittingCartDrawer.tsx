@@ -251,7 +251,8 @@ function SessionCard({
       <div className="border-t border-[#E5E2D4] pt-4 space-y-4">
         {session.items.map((it, i) => (
           <div key={`${it.sku}-${i}`} className="flex gap-3 items-start">
-            <div className="relative w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+            {/* No grey backdrop — image fades in from card bg. */}
+            <div className="relative w-16 aspect-[3/4] flex-shrink-0 overflow-hidden">
               {it.image && (
                 <Image
                   src={it.image}

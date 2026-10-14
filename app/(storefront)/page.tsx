@@ -60,10 +60,11 @@ export default function StorefrontHomePage() {
 
   return (
     <div className="w-full overflow-x-hidden">
-      {/* SECTION 1: HERO CAROUSEL */}
       <HomeHeroCarousel />
 
-      {/* SECTION 2: FEATURED */}
+      {/* Featured — below fold on every breakpoint, so no data-preload.
+          Images lazy-load; no grey backdrop means user sees empty space
+          that matches the page bg until they paint. */}
       <section className="max-w-[1512px] mx-auto w-full py-20 sm:py-24 px-6 sm:px-12">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
           <div>
@@ -91,7 +92,7 @@ export default function StorefrontHomePage() {
               href={`/shop/${dress.sku.toLowerCase()}`}
               className="group flex flex-col"
             >
-              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
+              <div className="relative aspect-[3/4] w-full overflow-hidden mb-3">
                 <Image
                   src={dress.image}
                   alt={dress.name}
@@ -111,7 +112,7 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* SECTION 3: EDITORIAL */}
+      {/* Editorial */}
       <section className="relative w-full min-h-[580px] sm:min-h-[720px] bg-[#2E362A] text-white overflow-hidden flex items-center">
         <Image
           src="/images/home/editorial-bg.jpg"
@@ -154,11 +155,11 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* SECTION 4: AVAILABLE THIS WEEK */}
+      {/* Available This Week */}
       <section className="w-full py-24 sm:py-28 px-6 bg-[#F2F0E9]">
         <div className="mx-auto max-w-[600px] flex flex-col items-center text-center">
           <div className="w-full max-w-[420px] mx-auto mb-8">
-            <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
+            <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg border border-[#DDD9CE]">
               <Image
                 src="/images/home/available-week.jpg"
                 alt="Available to rent this week"
@@ -184,7 +185,7 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* SECTION 5: HOW IT WORKS */}
+      {/* How It Works */}
       <section className="w-full py-24 sm:py-28 px-6 bg-[#DDDBCF] border-t border-[#CECBC0] flex flex-col items-center">
         <div className="text-center mb-16 sm:mb-20">
           <h2 className="font-serif text-[36px] sm:text-[46px] font-normal tracking-[0.01em] text-[#364230] mb-3">

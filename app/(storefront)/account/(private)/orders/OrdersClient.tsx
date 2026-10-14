@@ -112,7 +112,8 @@ function OrderCard({
           )[0]?.image_url;
           return (
             <div key={i} className="flex gap-4">
-              <div className="relative w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+              {/* No grey backdrop. */}
+              <div className="relative w-16 aspect-[3/4] flex-shrink-0 overflow-hidden">
                 {cover && (
                   <Image
                     src={cover}

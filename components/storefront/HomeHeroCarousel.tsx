@@ -74,9 +74,10 @@ export default function HomeHeroCarousel() {
       aria-roledescription="carousel"
       aria-label="Featured collections"
     >
-      {/* Image layers — all three mount so the crossfade never pops in an
-          unloaded slide. `priority` preloads slide 1 (the LCP); slides 2–3
-          load eagerly but don't contribute to the critical path. */}
+      {/* All three slides stay mounted + are preloaded: the carousel
+          rotates every 10s, so an un-preloaded slide 2 or 3 would show
+          an empty hero after a rotate. Slide 1 is `priority` (LCP);
+          slides 2–3 are eager but non-priority. */}
       {SLIDES.map((slide, i) => (
         <div
           key={slide.image}
@@ -91,6 +92,7 @@ export default function HomeHeroCarousel() {
             fill
             priority={i === 0}
             loading={i === 0 ? undefined : "eager"}
+            data-preload=""
             sizes="100vw"
             className="object-cover object-center"
           />
@@ -98,7 +100,6 @@ export default function HomeHeroCarousel() {
         </div>
       ))}
 
-      {/* Foreground content */}
       {SLIDES.map((slide, i) => (
         <div
           key={slide.title}
@@ -120,7 +121,6 @@ export default function HomeHeroCarousel() {
         </div>
       ))}
 
-      {/* Left arrow */}
       <button
         type="button"
         onClick={prev}
@@ -144,7 +144,6 @@ export default function HomeHeroCarousel() {
         </svg>
       </button>
 
-      {/* Right arrow */}
       <button
         type="button"
         onClick={next}
@@ -168,7 +167,6 @@ export default function HomeHeroCarousel() {
         </svg>
       </button>
 
-      {/* Dot indicators */}
       <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3">
         {SLIDES.map((slide, i) => {
           const isActive = i === active;
