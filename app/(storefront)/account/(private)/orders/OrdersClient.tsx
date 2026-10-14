@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { formatRupiah } from "@/lib/utils";
 import ReturnProcessModal from "./ReturnProcessModal";
@@ -111,13 +112,14 @@ function OrderCard({
           )[0]?.image_url;
           return (
             <div key={i} className="flex gap-4">
-              <div className="w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+              <div className="relative w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                 {cover && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={cover}
-                    alt=""
-                    className="w-full h-full object-cover"
+                    alt={p.items?.name || "Rental garment"}
+                    fill
+                    sizes="64px"
+                    className="object-cover"
                   />
                 )}
               </div>

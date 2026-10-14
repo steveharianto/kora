@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { X, AlertTriangle } from "lucide-react";
 import {
   readFittingCart,
@@ -250,13 +251,14 @@ function SessionCard({
       <div className="border-t border-[#E5E2D4] pt-4 space-y-4">
         {session.items.map((it, i) => (
           <div key={`${it.sku}-${i}`} className="flex gap-3 items-start">
-            <div className="w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+            <div className="relative w-16 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
               {it.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={it.image}
                   alt={it.name}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="64px"
+                  className="object-cover"
                 />
               )}
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { X } from "lucide-react";
 import {
   readRentalCart,
@@ -135,13 +136,14 @@ function CartRow({
 
   return (
     <div className="flex gap-4 sm:gap-5">
-      <div className="w-20 sm:w-24 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+      <div className="relative w-20 sm:w-24 aspect-[3/4] flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
         {item.image && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={item.image}
             alt={item.name}
-            className="w-full h-full object-cover"
+            fill
+            sizes="96px"
+            className="object-cover"
           />
         )}
       </div>

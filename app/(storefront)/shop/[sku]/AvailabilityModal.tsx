@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { getSkuAvailabilityMap } from "@/app/actions/storefront";
 import { formatRupiah } from "@/lib/utils";
@@ -813,13 +814,14 @@ export default function AvailabilityModal({
                           : a.rentalPrice;
                       return (
                         <div key={a.sku} className="flex items-center gap-3">
-                          <div className="w-12 h-12 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                          <div className="relative w-12 h-12 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                             {a.image && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
+                              <Image
                                 src={a.image}
-                                alt=""
-                                className="w-full h-full object-cover"
+                                alt={a.name}
+                                fill
+                                sizes="48px"
+                                className="object-cover"
                               />
                             )}
                           </div>

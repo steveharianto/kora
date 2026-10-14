@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Info } from "lucide-react";
 import AvailabilityModal from "./AvailabilityModal";
 import FittingModal from "./FittingModal";
@@ -200,24 +201,27 @@ export default function ProductDetail({
                         : "border-transparent hover:border-store-border-strong"
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <Image
                       src={url}
                       alt=""
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="70px"
+                      className="object-cover"
                     />
                   </button>
                 ))}
               </div>
             )}
 
-            <div className="flex-1 aspect-[3/4] bg-[#E2E0D6] overflow-hidden">
+            <div className="relative flex-1 aspect-[3/4] bg-[#E2E0D6] overflow-hidden">
               {item.images[activeImg] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={item.images[activeImg]}
                   alt={item.name}
-                  className="w-full h-full object-cover"
+                  fill
+                  priority
+                  sizes="(max-width: 1024px) 100vw, 55vw"
+                  className="object-cover"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-store-fg-subtle text-xs uppercase tracking-widest">
@@ -398,7 +402,6 @@ export default function ProductDetail({
           </div>
         </div>
 
-        {/* Related */}
         {relatedItems.length > 0 && (
           <section className="px-6 sm:px-12 pt-8 pb-20">
             <h2 className="font-serif text-[26px] sm:text-[30px] text-store-fg mb-7">
@@ -413,11 +416,12 @@ export default function ProductDetail({
                 >
                   <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
                     {r.coverImage ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={r.coverImage}
                         alt={r.name}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
                       />
                     ) : null}
                   </div>
@@ -477,8 +481,6 @@ export default function ProductDetail({
     </div>
   );
 }
-
-/* ── Helpers ─────────────────────────────────────────────────────── */
 
 function MeasurementBlock({
   label,

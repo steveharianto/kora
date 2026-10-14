@@ -24,7 +24,6 @@ interface Item {
   coverImage: string | null;
   dateAdded: string;
   category: string;
-  /** True when no active booking overlaps the next 7 days. */
   availableThisWeek: boolean;
 }
 
@@ -49,8 +48,6 @@ interface Props {
 }
 
 const PAGE_SIZE = 12;
-
-/** New Arrivals window — items added within this many days. */
 const NEW_ARRIVALS_WINDOW_DAYS = 30;
 
 type Intent = "rent" | "fitting";
@@ -67,7 +64,6 @@ const OPTIONAL_TAG = (
   </span>
 );
 
-/* ── Date helpers (local) ────────────────────────────────────────── */
 function isoNDaysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -77,7 +73,6 @@ function isoNDaysAgo(days: number): string {
 export default function ShopClient({ items, facets, initial }: Props) {
   const router = useRouter();
 
-  // ── State ────────────────────────────────────────────────────────────
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortBy, setSortBy] = useState(initial.sort || "date-desc");
   const [category, setCategory] = useState(initial.category);
@@ -85,15 +80,11 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const [query] = useState(initial.q);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  // Two-step "how would you like to shop?" flow.
   const [intent, setIntent] = useState<Intent>("rent");
   const [rentRange, setRentRange] = useState<DateRange | null>(null);
   const [fittingRange, setFittingRange] = useState<DateRange | null>(null);
   const [fittingSession, setFittingSession] = useState("");
 
-  // NOTE: `size` here holds *bucket* values (XS / S / M / L / XL / Free Size)
-  // — the URL param name stays `size` for continuity but the semantics
-  // changed when we switched to canonical bucketing.
   const [filters, setFilters] = useState<FilterState>({
     brands: initial.brand ? initial.brand.split(",").filter(Boolean) : [],
     sizes: initial.size ? initial.size.split(",").filter(Boolean) : [],
@@ -101,7 +92,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
     styles: initial.style ? initial.style.split(",").filter(Boolean) : [],
   });
 
-  // Lock body scroll while the drawer is open.
   useEffect(() => {
     if (isFilterOpen) {
       document.body.style.overflow = "hidden";
@@ -111,12 +101,10 @@ export default function ShopClient({ items, facets, initial }: Props) {
     }
   }, [isFilterOpen]);
 
-  // Reset visible window whenever the filter inputs change.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [sortBy, category, presetFilter, filters, query]);
 
-  // Sync URL when the meaningful state changes — makes filters shareable.
   const syncUrl = useCallback(
     (
       next: Partial<{
@@ -151,17 +139,9 @@ export default function ShopClient({ items, facets, initial }: Props) {
     [query, category, presetFilter, sortBy, filters, router],
   );
 
-  // ── Derived ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = items.slice();
 
-    /* ── Category filter (from the header's Shop All dropdown) ─────
-       dresses       → everything that is NOT an accessory
-                       (Dress, Kebaya, Kaftan, Set / Outer, Top)
-       accessories   → only items whose type is a veil / belt /
-                       jewelry / bag
-       traditional   → only kebaya / kaftan (deep-link only)
-       ""            → no category filter (ALL) */
     if (category === "accessories") {
       list = list.filter((i) => i.category === "accessories");
     } else if (category === "traditional") {
@@ -170,11 +150,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       list = list.filter((i) => i.category !== "accessories");
     }
 
-    /* ── Preset filter (from the header's Shop All dropdown) ───────
-       new           → items added within the last 30 days
-       available-now → items whose rental window does not overlap
-                       the next 7 days (computed server-side)
-       ""            → no preset filter */
     if (presetFilter === "new") {
       const cutoff = isoNDaysAgo(NEW_ARRIVALS_WINDOW_DAYS);
       list = list.filter((i) => (i.dateAdded || "") >= cutoff);
@@ -182,7 +157,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       list = list.filter((i) => i.availableThisWeek);
     }
 
-    /* ── Free-text search ────────────────────────────────────────── */
     if (query) {
       const q = query.toLowerCase();
       list = list.filter(
@@ -193,7 +167,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       );
     }
 
-    /* ── Facet filters (from the filter drawer) ──────────────────── */
     if (filters.brands.length) {
       const set = new Set(filters.brands);
       list = list.filter((i) => set.has(i.brand));
@@ -213,7 +186,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
       );
     }
 
-    /* ── Sort ────────────────────────────────────────────────────── */
     switch (sortBy) {
       case "alpha-asc":
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -241,7 +213,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
-  /* ── Heading copy per active filter ──────────────────────────────── */
   const { heading, subtitle } = useMemo(() => {
     if (category === "traditional")
       return {
@@ -291,7 +262,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
   return (
     <div className="w-full">
       <div className="max-w-[1512px] mx-auto px-6 sm:px-12 py-10 sm:py-14">
-        {/* ── Title ─────────────────────────────────────────────────── */}
         <div className="mb-8">
           <h1 className="font-serif text-[34px] sm:text-[46px] font-normal tracking-[0.01em] text-store-fg leading-tight">
             {heading}
@@ -299,7 +269,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
           <p className="text-[13px] text-store-fg-muted mt-2">{subtitle}</p>
         </div>
 
-        {/* ── Toolbar ──────────────────────────────────────────────── */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10">
           <div className="flex flex-col gap-5">
             <div>
@@ -411,7 +380,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
           </div>
         </div>
 
-        {/* ── Grid ─────────────────────────────────────────────────── */}
         {visible.length === 0 ? (
           <div className="py-24 text-center">
             <p className="font-serif text-[20px] text-store-fg mb-2">
@@ -423,13 +391,18 @@ export default function ShopClient({ items, facets, initial }: Props) {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-10">
-            {visible.map((item) => (
-              <ProductCard key={item.sku} item={item} />
+            {visible.map((item, i) => (
+              <ProductCard
+                key={item.sku}
+                item={item}
+                /* First 4 cards land above the fold on every breakpoint —
+                   preload them so LCP isn't a lazy-loaded image. */
+                priority={i < 4}
+              />
             ))}
           </div>
         )}
 
-        {/* ── View more ───────────────────────────────────────────── */}
         {hasMore && (
           <div className="flex justify-center mt-14">
             <button
@@ -443,7 +416,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
         )}
       </div>
 
-      {/* ── Filter drawer ────────────────────────────────────────── */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Loader2, Search as SearchIcon, X } from "lucide-react";
 import {
@@ -16,20 +17,6 @@ interface Props {
   onClose: () => void;
 }
 
-/**
- * Floating header search dropdown.
- *
- * Renders as an absolutely-positioned panel anchored under the header's
- * right edge (see StorefrontHeader). Behaviour:
- *
- *   • Opens on click of the header's search icon.
- *   • On first open, fetches and caches a "Trending Products" list.
- *   • As the user types, a debounced server call runs on every keystroke
- *     (≥2 chars) and the panel swaps to live results.
- *   • Query < 2 chars → falls back to Trending.
- *   • Enter or the "See all results" CTA routes to /shop?q=… .
- *   • Escape / outside click / clearing the input closes the panel.
- */
 export default function SearchPanel({ isOpen, onClose }: Props) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -40,11 +27,9 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
   const [pages, setPages] = useState<SearchPageHit[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Trending — fetched lazily once per session when the panel first opens.
   const [trending, setTrending] = useState<SearchProductHit[]>([]);
   const [trendingLoaded, setTrendingLoaded] = useState(false);
 
-  /* ── Focus on open; reset transient state on close ─────────────── */
   useEffect(() => {
     if (isOpen) {
       const t = setTimeout(() => inputRef.current?.focus(), 60);
@@ -56,7 +41,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
     setLoading(false);
   }, [isOpen]);
 
-  /* ── Load trending once, first time the panel opens ────────────── */
   useEffect(() => {
     if (!isOpen || trendingLoaded) return;
     let cancelled = false;
@@ -73,7 +57,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
     };
   }, [isOpen, trendingLoaded]);
 
-  /* ── Debounced live search ─────────────────────────────────────── */
   useEffect(() => {
     if (!isOpen) return;
     const q = query.trim();
@@ -104,7 +87,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
     };
   }, [query, isOpen]);
 
-  /* ── Escape closes the panel ───────────────────────────────────── */
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -114,7 +96,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-  /* ── Click outside closes the panel ────────────────────────────── */
   useEffect(() => {
     if (!isOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -129,7 +110,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [isOpen, onClose]);
 
-  /* ── Derived view state ────────────────────────────────────────── */
   const trimmed = query.trim();
   const showTrending = trimmed.length < 2;
   const visibleProducts = showTrending ? trending : products;
@@ -154,7 +134,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
       aria-label="Product search"
       className="absolute top-full right-4 sm:right-10 mt-2 w-[min(420px,calc(100vw-2rem))] bg-[#F5F2EA] border border-[#DDD9CE] shadow-[0_12px_36px_rgba(45,56,40,0.14)] z-50"
     >
-      {/* ── Search input row ─────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-[#DDD9CE]">
         <SearchIcon
           className="w-[15px] h-[15px] text-[#6A7563] flex-shrink-0"
@@ -191,7 +170,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
         )}
       </div>
 
-      {/* ── Body ──────────────────────────────────────────────────── */}
       <div className="px-5 py-4 max-h-[min(520px,calc(100vh-180px))] overflow-y-auto">
         <div className="flex items-center justify-between mb-3 h-4">
           <h3 className="text-[10px] tracking-[0.18em] uppercase text-[#6A7563] font-medium">
@@ -222,13 +200,14 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
                   onClick={onClose}
                   className="flex items-center gap-3 group"
                 >
-                  <div className="w-12 h-16 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
+                  <div className="relative w-12 h-16 flex-shrink-0 bg-[#E2E0D6] overflow-hidden">
                     {p.coverImage && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={p.coverImage}
                         alt={p.name}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="48px"
+                        className="object-cover"
                       />
                     )}
                   </div>
@@ -246,7 +225,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
           </ul>
         )}
 
-        {/* Page hits — shown inline when the query matches a static route. */}
         {!showTrending && pages.length > 0 && (
           <div className="mt-5 pt-4 border-t border-[#DDD9CE]">
             <h3 className="text-[10px] tracking-[0.18em] uppercase text-[#6A7563] font-medium mb-3">
@@ -273,7 +251,6 @@ export default function SearchPanel({ isOpen, onClose }: Props) {
           </div>
         )}
 
-        {/* CTA — routes to the full shop page with the query applied. */}
         {!showTrending && products.length > 0 && (
           <button
             type="button"

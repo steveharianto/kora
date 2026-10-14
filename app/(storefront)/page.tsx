@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Fragment } from "react";
 import HomeHeroCarousel from "@/components/storefront/HomeHeroCarousel";
 import {
@@ -59,14 +60,10 @@ export default function StorefrontHomePage() {
 
   return (
     <div className="w-full overflow-x-hidden">
-      {/* =================================================================== */}
-      {/* SECTION 1: HERO CAROUSEL BANNER                                     */}
-      {/* =================================================================== */}
+      {/* SECTION 1: HERO CAROUSEL */}
       <HomeHeroCarousel />
 
-      {/* =================================================================== */}
-      {/* SECTION 2: "RENT ME ONCE, HEAD BE TURNING TWICE!"                   */}
-      {/* =================================================================== */}
+      {/* SECTION 2: FEATURED */}
       <section className="max-w-[1512px] mx-auto w-full py-20 sm:py-24 px-6 sm:px-12">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
           <div>
@@ -95,9 +92,12 @@ export default function StorefrontHomePage() {
               className="group flex flex-col"
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#E2E0D6] mb-3">
-                <div
-                  className="w-full h-full bg-cover bg-center group-hover:scale-105 transition-transform duration-700"
-                  style={{ backgroundImage: `url('${dress.image}')` }}
+                <Image
+                  src={dress.image}
+                  alt={dress.name}
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, 33vw"
+                  className="object-cover group-hover:scale-105 transition-transform duration-700"
                 />
               </div>
               <h3 className="font-serif text-[15px] text-[#242A20] group-hover:text-[#64765B] transition-colors line-clamp-1 font-normal">
@@ -111,13 +111,14 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* =================================================================== */}
-      {/* SECTION 3: EDITORIAL SPLIT SHOWCASE                                 */}
-      {/* =================================================================== */}
+      {/* SECTION 3: EDITORIAL */}
       <section className="relative w-full min-h-[580px] sm:min-h-[720px] bg-[#2E362A] text-white overflow-hidden flex items-center">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-35"
-          style={{ backgroundImage: `url('/images/home/editorial-bg.jpg')` }}
+        <Image
+          src="/images/home/editorial-bg.jpg"
+          alt=""
+          fill
+          sizes="100vw"
+          className="object-cover object-center opacity-35"
         />
 
         <div className="relative z-10 max-w-[1512px] mx-auto w-full px-6 sm:px-12 py-16 grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,360px)_1fr] gap-8 items-center">
@@ -132,11 +133,12 @@ export default function StorefrontHomePage() {
 
           <div className="w-full flex justify-center">
             <div className="relative w-full aspect-[3/4] bg-[#424D3D] shadow-2xl overflow-hidden border border-white/10">
-              <div
-                className="w-full h-full bg-cover bg-center"
-                style={{
-                  backgroundImage: `url('/images/home/editorial-center.jpg')`,
-                }}
+              <Image
+                src="/images/home/editorial-center.jpg"
+                alt="New arrival editorial"
+                fill
+                sizes="(max-width: 1024px) 100vw, 360px"
+                className="object-cover object-center"
               />
             </div>
           </div>
@@ -152,18 +154,17 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* =================================================================== */}
-      {/* SECTION 4: "AVAILABLE THIS WEEK"                                    */}
-      {/* =================================================================== */}
+      {/* SECTION 4: AVAILABLE THIS WEEK */}
       <section className="w-full py-24 sm:py-28 px-6 bg-[#F2F0E9]">
         <div className="mx-auto max-w-[600px] flex flex-col items-center text-center">
           <div className="w-full max-w-[420px] mx-auto mb-8">
             <div className="relative aspect-[3/4] w-full overflow-hidden shadow-lg bg-[#E2E0D6] border border-[#DDD9CE]">
-              <div
-                className="w-full h-full bg-cover bg-center"
-                style={{
-                  backgroundImage: `url('/images/home/available-week.jpg')`,
-                }}
+              <Image
+                src="/images/home/available-week.jpg"
+                alt="Available to rent this week"
+                fill
+                sizes="(max-width: 640px) 100vw, 420px"
+                className="object-cover object-center"
               />
             </div>
           </div>
@@ -183,9 +184,7 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* =================================================================== */}
-      {/* SECTION 5: "HOW IT WORKS" — 4 CONNECTED STEPS                       */}
-      {/* =================================================================== */}
+      {/* SECTION 5: HOW IT WORKS */}
       <section className="w-full py-24 sm:py-28 px-6 bg-[#DDDBCF] border-t border-[#CECBC0] flex flex-col items-center">
         <div className="text-center mb-16 sm:mb-20">
           <h2 className="font-serif text-[36px] sm:text-[46px] font-normal tracking-[0.01em] text-[#364230] mb-3">
@@ -196,7 +195,6 @@ export default function StorefrontHomePage() {
           </p>
         </div>
 
-        {/* Desktop / tablet: connected circles */}
         <div className="hidden md:flex items-start justify-center w-full max-w-[1280px] mb-16">
           {STEPS.map((step, i) => {
             const Icon = step.Icon;
@@ -227,7 +225,6 @@ export default function StorefrontHomePage() {
           })}
         </div>
 
-        {/* Mobile: stacked 2-col grid, no connector lines */}
         <div className="md:hidden grid grid-cols-2 gap-x-4 gap-y-10 mb-16 w-full max-w-[420px]">
           {STEPS.map((step) => {
             const Icon = step.Icon;

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import {
   WeddingIcon,
   BirthdayIcon,
@@ -26,19 +27,17 @@ const OCCASIONS = [
 export default function AboutPage() {
   return (
     <div className="w-full">
-      {/* ── Hero ─────────────────────────────────────────────────── */}
-      <section
-        className="relative w-full min-h-[440px] sm:min-h-[560px] lg:min-h-[640px] flex items-center justify-center overflow-hidden"
-        style={{
-          backgroundImage: "url('/images/about/hero.jpg')",
-          backgroundSize: "cover",
-          // Bias the crop upward so the model's face and head stay in
-          // frame with headroom above — a portrait source inside a very
-          // wide hero would otherwise crop to the dead center.
-          backgroundPosition: "center 40%",
-        }}
-      >
-        {/* Light overlay for legibility — Figma keeps the image bright */}
+      {/* Hero */}
+      <section className="relative w-full min-h-[440px] sm:min-h-[560px] lg:min-h-[640px] flex items-center justify-center overflow-hidden">
+        <Image
+          src="/images/about/hero.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
+          style={{ objectPosition: "center 40%" }}
+        />
         <div className="absolute inset-0 bg-black/15" />
 
         <div className="relative z-10 max-w-[900px] mx-auto px-6 sm:px-10 text-center">
@@ -53,7 +52,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── For the girl with a full calendar ────────────────────── */}
+      {/* Occasions */}
       <section className="w-full bg-store-bg py-20 sm:py-24 px-6">
         <div className="max-w-[1200px] mx-auto text-center">
           <h2 className="font-serif text-[30px] sm:text-[40px] font-normal tracking-[0.01em] text-store-fg leading-tight mb-3">
@@ -76,19 +75,19 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── Showroom ─────────────────────────────────────────────── */}
+      {/* Showroom */}
       <section className="w-full bg-store-bg pb-20 sm:pb-24 px-6">
         <div className="max-w-[1200px] mx-auto">
-          <div
-            className="relative w-full aspect-[1400/440] overflow-hidden bg-[#E2E0D6] mb-14"
-            style={{
-              backgroundImage: "url('/images/about/showroom.jpg')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-            role="img"
-            aria-label="KORA showroom on Jl. Darmawangsa VI"
-          />
+          <div className="relative w-full aspect-[1400/440] overflow-hidden bg-[#E2E0D6] mb-14">
+            <Image
+              src="/images/about/showroom.jpg"
+              alt="KORA showroom on Jl. Darmawangsa VI"
+              fill
+              sizes="(max-width: 1200px) 100vw, 1200px"
+              className="object-cover"
+              style={{ objectPosition: "center" }}
+            />
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-8 text-center sm:text-left">
             <h3 className="font-serif text-[26px] sm:text-[30px] text-store-fg font-normal leading-tight">
@@ -122,7 +121,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── Contact Us ───────────────────────────────────────────── */}
+      {/* Contact */}
       <section className="w-full bg-sand py-20 sm:py-24 px-6">
         <div className="max-w-[1100px] mx-auto text-center">
           <h2 className="font-serif text-[30px] sm:text-[38px] text-store-fg mb-3 font-normal">

@@ -2,23 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-
-/**
- * Home hero — 3-slide crossfade carousel.
- *
- * Images live in /public/images/home/:
- *   hero-1.jpg → New Arrivals      (already exists)
- *   hero-2.jpg → Available This Week
- *   hero-3.jpg → See Our Collection
- *
- * Behaviour:
- *   • Autoplay every 10 s, pauses on hover.
- *   • Left / right arrow buttons (thin editorial line arrows).
- *   • Dot indicators — active dot larger + fully opaque.
- *   • ← / → keyboard navigation.
- *   • Crossfade transition (opacity) — all slides stay mounted so the
- *     browser preloads the images and slide changes are flicker-free.
- */
+import Image from "next/image";
 
 interface Slide {
   title: string;
@@ -62,7 +46,6 @@ export default function HomeHeroCarousel() {
   const next = useCallback(() => go(active + 1), [active, go]);
   const prev = useCallback(() => go(active - 1), [active, go]);
 
-  /* ── Autoplay (cleared on hover, dot click, or navigation) ─────────── */
   useEffect(() => {
     if (paused) return;
     timeoutRef.current = window.setTimeout(next, AUTOPLAY_MS);
@@ -74,7 +57,6 @@ export default function HomeHeroCarousel() {
     };
   }, [active, paused, next]);
 
-  /* ── Keyboard arrows ──────────────────────────────────────────────── */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft") prev();
@@ -92,7 +74,9 @@ export default function HomeHeroCarousel() {
       aria-roledescription="carousel"
       aria-label="Featured collections"
     >
-      {/* ── Image layers (crossfade stack) ───────────────────────────── */}
+      {/* Image layers — all three mount so the crossfade never pops in an
+          unloaded slide. `priority` preloads slide 1 (the LCP); slides 2–3
+          load eagerly but don't contribute to the critical path. */}
       {SLIDES.map((slide, i) => (
         <div
           key={slide.image}
@@ -101,17 +85,20 @@ export default function HomeHeroCarousel() {
           }`}
           aria-hidden={i !== active}
         >
-          <div
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-            style={{ backgroundImage: `url('${slide.image}')` }}
+          <Image
+            src={slide.image}
+            alt={slide.alt}
+            fill
+            priority={i === 0}
+            loading={i === 0 ? undefined : "eager"}
+            sizes="100vw"
+            className="object-cover object-center"
           />
-          {/* Legibility overlay — kept lighter than the old dark wash so the
-              dress photography still reads. */}
           <div className="absolute inset-0 bg-black/25" />
         </div>
       ))}
 
-      {/* ── Foreground content ───────────────────────────────────────── */}
+      {/* Foreground content */}
       {SLIDES.map((slide, i) => (
         <div
           key={slide.title}
@@ -133,7 +120,7 @@ export default function HomeHeroCarousel() {
         </div>
       ))}
 
-      {/* ── Left arrow ───────────────────────────────────────────────── */}
+      {/* Left arrow */}
       <button
         type="button"
         onClick={prev}
@@ -157,7 +144,7 @@ export default function HomeHeroCarousel() {
         </svg>
       </button>
 
-      {/* ── Right arrow ──────────────────────────────────────────────── */}
+      {/* Right arrow */}
       <button
         type="button"
         onClick={next}
@@ -181,7 +168,7 @@ export default function HomeHeroCarousel() {
         </svg>
       </button>
 
-      {/* ── Dot indicators ───────────────────────────────────────────── */}
+      {/* Dot indicators */}
       <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3">
         {SLIDES.map((slide, i) => {
           const isActive = i === active;
