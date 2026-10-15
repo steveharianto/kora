@@ -89,6 +89,15 @@ const styles = StyleSheet.create({
   cDesc: { flex: 1 },
   cQty: { width: "8%", textAlign: "center" },
   cRight: { width: "14%", textAlign: "right" },
+  /*
+   * Wider column, used ONLY when the per-line day breakdown is rendered.
+   * The longest stacked line is "+ Rp 400.000 × N extra days" — 14% (the
+   * legacy cRight width) would clip it; 22% fits it cleanly at font 8.5.
+   *
+   * Legacy orders continue to use `cRight` at 14%, so their rendered PDF
+   * is byte-identical to the pre-feature baseline (Q5).
+   */
+  cBreakdown: { width: "22%", textAlign: "right" },
 
   /* ── Totals ───────────────────────────────────────────── */
   totalsBlock: { alignItems: "flex-end", marginBottom: 26 },
@@ -150,6 +159,25 @@ export function InvoiceDocument({ order }: Props) {
   const totalPaid = Number(order.total) || 0;
   const hasCredit = Number(order.store_credit_applied) > 0;
 
+  /*
+   * Legacy-vs-modern discriminator (Q5), mirroring the HTML invoice.
+   *
+   * The multi-day pricing feature writes a permanent per-line breakdown
+   * (`base_price` / `add_on_price` / `days`) on every order created after
+   * Steps 9 and 11 shipped. Orders created before that have NULL on all
+   * three columns.
+   *
+   * Render the stacked breakdown ONLY when every line carries a non-null
+   * `base_price`. Historical PDFs stay exactly as they were — same
+   * layout, same column widths (cRight at 14%, not cBreakdown), same
+   * totals block.
+   *
+   * `.every()` means a mixed order (unreachable in practice) falls back
+   * to legacy rendering rather than producing a half-broken table.
+   */
+  const showBreakdown =
+    items.length > 0 && items.every((l) => l.base_price != null);
+
   return (
     <Document
       title={`KORA Invoice ${order.id}`}
@@ -192,8 +220,8 @@ export function InvoiceDocument({ order }: Props) {
           <View style={styles.col}>
             <Text style={styles.sectionLabel}>Rental Schedule</Text>
             <Text style={styles.td}>
-              Event Date: {order.event_start_date || "—"} (
-              {order.event_days} day)
+              Event Date: {order.event_start_date || "—"} ({order.event_days}{" "}
+              day)
             </Text>
             <Text style={styles.td}>
               Dispatched: {order.pickup_date || "—"}
@@ -213,18 +241,26 @@ export function InvoiceDocument({ order }: Props) {
             <Text style={[styles.th, styles.cSku]}>Item SKU</Text>
             <Text style={[styles.th, styles.cDesc]}>Description</Text>
             <Text style={[styles.th, styles.cQty]}>Qty</Text>
-            <Text style={[styles.th, styles.cRight]}>Rental Fee</Text>
+            {/*
+             * Header column swaps label AND width together with the row
+             * content below. Using `cBreakdown` (22%) instead of `cRight`
+             * (14%) here keeps the header text aligned with its column.
+             */}
+            <Text
+              style={[
+                styles.th,
+                showBreakdown ? styles.cBreakdown : styles.cRight,
+              ]}
+            >
+              {showBreakdown ? "Breakdown" : "Rental Fee"}
+            </Text>
             <Text style={[styles.th, styles.cRight]}>Deposit</Text>
             <Text style={[styles.th, styles.cRight]}>Subtotal</Text>
           </View>
           {items.map((op: any, i: number) => (
             <View key={i} style={styles.tRow}>
               <Text
-                style={[
-                  styles.td,
-                  styles.cSku,
-                  { fontFamily: "Courier-Bold" },
-                ]}
+                style={[styles.td, styles.cSku, { fontFamily: "Courier-Bold" }]}
               >
                 {op.item_sku}
               </Text>
@@ -232,9 +268,70 @@ export function InvoiceDocument({ order }: Props) {
                 {op.items?.name || "Designer Garment"}
               </Text>
               <Text style={[styles.td, styles.cQty]}>{op.quantity}</Text>
-              <Text style={[styles.td, styles.cRight]}>
-                {formatRupiah(Number(op.price))}
-              </Text>
+              {/*
+               * Per-line pricing cell.
+               *
+               *   showBreakdown === true
+               *     → stacked breakdown written by the server at save time.
+               *       Values come from the order line's permanent snapshot,
+               *       so editing the dress's rate later cannot rewrite
+               *       history. `op.price` is per-unit, so
+               *       `op.price × op.quantity` is the line total.
+               *
+               *   showBreakdown === false
+               *     → the original single-line flat rental fee, identical
+               *       to the pre-feature rendering.
+               *
+               * Uses `<View>` with nested `<Text>` children because
+               * @react-pdf/renderer requires a flex container to stack
+               * multiple lines in a single cell. The parent row is
+               * `flexDirection: "row"`; this View is treated as one of
+               * the row's children and picks up its column width from
+               * `styles.cBreakdown` (or `styles.cRight` for legacy).
+               */}
+              {showBreakdown ? (
+                <View style={styles.cBreakdown}>
+                  <Text style={[styles.td, { textAlign: "right" }]}>
+                    Day 1: {formatRupiah(Number(op.base_price))}
+                  </Text>
+                  {Number(op.days) > 1 && (
+                    <Text
+                      style={[
+                        styles.td,
+                        {
+                          textAlign: "right",
+                          color: "#666",
+                          fontSize: 8.5,
+                        },
+                      ]}
+                    >
+                      + {formatRupiah(Number(op.add_on_price))} ×{" "}
+                      {Number(op.days) - 1} extra day
+                      {Number(op.days) - 1 === 1 ? "" : "s"}
+                    </Text>
+                  )}
+                  <Text
+                    style={[
+                      styles.td,
+                      {
+                        textAlign: "right",
+                        fontFamily: "Helvetica-Bold",
+                        fontSize: 9,
+                        marginTop: 2,
+                        borderTopWidth: 0.5,
+                        borderTopColor: "#d0d0d0",
+                        paddingTop: 2,
+                      },
+                    ]}
+                  >
+                    {formatRupiah(Number(op.price) * Number(op.quantity))}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.td, styles.cRight]}>
+                  {formatRupiah(Number(op.price))}
+                </Text>
+              )}
               <Text style={[styles.td, styles.cRight]}>
                 {formatRupiah(Number(op.deposit))}
               </Text>
@@ -279,6 +376,29 @@ export function InvoiceDocument({ order }: Props) {
               </Text>
             </View>
           )}
+          {/*
+           * Informational breakdown row, new orders only. Shows the
+           * portion of the rental subtotal that came from extra days
+           * rather than Day 1 base charges. Historical PDFs skip this
+           * row entirely — their totals block is unchanged.
+           */}
+          {showBreakdown && (
+            <View style={styles.totalsRow}>
+              <Text style={styles.totalsLabel}>Additional-day charges:</Text>
+              <Text style={styles.totalsValue}>
+                {formatRupiah(
+                  items.reduce(
+                    (s, l) =>
+                      s +
+                      Number(l.add_on_price || 0) *
+                        Math.max(0, (Number(l.days) || 1) - 1) *
+                        Number(l.quantity || 1),
+                    0,
+                  ),
+                )}
+              </Text>
+            </View>
+          )}
           <View style={styles.grandRow}>
             <Text style={styles.grandLabel}>Total Paid:</Text>
             <Text style={styles.grandValue}>{formatRupiah(totalPaid)}</Text>
@@ -292,12 +412,11 @@ export function InvoiceDocument({ order }: Props) {
           </Text>
           <Text>
             Garments must be returned by the return deadline indicated above.
-            Security deposit will be refunded via original payment method
-            within 2 × 24 hours after passing quality control inspection.
+            Security deposit will be refunded via original payment method within
+            2 × 24 hours after passing quality control inspection.
           </Text>
           <Text style={{ marginTop: 8, fontSize: 8, color: "#999" }}>
-            KORA · Designer Apparel Rental · daysinkora@gmail.com ·
-            @daysinkora
+            KORA · Designer Apparel Rental · daysinkora@gmail.com · @daysinkora
           </Text>
         </View>
       </Page>

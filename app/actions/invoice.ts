@@ -39,6 +39,9 @@ export async function generateInvoiceAttachment(
         item_sku,
         quantity,
         price,
+        base_price,
+        add_on_price,
+        days,
         deposit,
         subtotal,
         items ( name )
