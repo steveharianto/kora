@@ -75,19 +75,15 @@ export default function StorefrontHeader({
 
   const handleCheckout = async () => {
     setOpenCart(null);
-
     const current = await getCurrentCustomer();
-
     if (!current) {
       router.push("/account/login?redirect=/checkout");
       return;
     }
-
     if (current.status === "Not Submitted") {
       setOpenKtpModal(true);
       return;
     }
-
     router.push("/checkout");
   };
 
@@ -103,8 +99,11 @@ export default function StorefrontHeader({
   return (
     <>
       <header className="sticky top-0 z-50 w-full bg-[#ECEBE4] border-b border-[#DFDDD4] transition-colors">
-        <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between">
-          {/* Left cluster — hamburger (mobile only) + logo */}
+        <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between relative">
+          {/* Left cluster — hamburger (mobile only) + logo.
+              Mobile (Figma): the logo is absolutely centered in the bar and
+              only the hamburger sits at the left edge. From md up the logo
+              returns to its static position in the left cluster. */}
           <div className="flex items-center gap-3 md:gap-0">
             <button
               type="button"
@@ -116,11 +115,10 @@ export default function StorefrontHeader({
             >
               <Menu className="w-5 h-5" strokeWidth={1.8} />
             </button>
-
             <Link
               href="/"
               aria-label="KORA — Home"
-              className="hover:opacity-85 transition-opacity inline-flex items-center"
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 md:static md:translate-x-0 md:translate-y-0 hover:opacity-85 transition-opacity inline-flex items-center"
             >
               <Image
                 src="/images/logo.png"
@@ -132,7 +130,6 @@ export default function StorefrontHeader({
               />
             </Link>
           </div>
-
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8 text-[12px] tracking-[0.14em] text-[#3B4736] font-medium uppercase">
             <div
@@ -147,7 +144,6 @@ export default function StorefrontHeader({
                 Shop All
                 <span className="text-[9px] translate-y-[-1px]">▼</span>
               </Link>
-
               {isShopMenuOpen && (
                 <div className="absolute top-full left-0 w-56 bg-[#ECEBE4] border border-[#DFDDD4] rounded-sm py-2 shadow-lg z-50">
                   {[
@@ -174,7 +170,6 @@ export default function StorefrontHeader({
                 </div>
               )}
             </div>
-
             <Link
               href="/how-to-rent"
               className="hover:text-[#1F261C] transition-colors py-2"
@@ -188,25 +183,24 @@ export default function StorefrontHeader({
               About Kora
             </Link>
           </nav>
-
-          {/* Right cluster — icons */}
+          {/* Right cluster — mobile (Figma) shows ONLY the rental bag;
+              search, account and the fitting cart return from md up. */}
           <div className="flex items-center gap-4 sm:gap-6 text-[#485642]">
             <button
               type="button"
               aria-label={isSearchOpen ? "Close search" : "Search"}
               aria-expanded={isSearchOpen}
               onClick={() => setIsSearchOpen((v) => !v)}
-              className="hover:text-[#1F261C] transition-colors cursor-pointer"
+              className="hidden md:block hover:text-[#1F261C] transition-colors cursor-pointer"
             >
               <SearchIcon className="w-[22px] h-[22px]" />
             </button>
-
             <Link
               href="/account"
               aria-label={
                 displayName ? `My account — ${displayName}` : "Account"
               }
-              className="flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
+              className="hidden md:flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
             >
               <AccountIcon className="w-[22px] h-[22px] flex-shrink-0" />
               {displayName && (
@@ -215,7 +209,6 @@ export default function StorefrontHeader({
                 </span>
               )}
             </Link>
-
             <button
               type="button"
               aria-label="Rental Cart"
@@ -225,25 +218,22 @@ export default function StorefrontHeader({
               <RentalBagIcon className="w-[22px] h-[22px]" />
               <RentalCartBadge />
             </button>
-
             <button
               type="button"
               aria-label="Fitting Sessions Cart"
               onClick={() => setOpenCart("fitting")}
-              className="flex items-center gap-1.5 hover:text-[#1F261C] transition-colors cursor-pointer"
+              className="hidden md:flex items-center gap-1.5 hover:text-[#1F261C] transition-colors cursor-pointer"
             >
               <FittingHangerIcon className="w-[22px] h-[22px]" />
               <FittingCartBadge />
             </button>
           </div>
         </div>
-
         <SearchPanel
           isOpen={isSearchOpen}
           onClose={() => setIsSearchOpen(false)}
         />
       </header>
-
       {/* Mobile navigation drawer */}
       {isMenuOpen && (
         <>
@@ -283,7 +273,6 @@ export default function StorefrontHeader({
                 <X className="w-5 h-5" strokeWidth={1.8} />
               </button>
             </div>
-
             <nav className="flex-1 overflow-y-auto px-6 py-8">
               <ul className="space-y-1">
                 {MOBILE_NAV.map((item) => (
@@ -299,7 +288,6 @@ export default function StorefrontHeader({
                 ))}
               </ul>
             </nav>
-
             <div className="px-6 py-5 border-t border-[#DFDDD4]">
               <Link
                 href="/account"
@@ -313,7 +301,6 @@ export default function StorefrontHeader({
           </aside>
         </>
       )}
-
       <RentalCartDrawer
         isOpen={openCart === "rental"}
         onClose={() => setOpenCart(null)}
@@ -328,7 +315,6 @@ export default function StorefrontHeader({
         onClose={() => setOpenKtpModal(false)}
         onProceed={handleKtpProceed}
       />
-
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] max-w-[92vw] bg-store-fg text-white text-[12px] tracking-wider px-6 py-3 shadow-xl">
           {toast}

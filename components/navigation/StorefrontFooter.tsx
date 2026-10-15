@@ -19,11 +19,12 @@ import {
  * • Working Hours — read live from app_settings.business_info.operating_hours,
  *   grouped into consecutive-day runs.
  * • Social — hardcoded URLs from contactInfo.
+ * • Bottom bar — copyright plus the mobile-only "Website by KLETOS" credit
+ *   from the Figma mobile design (desktop keeps copyright only).
  */
 export default async function StorefrontFooter() {
   const hours = await getOperatingHours();
   const hourLines = formatOperatingHoursLines(hours);
-
   return (
     <footer className="w-full bg-[#64765B] text-[#ECEBE4] pt-20 pb-10 px-6 sm:px-12 border-t border-[#54644C]">
       <div className="max-w-[1512px] mx-auto">
@@ -51,7 +52,6 @@ export default async function StorefrontFooter() {
               />
             </Link>
           </div>
-
           {/* Location + Working Hours — stacked in one column */}
           <div className="col-span-2 md:col-span-4 space-y-10">
             <div>
@@ -68,7 +68,6 @@ export default async function StorefrontFooter() {
                 {SHOWROOM_ADDRESS}
               </a>
             </div>
-
             <div>
               <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
                 Working Hours
@@ -83,7 +82,6 @@ export default async function StorefrontFooter() {
               </p>
             </div>
           </div>
-
           {/* Navigation */}
           <div className="col-span-1 md:col-span-2">
             <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
@@ -132,7 +130,6 @@ export default async function StorefrontFooter() {
               </li>
             </ul>
           </div>
-
           {/* Social */}
           <div className="col-span-1 md:col-span-2">
             <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
@@ -182,7 +179,6 @@ export default async function StorefrontFooter() {
               </li>
             </ul>
           </div>
-
           {/* Legal */}
           <div className="col-span-2 md:col-span-1">
             <h4 className="font-serif text-[17px] text-[#ECEBE4] font-normal mb-3.5">
@@ -200,10 +196,16 @@ export default async function StorefrontFooter() {
             </ul>
           </div>
         </div>
-
-        {/* Bottom bar — copyright only */}
-        <div className="pt-8 border-t border-[#76886D] text-[11px] text-[#ECEBE4]/70">
+        {/* Bottom bar — copyright on desktop; copyright + agency credit
+            split left/right on mobile per the Figma mobile design. */}
+        <div className="pt-8 border-t border-[#76886D] text-[11px] text-[#ECEBE4]/70 flex items-center justify-between gap-4">
           <p>Copyright © 2026 KORA</p>
+          <p className="md:hidden whitespace-nowrap">
+            Website by{" "}
+            <span className="font-semibold tracking-[0.12em] uppercase text-[#ECEBE4]">
+              Kletos
+            </span>
+          </p>
         </div>
       </div>
     </footer>
