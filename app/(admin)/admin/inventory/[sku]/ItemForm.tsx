@@ -70,6 +70,10 @@ export default function ItemForm({
    * number, not a string). The one field that MUST stay narrowly typed
    * is `tags`, which is inferred as `StyleTag[]` from normalizeStyleTags
    * — that's what makes toggleStyleTag(tag: StyleTag) type-check.
+   *
+   * `add_on_price` uses `??` (not `||`) so an explicit 0 is preserved —
+   * a 0 add-on means "extra days are free" per the multi-day pricing
+   * feature, and `||` would silently coerce it to "".
    */
   const [formData, setFormData] = useState({
     sku: viewData.sku || "",
@@ -80,6 +84,7 @@ export default function ItemForm({
     size: viewData.size || "",
     color: viewData.color || "",
     rental_price: viewData.rental_price || "",
+    add_on_price: viewData.add_on_price ?? viewData.rental_price ?? "",
     buffer_override: viewData.buffer_override ?? "",
     status: viewData.status || "Available",
     website_status: viewData.website_status || "Draft",
@@ -120,6 +125,7 @@ export default function ItemForm({
       size: merged.size || "",
       color: merged.color || "",
       rental_price: merged.rental_price || "",
+      add_on_price: merged.add_on_price ?? merged.rental_price ?? "",
       buffer_override: merged.buffer_override ?? "",
       status: merged.status || "Available",
       website_status: merged.website_status || "Draft",
@@ -487,11 +493,48 @@ export default function ItemForm({
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
                 Rental Price (Rp) <span className="text-bad">*</span>
               </label>
+              {/*
+               * Two-way "same as base" tracker:
+               *   • On rental_price change, if add_on_price still equals the
+               *     previous rental_price (i.e. the admin hasn't broken the
+               *     default link), mirror the new value into add_on_price.
+               *   • If the admin has already set add_on_price to something
+               *     else (including 0 for "free extra days"), leave it alone.
+               *
+               * Number() coercion handles the "" initial state (0 === 0
+               * when both are blank), so the very first rental_price entry
+               * on a new item also auto-fills the add-on field.
+               */}
               <RupiahInput
                 required
                 value={Number(formData.rental_price) || 0}
-                onChange={(v) => setFormData({ ...formData, rental_price: v })}
+                onChange={(v) =>
+                  setFormData((prev) => {
+                    const tracking =
+                      Number(prev.add_on_price) === Number(prev.rental_price);
+                    return {
+                      ...prev,
+                      rental_price: v,
+                      add_on_price: tracking ? v : prev.add_on_price,
+                    };
+                  })
+                }
               />
+            </div>
+
+            <div>
+              <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
+                Add-On Price / Additional Day (Rp)
+              </label>
+              <RupiahInput
+                value={Number(formData.add_on_price) || 0}
+                onChange={(v) => setFormData({ ...formData, add_on_price: v })}
+              />
+              <p className="text-[10px] text-muted mt-1 leading-tight">
+                Charged for each rental day beyond Day 1. Defaults to track the
+                base rental price until you override it — set to 0 for free
+                extra days.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3.5 p-3 bg-[#F6F4EF] rounded-lg border border-[#E5E0D6]">
