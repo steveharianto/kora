@@ -196,6 +196,27 @@ export default function ShopDateRangePicker({
     return value;
   }, [isDragging, dragAnchor, dragHover, value]);
 
+  /* ── Touch drag support ────────────────────────────────────────────
+     Touch pointers are implicitly captured by the element that received
+     pointerdown, so sibling day cells never fire pointerenter on mobile.
+     While dragging we listen to pointermove on window and hit-test the
+     finger position with elementFromPoint against the cell's data-date
+     attribute — restoring drag-to-select-range on touch devices.
+
+     Declared ABOVE the useEffect that registers it as a listener, so the
+     reference in that effect's body and deps array is not in the TDZ.
+     (TS2448 — "Block-scoped variable used before its declaration".)
+     Matches the ordering used in AvailabilityModal. */
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = (el as HTMLElement | null)?.closest?.(
+      "button[data-date]",
+    ) as HTMLElement | null;
+    if (!cell || cell.dataset.selectable !== "true") return;
+    const dateStr = cell.dataset.date;
+    if (dateStr) setDragHover(dateStr);
+  }, []);
+
   /* Commit on window pointerup — works even if the pointer releases
      outside the calendar or outside the button it started on. */
   useEffect(() => {
@@ -225,22 +246,6 @@ export default function ShopDateRangePicker({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, dragAnchor, dragHover, onChange, handlePointerMove]);
-
-  /* ── Touch drag support ────────────────────────────────────────────
-     Touch pointers are implicitly captured by the element that received
-     pointerdown, so sibling day cells never fire pointerenter on mobile.
-     While dragging we listen to pointermove on window and hit-test the
-     finger position with elementFromPoint against the cell's data-date
-     attribute — restoring drag-to-select-range on touch devices. */
-  const handlePointerMove = useCallback((e: PointerEvent) => {
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const cell = (el as HTMLElement | null)?.closest?.(
-      "button[data-date]",
-    ) as HTMLElement | null;
-    if (!cell || cell.dataset.selectable !== "true") return;
-    const dateStr = cell.dataset.date;
-    if (dateStr) setDragHover(dateStr);
-  }, []);
 
   const goPrev = () => {
     const p = prevMonth(viewYear, viewMonth);
