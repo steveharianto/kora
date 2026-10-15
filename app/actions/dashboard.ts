@@ -10,25 +10,50 @@ export interface DashboardMetrics {
   previousRevenue: number;
   revenueDeltaPercent: number;
   dailyRevenueTrend: { date: string; amount: number }[];
-  topDresses: { sku: string; name: string; revenue: number; sharePercent: number }[];
+  topDresses: {
+    sku: string;
+    name: string;
+    revenue: number;
+    sharePercent: number;
+  }[];
   topDressLeadText: string;
   orderStatusBreakdown: {
     totalOrders: number;
     orderDeltaPercent: number;
-    segments: { label: string; count: number; percent: number; color: string }[];
+    segments: {
+      label: string;
+      count: number;
+      percent: number;
+      color: string;
+    }[];
   };
   channelSplit: {
     websitePercent: number;
     websiteDeltaPt: number;
-    segments: { label: string; count: number; percent: number; color: string }[];
+    segments: {
+      label: string;
+      count: number;
+      percent: number;
+      color: string;
+    }[];
   };
   customerRetention: {
     newPercent: number;
     newDeltaPt: number;
-    segments: { label: string; count: number; percent: number; color: string }[];
+    segments: {
+      label: string;
+      count: number;
+      percent: number;
+      color: string;
+    }[];
   };
   triage: {
-    dispatchToday: { orderId: string; customerName: string; sku: string; city: string }[];
+    dispatchToday: {
+      orderId: string;
+      customerName: string;
+      sku: string;
+      city: string;
+    }[];
     returnsDue: {
       id: string;
       orderId: string;
@@ -39,8 +64,19 @@ export interface DashboardMetrics {
       hasRequest: boolean;
     }[];
     ktpPending: { customerId: string; customerName: string; status: string }[];
-    fittingsUpcoming: { id: string; timeLabel: string; customerName: string; dressesSummary: string }[];
+    fittingsUpcoming: {
+      id: string;
+      timeLabel: string;
+      customerName: string;
+      dressesSummary: string;
+    }[];
   };
+}
+
+function percentDelta(current: number, previous: number): number {
+  if (previous === 0 && current === 0) return 0;
+  if (previous === 0) return 100;
+  return Math.round(((current - previous) / previous) * 100);
 }
 
 export async function getDashboardMetrics(
@@ -59,7 +95,12 @@ export async function getDashboardMetrics(
 
   const isCustom =
     rangeKey === "custom" &&
-    Boolean(customStart && customEnd && /^\d{4}-\d{2}-\d{2}$/.test(customStart) && /^\d{4}-\d{2}-\d{2}$/.test(customEnd));
+    Boolean(
+      customStart &&
+      customEnd &&
+      /^\d{4}-\d{2}-\d{2}$/.test(customStart) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(customEnd),
+    );
 
   if (isCustom) {
     startDateStr = customStart!;
@@ -91,7 +132,9 @@ export async function getDashboardMetrics(
   const [currentOrdersRes, previousOrdersRes] = await Promise.all([
     supabase
       .from("orders")
-      .select(`id, order_date, total_price, order_method, status, customer_id, order_products(item_sku, quantity, price, items(name))`)
+      .select(
+        `id, order_date, total_price, order_method, status, customer_id, order_products(item_sku, quantity, price, items(name))`,
+      )
       .gte("order_date", startDateStr)
       .lte("order_date", endDateStr)
       .not("status", "in", '("Cancelled", "Draft")'),
@@ -106,51 +149,74 @@ export async function getDashboardMetrics(
   const currentOrders = currentOrdersRes.data || [];
   const previousOrders = previousOrdersRes.data || [];
 
-  const totalRevenue = currentOrders.reduce((a, o) => a + (Number(o.total_price) || 0), 0);
-  const previousRevenue = previousOrders.reduce((a, o) => a + (Number(o.total_price) || 0), 0);
-  const revenueDeltaPercent =
-    previousRevenue > 0 ? Math.round(((totalRevenue - previousRevenue) / previousRevenue) * 100) : 100;
+  const totalRevenue = currentOrders.reduce(
+    (a, o) => a + (Number(o.total_price) || 0),
+    0,
+  );
+  const previousRevenue = previousOrders.reduce(
+    (a, o) => a + (Number(o.total_price) || 0),
+    0,
+  );
+  const revenueDeltaPercent = percentDelta(totalRevenue, previousRevenue);
 
   const dailyMap: Record<string, number> = {};
+  const orderedISODates: string[] = [];
   const [dsy, dsm, dsd] = startDateStr.split("-").map(Number);
   const [dey, dem, ded] = endDateStr.split("-").map(Number);
   const trendStart = new Date(dsy, dsm - 1, dsd);
   const trendEnd = new Date(dey, dem - 1, ded);
-  for (let d = new Date(trendStart); d <= trendEnd; d.setDate(d.getDate() + 1)) {
-    dailyMap[fmt(d).slice(5)] = 0;
+  for (
+    let d = new Date(trendStart);
+    d <= trendEnd;
+    d.setDate(d.getDate() + 1)
+  ) {
+    const iso = fmt(d);
+    dailyMap[iso] = 0;
+    orderedISODates.push(iso);
   }
   currentOrders.forEach((o) => {
-    const key = (o.order_date || "").slice(5);
-    if (dailyMap[key] !== undefined) dailyMap[key] += Number(o.total_price) || 0;
+    const iso = (o.order_date || "").split("T")[0];
+    if (dailyMap[iso] !== undefined) {
+      dailyMap[iso] += Number(o.total_price) || 0;
+    }
   });
-  const dailyRevenueTrend = Object.entries(dailyMap).map(([date, amount]) => ({ date, amount }));
+  const dailyRevenueTrend = orderedISODates.map((iso) => ({
+    date: iso.slice(5),
+    amount: dailyMap[iso],
+  }));
 
   const dressYieldMap: Record<string, { name: string; revenue: number }> = {};
   currentOrders.forEach((o) => {
     (o.order_products || []).forEach((p: any) => {
       const amount = (Number(p.price) || 0) * (p.quantity || 1);
-      if (!dressYieldMap[p.item_sku]) dressYieldMap[p.item_sku] = { name: p.items?.name || p.item_sku, revenue: 0 };
+      if (!dressYieldMap[p.item_sku]) {
+        dressYieldMap[p.item_sku] = {
+          name: p.items?.name || p.item_sku,
+          revenue: 0,
+        };
+      }
       dressYieldMap[p.item_sku].revenue += amount;
     });
   });
+  const totalDistinctStyles = Object.keys(dressYieldMap).length;
   const sortedDresses = Object.entries(dressYieldMap)
     .map(([sku, d]) => ({
       sku,
       name: d.name,
       revenue: d.revenue,
-      sharePercent: totalRevenue > 0 ? Math.round((d.revenue / totalRevenue) * 100) : 0,
+      sharePercent:
+        totalRevenue > 0 ? Math.round((d.revenue / totalRevenue) * 100) : 0,
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 6);
   const topDress = sortedDresses[0];
   const topDressLeadText = topDress
-    ? `${topDress.name} leads with Rp ${(topDress.revenue / 1000000).toFixed(1)} jt — ${topDress.sharePercent}% of this period's dress revenue across ${sortedDresses.length} style(s)`
+    ? `${topDress.name} leads with Rp ${(topDress.revenue / 1000000).toFixed(1)} jt — ${topDress.sharePercent}% of this period's dress revenue across ${totalDistinctStyles} style${totalDistinctStyles === 1 ? "" : "s"}`
     : "No dress rentals recorded in this window.";
 
   const totalOrders = currentOrders.length;
   const prevTotalOrders = previousOrders.length;
-  const orderDeltaPercent =
-    prevTotalOrders > 0 ? Math.round(((totalOrders - prevTotalOrders) / prevTotalOrders) * 100) : 100;
+  const orderDeltaPercent = percentDelta(totalOrders, prevTotalOrders);
 
   const statusCounts: Record<string, number> = {};
   currentOrders.forEach((o) => {
@@ -163,29 +229,49 @@ export async function getDashboardMetrics(
     Completed: "#2C3527",
     Received: "#7A8B6E",
   };
-  const statusSegments = Object.entries(statusCounts).map(([status, count]) => ({
-    label: status,
-    count,
-    percent: totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0,
-    color: statusColors[status] || "#8C827A",
-  }));
+  const statusSegments = Object.entries(statusCounts).map(
+    ([status, count]) => ({
+      label: status,
+      count,
+      percent: totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0,
+      color: statusColors[status] || "#8C827A",
+    }),
+  );
 
-  const websiteCount = currentOrders.filter((o) => o.order_method === "Website").length;
+  const websiteCount = currentOrders.filter(
+    (o) => o.order_method === "Website",
+  ).length;
   const manualCount = totalOrders - websiteCount;
-  const websitePercent = totalOrders > 0 ? Math.round((websiteCount / totalOrders) * 100) : 100;
-  const prevWebsiteCount = previousOrders.filter((o) => o.order_method === "Website").length;
+  const websitePercent =
+    totalOrders > 0 ? Math.round((websiteCount / totalOrders) * 100) : 100;
+  const prevWebsiteCount = previousOrders.filter(
+    (o) => o.order_method === "Website",
+  ).length;
   const prevWebsitePercent =
-    prevTotalOrders > 0 ? Math.round((prevWebsiteCount / prevTotalOrders) * 100) : websitePercent;
+    prevTotalOrders > 0
+      ? Math.round((prevWebsiteCount / prevTotalOrders) * 100)
+      : websitePercent;
   const websiteDeltaPt = websitePercent - prevWebsitePercent;
   const channelSegments = [
-    { label: "Website", count: websiteCount, percent: websitePercent, color: "#4A7C4E" },
-    { label: "Manual", count: manualCount, percent: 100 - websitePercent, color: "#4A90D9" },
+    {
+      label: "Website",
+      count: websiteCount,
+      percent: websitePercent,
+      color: "#4A7C4E",
+    },
+    {
+      label: "Manual",
+      count: manualCount,
+      percent: 100 - websitePercent,
+      color: "#4A90D9",
+    },
   ];
 
   const custOrdersRes = await supabase.from("orders").select("customer_id");
   const histMap: Record<string, number> = {};
   (custOrdersRes.data || []).forEach((o) => {
-    if (o.customer_id) histMap[o.customer_id] = (histMap[o.customer_id] || 0) + 1;
+    if (o.customer_id)
+      histMap[o.customer_id] = (histMap[o.customer_id] || 0) + 1;
   });
   let newCustCount = 0;
   let returningCustCount = 0;
@@ -198,60 +284,87 @@ export async function getDashboardMetrics(
     }
   });
   const totalEvaluated = newCustCount + returningCustCount;
-  const newPercent = totalEvaluated > 0 ? Math.round((newCustCount / totalEvaluated) * 100) : 0;
+  const newPercent =
+    totalEvaluated > 0 ? Math.round((newCustCount / totalEvaluated) * 100) : 0;
   const retentionSegments = [
-    { label: "New", count: newCustCount, percent: newPercent, color: "#3FA862" },
-    { label: "Returning", count: returningCustCount, percent: 100 - newPercent, color: "#4A90D9" },
+    {
+      label: "New",
+      count: newCustCount,
+      percent: newPercent,
+      color: "#3FA862",
+    },
+    {
+      label: "Returning",
+      count: returningCustCount,
+      percent: 100 - newPercent,
+      color: "#4A90D9",
+    },
   ];
 
-  // --- TRIAGE (unchanged except returnsDue union) ---------------------------
-  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(now);
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+  }).format(now);
   const tomorrowObj = new Date(now);
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-  const tomorrowStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(tomorrowObj);
+  const tomorrowStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+  }).format(tomorrowObj);
 
-  const [triageDispatchRes, triageReturnsRes, triageUnrequestedRes, triageKtpRes, triageFittingsRes] =
-    await Promise.all([
-      supabase
-        .from("orders")
-        .select(`id, city, customers(first_name, last_name), order_products(item_sku)`)
-        .eq("pickup_date", todayStr)
-        .eq("status", "Ordered")
-        .limit(6),
-      supabase
-        .from("returns")
-        .select(`id, order_id, status, orders(return_date, order_products(item_sku)), customers(first_name, last_name)`)
-        .in("status", ["Requested", "Shipping", "Received", "In Review"])
-        .limit(8),
-      supabase
-        .from("orders")
-        .select(`id, return_date, city, customers(first_name, last_name), order_products(item_sku)`)
-        .in("status", ["Active", "In Shipping"])
-        .lte("return_date", tomorrowStr)
-        .limit(8),
-      supabase
-        .from("customers")
-        .select("id, first_name, last_name, status")
-        .in("status", ["KTP Pending", "Not Submitted"])
-        .limit(6),
-      supabase
-        .from("fittings")
-        .select(`id, date, slot, customers(first_name, last_name), fitting_items(item_sku)`)
-        .in("date", [todayStr, tomorrowStr])
-        .not("status", "in", '("Cancelled", "Conflict Evicted")')
-        .order("date", { ascending: true })
-        .order("slot", { ascending: true })
-        .limit(6),
-    ]);
+  const [
+    triageDispatchRes,
+    triageReturnsRes,
+    triageUnrequestedRes,
+    triageKtpRes,
+    triageFittingsRes,
+  ] = await Promise.all([
+    supabase
+      .from("orders")
+      .select(
+        `id, city, customers(first_name, last_name), order_products(item_sku)`,
+      )
+      .eq("pickup_date", todayStr)
+      .eq("status", "Ordered")
+      .limit(6),
+    supabase
+      .from("returns")
+      .select(
+        `id, order_id, status, orders(return_date, order_products(item_sku)), customers(first_name, last_name)`,
+      )
+      .in("status", ["Requested", "Shipping", "Received", "In Review"])
+      .limit(8),
+    supabase
+      .from("orders")
+      .select(
+        `id, return_date, city, customers(first_name, last_name), order_products(item_sku)`,
+      )
+      .in("status", ["Active", "In Shipping"])
+      .lte("return_date", tomorrowStr)
+      .limit(8),
+    supabase
+      .from("customers")
+      .select("id, first_name, last_name, status")
+      .in("status", ["KTP Pending", "Not Submitted"])
+      .limit(6),
+    supabase
+      .from("fittings")
+      .select(
+        `id, date, slot, customers(first_name, last_name), fitting_items(item_sku)`,
+      )
+      .in("date", [todayStr, tomorrowStr])
+      .not("status", "in", '("Cancelled", "Conflict Evicted")')
+      .order("date", { ascending: true })
+      .order("slot", { ascending: true })
+      .limit(6),
+  ]);
 
   const dispatchToday = (triageDispatchRes.data || []).map((o: any) => ({
     orderId: o.id,
-    customerName: `${o.customers?.first_name || ""} ${o.customers?.last_name || ""}`.trim(),
+    customerName:
+      `${o.customers?.first_name || ""} ${o.customers?.last_name || ""}`.trim(),
     sku: o.order_products?.[0]?.item_sku || "Garment",
     city: o.city || "Jakarta",
   }));
 
-  // Union of returns + unrequested orders
   const requestReturnOrderIds = new Set(
     (triageReturnsRes.data || []).map((r: any) => r.order_id),
   );
@@ -276,7 +389,8 @@ export async function getDashboardMetrics(
     return {
       id: r.id,
       orderId: r.order_id,
-      customerName: `${r.customers?.first_name || ""} ${r.customers?.last_name || ""}`.trim(),
+      customerName:
+        `${r.customers?.first_name || ""} ${r.customers?.last_name || ""}`.trim(),
       sku: r.orders?.order_products?.[0]?.item_sku || "Garment",
       agingText,
       isOverdue,
@@ -306,7 +420,8 @@ export async function getDashboardMetrics(
       return {
         id: `NO-REQ-${o.id}`,
         orderId: o.id,
-        customerName: `${o.customers?.first_name || ""} ${o.customers?.last_name || ""}`.trim(),
+        customerName:
+          `${o.customers?.first_name || ""} ${o.customers?.last_name || ""}`.trim(),
         sku: o.order_products?.[0]?.item_sku || "Garment",
         agingText,
         isOverdue,
@@ -314,7 +429,10 @@ export async function getDashboardMetrics(
       };
     });
 
-  const returnsDue = [...returnsFromRequests, ...returnsFromUnrequested].slice(0, 8);
+  const returnsDue = [...returnsFromRequests, ...returnsFromUnrequested].slice(
+    0,
+    8,
+  );
 
   const ktpPending = (triageKtpRes.data || []).map((c: any) => ({
     customerId: c.id,
@@ -325,11 +443,14 @@ export async function getDashboardMetrics(
   const fittingsUpcoming = (triageFittingsRes.data || []).map((f: any) => {
     const isToday = f.date === todayStr;
     const timeLabel = `${isToday ? "Today" : "Tomorrow"} ${f.slot ? f.slot.slice(0, 5) : "10:00"}`;
-    const skus = (f.fitting_items || []).map((fi: any) => fi.item_sku).join(", ");
+    const skus = (f.fitting_items || [])
+      .map((fi: any) => fi.item_sku)
+      .join(", ");
     return {
       id: f.id,
       timeLabel,
-      customerName: `${f.customers?.first_name || ""} ${f.customers?.last_name || ""}`.trim(),
+      customerName:
+        `${f.customers?.first_name || ""} ${f.customers?.last_name || ""}`.trim(),
       dressesSummary: skus || "Fitting",
     };
   });
@@ -349,9 +470,21 @@ export async function getDashboardMetrics(
     dailyRevenueTrend,
     topDresses: sortedDresses,
     topDressLeadText,
-    orderStatusBreakdown: { totalOrders, orderDeltaPercent, segments: statusSegments },
-    channelSplit: { websitePercent, websiteDeltaPt, segments: channelSegments },
-    customerRetention: { newPercent, newDeltaPt: 0, segments: retentionSegments },
+    orderStatusBreakdown: {
+      totalOrders,
+      orderDeltaPercent,
+      segments: statusSegments,
+    },
+    channelSplit: {
+      websitePercent,
+      websiteDeltaPt,
+      segments: channelSegments,
+    },
+    customerRetention: {
+      newPercent,
+      newDeltaPt: 0,
+      segments: retentionSegments,
+    },
     triage: { dispatchToday, returnsDue, ktpPending, fittingsUpcoming },
   };
 }

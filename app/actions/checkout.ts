@@ -349,6 +349,14 @@ export async function createWebsiteOrder(input: {
     };
   }
 
+  const maxLineDays =
+    productRows.length > 0 ? Math.max(...productRows.map((r) => r.days)) : 1;
+  const reconciledEventDays = Math.max(
+    1,
+    Number(input.eventDays) || 1,
+    maxLineDays,
+  );
+
   const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
   const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
 
@@ -375,7 +383,7 @@ export async function createWebsiteOrder(input: {
       customer_id: customer.id,
       order_date: new Date().toISOString().split("T")[0],
       event_start_date: input.eventStartDate,
-      event_days: input.eventDays,
+      event_days: reconciledEventDays,
       pickup_date: input.pickupDate,
       return_date: input.returnDate,
       city: input.city,
@@ -424,6 +432,7 @@ export async function createWebsiteOrder(input: {
       })),
       totalPrice,
       totalDeposit,
+      eventDays: reconciledEventDays,
     });
   }
 
@@ -446,7 +455,7 @@ export async function createWebsiteOrder(input: {
     details: {
       customer_id: customer.id,
       recipient: recipientName,
-      event_days: input.eventDays,
+      event_days: reconciledEventDays,
       promo_code: normalizedPromo || null,
       promo_percent: promoPercent,
       promo_discount: promoDiscount,
@@ -589,18 +598,38 @@ export async function markWebsiteOrderPaid(
   };
 
   if (skus.length > 0) {
-    await applyOrderSideEffects(supabase, actor, {
-      orderId,
-      prevStatus: "Draft",
-      newStatus: "Ordered",
-      skus,
-      pickupDate: order.pickup_date,
-      returnDate: order.return_date,
-      prevCustomerId: order.customer_id,
-      newCustomerId: order.customer_id,
-      prevCreditApplied: 0,
-      newCreditApplied: Number(order.store_credit_applied) || 0,
-    });
+    try {
+      await applyOrderSideEffects(supabase, actor, {
+        orderId,
+        prevStatus: "Draft",
+        newStatus: "Ordered",
+        skus,
+        pickupDate: order.pickup_date,
+        returnDate: order.return_date,
+        prevCustomerId: order.customer_id,
+        newCustomerId: order.customer_id,
+        prevCreditApplied: 0,
+        newCreditApplied: Number(order.store_credit_applied) || 0,
+      });
+    } catch (sideEffectErr: any) {
+      console.error(
+        "[markWebsiteOrderPaid] Side effects failed after status flip:",
+        sideEffectErr,
+      );
+      await supabase.from("admin_audit_logs").insert({
+        admin_id: null,
+        admin_name: source,
+        entity_type: "order",
+        entity_id: orderId,
+        action_type: "SIDE_EFFECT_FAILED",
+        field_name: "all",
+        details: {
+          stage: "markWebsiteOrderPaid",
+          message: sideEffectErr?.message || String(sideEffectErr),
+          skus,
+        },
+      });
+    }
   }
 
   await supabase.from("admin_audit_logs").insert({

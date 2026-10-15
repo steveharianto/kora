@@ -73,8 +73,6 @@ export default function FilterDrawer({
     size: true,
     color: true,
     style: true,
-    rental: true,
-    fitting: true,
   });
 
   const toggleSection = (k: keyof typeof openSections) =>
@@ -130,7 +128,6 @@ export default function FilterDrawer({
             </div>
           </Section>
 
-          {/* Size — canonical buckets + info button for the guide */}
           <Section
             title={`Size (${facets.sizeBuckets.length})`}
             open={openSections.size}
@@ -195,7 +192,6 @@ export default function FilterDrawer({
             </div>
           </Section>
 
-          {/* Style — canonical 4 tags (Mini / Midi / Maxi / Hijab Friendly) */}
           <Section
             title={`Style (${STYLE_TAGS.length})`}
             open={openSections.style}
@@ -211,37 +207,6 @@ export default function FilterDrawer({
                 />
               ))}
             </div>
-          </Section>
-
-          <Section
-            title="Rental Date"
-            open={openSections.rental}
-            onToggle={() => toggleSection("rental")}
-          >
-            <input
-              type="date"
-              className="w-full border border-store-border-strong bg-transparent text-[13px] tracking-wider px-3.5 py-3 text-store-fg focus:outline-none focus:border-store-accent"
-              placeholder="MM/DD/YYYY"
-            />
-          </Section>
-
-          <Section
-            title="Book Fitting Session"
-            open={openSections.fitting}
-            onToggle={() => toggleSection("fitting")}
-          >
-            <select
-              className="w-full border border-store-border-strong bg-transparent text-[12px] tracking-[0.16em] uppercase px-3.5 py-3 text-store-fg focus:outline-none focus:border-store-accent cursor-pointer"
-              defaultValue=""
-            >
-              <option value="">Select session</option>
-              <option value="10:00">10:00</option>
-              <option value="11:00">11:00</option>
-              <option value="13:00">13:00</option>
-              <option value="14:00">14:00</option>
-              <option value="15:00">15:00</option>
-              <option value="16:00">16:00</option>
-            </select>
           </Section>
         </div>
 
@@ -266,7 +231,6 @@ export default function FilterDrawer({
         </div>
       </aside>
 
-      {/* Size guide — mounted above everything so it layers over the drawer */}
       <SizeGuideModal
         isOpen={isSizeGuideOpen}
         onClose={() => setIsSizeGuideOpen(false)}
@@ -274,8 +238,6 @@ export default function FilterDrawer({
     </>
   );
 }
-
-/* ── Sub-components ──────────────────────────────────────────────────── */
 
 function Section({
   title,

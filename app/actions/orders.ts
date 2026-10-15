@@ -271,12 +271,21 @@ export async function saveOrder(orderData: {
       });
     }
 
+    const maxLineDays =
+      pricedRows.length > 0 ? Math.max(...pricedRows.map((r) => r.days)) : 1;
+    const reconciledEventDays = Math.max(
+      1,
+      Number(orderData.event_days) || 1,
+      maxLineDays,
+    );
+
     if (process.env.NODE_ENV !== "production") {
       console.log("[saveOrder] server recalc", {
         orderId: orderData.id,
         lines: pricedRows,
         subtotalPrice,
         subtotalDeposit,
+        eventDays: reconciledEventDays,
       });
     }
 
@@ -292,7 +301,7 @@ export async function saveOrder(orderData: {
         customer_id: orderData.customer_id || null,
         order_date: orderData.order_date,
         event_start_date: orderData.event_start_date || null,
-        event_days: orderData.event_days || 1,
+        event_days: reconciledEventDays,
         pickup_date: orderData.pickup_date || null,
         return_date: orderData.return_date || null,
         city: orderData.city || null,

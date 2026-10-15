@@ -35,6 +35,15 @@ function ReturnStatusPill({ status }: { status: string }) {
   );
 }
 
+type AgingColor = "bad" | "amber" | "green" | "muted";
+
+const AGING_CLASSES: Record<AgingColor, string> = {
+  bad: "bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]",
+  amber: "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]",
+  green: "bg-[#EAF3E7] text-[#2E7D47] border-[#CAD3C5]",
+  muted: "bg-[#EFEBE2] text-muted border-transparent",
+};
+
 export default async function ReturnsPage({
   searchParams,
 }: {
@@ -92,7 +101,9 @@ export default async function ReturnsPage({
     timeZone: "Asia/Jakarta",
   }).format(tomorrowDate);
 
-  const getAgingBadge = (deadlineStr?: string | null) => {
+  const getAgingBadge = (
+    deadlineStr?: string | null,
+  ): { text: string; color: AgingColor } => {
     if (!deadlineStr) return { text: "—", color: "muted" };
     const [dy, dm, dd] = deadlineStr.split("-").map(Number);
     const deadline = new Date(dy, dm - 1, dd).getTime();
@@ -478,11 +489,7 @@ function ReturnsSection({
                     </td>
                     <td className="px-3 py-3">
                       <span
-                        className={`text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                          r.aging.color === "bad"
-                            ? "bg-[#FBEBE8] text-[#A63222] border-[#E8C0B9]"
-                            : "bg-[#FDF3DE] text-[#977028] border-[#F1DFB7]"
-                        }`}
+                        className={`text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${AGING_CLASSES[r.aging.color as AgingColor]}`}
                       >
                         {r.aging.text}
                       </span>

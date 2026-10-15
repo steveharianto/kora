@@ -25,8 +25,6 @@ export type DispatchOrderResult =
     }
   | {
       error: string;
-      /** True when the failure is specifically "courier can't do scheduled
-       *  delivery" — the UI surfaces a "Try as Instant" retry button. */
       retryAsInstant?: boolean;
     };
 
@@ -126,10 +124,6 @@ export async function dispatchOrderViaBiteship(
     `${order.customers?.first_name || ""} ${order.customers?.last_name || ""}`.trim() ||
     "Customer";
 
-  // delivery_type decision:
-  //   pickup today (or unspecified) → "now"
-  //   pickup in the future         → "scheduled"
-  //   admin explicitly forced      → "now" (escape hatch when scheduled is rejected)
   const todayStr = new Date().toISOString().split("T")[0];
   const isToday = !order.pickup_date || order.pickup_date === todayStr;
   const wantsScheduled = !isToday && !options?.forceInstant;
@@ -137,7 +131,6 @@ export async function dispatchOrderViaBiteship(
     ? "scheduled"
     : "now";
 
-  // ── Call Biteship ─────────────────────────────────────────────────────
   let biteshipResult;
   try {
     biteshipResult = await createBiteshipOrder({
@@ -179,8 +172,6 @@ export async function dispatchOrderViaBiteship(
   if (!biteshipResult.success) {
     const rawError = biteshipResult.error || "";
 
-    // Detect the specific "courier can't do scheduled" rejection so the UI
-    // can offer a one-click "Try as Instant" fallback.
     const scheduledBlocked =
       /not available for scheduled delivery/i.test(rawError) ||
       /scheduled delivery/i.test(rawError);
@@ -217,6 +208,22 @@ export async function dispatchOrderViaBiteship(
     biteshipResult.courier?.link ||
     (trackingId ? `https://track.biteship.com/${trackingId}` : null);
 
+  const skus = (orderProducts || [])
+    .map((op: any) => op.item_sku)
+    .filter(Boolean);
+
+  let itemSnapshot: Array<{ sku: string; status: string }> = [];
+  if (skus.length > 0) {
+    const { data } = await supabase
+      .from("items")
+      .select("sku, status")
+      .in("sku", skus);
+    itemSnapshot = (data || []) as any;
+  }
+
+  const prevOrderStatus = order.status;
+  const prevPackingSlip = order.packing_slip_id || null;
+
   const { error: updateErr } = await supabase
     .from("orders")
     .update({
@@ -227,14 +234,52 @@ export async function dispatchOrderViaBiteship(
     .eq("id", orderId);
   if (updateErr) return { error: updateErr.message };
 
-  const skus = (orderProducts || [])
-    .map((op: any) => op.item_sku)
-    .filter(Boolean);
   if (skus.length > 0) {
-    await supabase
+    const { error: itemErr } = await supabase
       .from("items")
       .update({ status: "Unavailable" })
       .in("sku", skus);
+
+    if (itemErr) {
+      await supabase
+        .from("orders")
+        .update({
+          status: prevOrderStatus,
+          packing_slip_id: prevPackingSlip,
+          return_label_url: null,
+        })
+        .eq("id", orderId);
+
+      for (const item of itemSnapshot) {
+        await supabase
+          .from("items")
+          .update({ status: item.status })
+          .eq("sku", item.sku);
+      }
+
+      await supabase.from("admin_audit_logs").insert({
+        admin_id: admin.id,
+        admin_name: admin.name,
+        entity_type: "order",
+        entity_id: orderId,
+        action_type: "BITESHIP_ITEM_RESERVATION_FAILED",
+        field_name: "items.status",
+        new_value: "reverted",
+        details: {
+          waybill,
+          courier: codes.company,
+          type: codes.type,
+          item_error: itemErr.message,
+          note: "Courier booking succeeded; item reservation failed. Manual review required.",
+        },
+      });
+
+      return {
+        error:
+          `Courier booked (${waybill}) but item reservation failed: ${itemErr.message}. ` +
+          `Order status was reverted. Review manually and re-run the item reservation.`,
+      };
+    }
   }
 
   await supabase.from("admin_audit_logs").insert({
@@ -257,7 +302,6 @@ export async function dispatchOrderViaBiteship(
     },
   });
 
-  // --- WhatsApp notification: package_shipped ------------------------------
   if (order.customers?.phone) {
     try {
       const { emitWa } = await import("@/lib/notifications");
@@ -275,7 +319,7 @@ export async function dispatchOrderViaBiteship(
           "Hi [CUSTOMER_NAME], your order [ORDER_ID] is on its way! Track courier progress here: [TRACKING_LINK].",
       });
     } catch {
-      // Non-blocking: dispatch already succeeded, don't roll back on WA failure.
+      // Non-blocking.
     }
   }
 

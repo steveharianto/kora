@@ -585,12 +585,17 @@ export async function convertFittingToOrder(
     });
   }
 
+  const maxLineDays =
+    orderProductRows.length > 0
+      ? Math.max(...orderProductRows.map((r) => r.days))
+      : 1;
+
   const [fy, fm, fd] = fitting.date.split("-").map(Number);
   const eventDate = new Date(fy, fm - 1, fd);
   eventDate.setDate(eventDate.getDate() + 2);
   const eventStartDate = eventDate.toISOString().split("T")[0];
   const returnDate = new Date(eventDate);
-  returnDate.setDate(returnDate.getDate() + 3);
+  returnDate.setDate(returnDate.getDate() + maxLineDays + 1);
 
   const pickUpMethod = options.pick_up_method || "Self pickup";
 
@@ -599,7 +604,7 @@ export async function convertFittingToOrder(
     customer_id: fitting.customer_id,
     order_date: new Date().toISOString().split("T")[0],
     event_start_date: eventStartDate,
-    event_days: 1,
+    event_days: maxLineDays,
     pickup_date: fitting.date,
     return_date: returnDate.toISOString().split("T")[0],
     city: defaultAddress?.city || null,
@@ -645,6 +650,7 @@ export async function convertFittingToOrder(
     details: {
       pick_up_method: pickUpMethod,
       day_counts: options.dayCounts,
+      event_days: maxLineDays,
     },
   });
 
