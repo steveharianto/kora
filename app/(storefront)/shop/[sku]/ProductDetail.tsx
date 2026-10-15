@@ -14,6 +14,7 @@ import {
   readFittingCart,
   writeFittingCart,
   isAfterHoursSlot,
+  type RentalCartItem,
 } from "@/lib/storefront/cart";
 import { deriveSizeBucket } from "@/lib/sizeBucket";
 
@@ -26,7 +27,13 @@ interface Item {
   size: string;
   color: string;
   tags: string[];
+  /** Base per-rental-day price (Day 1 charge). */
   rentalPrice: number;
+  /**
+   * Per-extra-day rate. Sourced from the cache fetcher's `addOnPrice`,
+   * which already applied the Q1 fallback (null → rentalPrice).
+   */
+  addOnPrice: number;
   measurements: {
     outer?: Record<string, string>;
     inner?: Record<string, string>;
@@ -108,7 +115,20 @@ export default function ProductDetail({
   }) => {
     try {
       const next = readRentalCart();
-      next.push({
+
+      /*
+       * `RentalCartItem` gains a required `addOnPrice: number` field in
+       * Step 5 of the multi-day pricing rollout. Step 4 (this change) is
+       * the write path only — the type hasn't been widened yet, so pushing
+       * a literal with `addOnPrice` directly onto `RentalCartItem[]` would
+       * trip TypeScript's excess-property check.
+       *
+       * We sidestep it by typing the local as an intersection — a
+       * strictly-wider object is still assignable to `RentalCartItem`, so
+       * `next.push()` accepts it without a cast to `any`. The field lands
+       * on disk so Step 5's `readRentalCart()` can read it back.
+       */
+      const line: RentalCartItem & { addOnPrice: number } = {
         sku: payload.sku,
         name: item.name,
         price: item.rentalPrice,
@@ -120,7 +140,9 @@ export default function ProductDetail({
         eventEnd: payload.eventEnd,
         postalCode: payload.postalCode,
         accessories: payload.accessories,
-      });
+        addOnPrice: item.addOnPrice,
+      };
+      next.push(line);
       writeRentalCart(next);
       setToast(
         payload.eventDays > 1
@@ -452,6 +474,7 @@ export default function ProductDetail({
         sku={item.sku}
         name={item.name}
         rentalPrice={item.rentalPrice}
+        addOnPrice={item.addOnPrice}
         accessories={accessories}
         deliveryLeadTimes={deliveryLeadTimes}
         onAdded={(payload) => {

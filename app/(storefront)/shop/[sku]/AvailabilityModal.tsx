@@ -24,7 +24,19 @@ interface Props {
   onClose: () => void;
   sku: string;
   name: string;
+  /**
+   * Base per-rental-day price (Day 1 charge).
+   */
   rentalPrice: number;
+  /**
+   * Per-extra-day rate charged for every rental day beyond Day 1.
+   * Declared here so the parent (ProductDetail) can pass it without a
+   * TS error — but NOT consumed yet. Step 7 of the multi-day pricing
+   * rollout rewrites the price panel to use this value. Deliberately
+   * not destructured in the function signature yet to keep the prop
+   * visible as "wired but not rendered".
+   */
+  addOnPrice: number;
   accessories: Accessory[];
   deliveryLeadTimes: LeadTime[];
   onAdded: (payload: {
@@ -159,6 +171,10 @@ export default function AvailabilityModal({
   sku,
   name,
   rentalPrice,
+  // addOnPrice is accepted via Props (parent passes it in Step 4) but is
+  // intentionally not destructured yet — Step 7 consumes it in the price
+  // panel rewrite. Declaring the prop now keeps the call site stable
+  // across the two steps.
   accessories,
   deliveryLeadTimes,
   onAdded,
