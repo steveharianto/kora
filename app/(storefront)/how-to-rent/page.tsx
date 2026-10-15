@@ -178,11 +178,6 @@ export default async function HowToRentPage() {
               dress under Rp500.000: Day 1 is Rp100.000, Day 2 is Rp200.000, Day
               3 is Rp400.000, and so on. Please return on time.
             </p>
-
-            <InfoBanner>
-              Normal wear is expected and fine. Deposits may be deducted for
-              damage, late returns, or breaches of our Terms &amp; Conditions.
-            </InfoBanner>
           </div>
         </div>
       </section>
