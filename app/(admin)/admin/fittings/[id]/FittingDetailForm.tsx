@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Loader2,
   ShoppingBag,
+  X,
 } from "lucide-react";
 import NotificationPicker from "@/components/admin/NotificationPicker";
 import EntityChat from "@/components/admin/EntityChat";
@@ -60,6 +61,17 @@ export default function FittingDetailForm({
     text: string;
   } | null>(null);
 
+  /*
+   * Convert-to-order modal state (Step 14 — Q3).
+   *
+   * The admin picks a per-dress day count before the fitting is
+   * converted. `dayCounts` is keyed by item_sku — the same shape the
+   * server-side convertFittingToOrder expects.
+   */
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [dayCounts, setDayCounts] = useState<Record<string, number>>({});
+  const [convertError, setConvertError] = useState("");
+
   const customerName =
     `${initialFitting.customers?.first_name || ""} ${initialFitting.customers?.last_name || ""}`.trim() ||
     "Customer";
@@ -71,6 +83,7 @@ export default function FittingDetailForm({
   const dress1 = fittingItems.find((fi) => fi.slot_number === 1);
   const dress2 = fittingItems.find((fi) => fi.slot_number === 2);
   const dress3 = fittingItems.find((fi) => fi.slot_number === 3);
+  const activeDresses = fittingItems.filter((fi: any) => !fi.is_evicted);
 
   const handleStatusChange = async (newStatus: string) => {
     setLoading(true);
@@ -108,21 +121,66 @@ export default function FittingDetailForm({
     router.refresh();
   };
 
-  const handleConvertToOrder = async () => {
-    if (
-      !confirm(
-        `Convert to a new Manual Order draft with "${convertMethod}" as the fulfilment method?`,
-      )
-    )
+  /*
+   * Open the day-count modal. Defaults every active dress to 1 day —
+   * the admin raises days only when the customer confirmed a longer
+   * rental. The modal keeps `dayCounts` local until Confirm.
+   */
+  const handleOpenConvertModal = () => {
+    if (activeDresses.length === 0) {
+      setErrorMsg("This fitting has no active dresses to convert.");
       return;
+    }
+    const initial: Record<string, number> = {};
+    for (const fi of activeDresses) {
+      initial[fi.item_sku] = 1;
+    }
+    setDayCounts(initial);
+    setConvertError("");
+    setIsConvertModalOpen(true);
+  };
+
+  const handleCloseConvertModal = () => {
+    if (converting) return;
+    setIsConvertModalOpen(false);
+    setConvertError("");
+  };
+
+  const handleConfirmConvert = async () => {
+    if (activeDresses.length === 0) {
+      setConvertError("No active dresses to convert.");
+      return;
+    }
+
+    /*
+     * Validate before firing the server action — the modal's Confirm
+     * button is also disabled on this condition, but a defensive check
+     * here means a paste-driven or programmatic submission can't bypass
+     * the guard.
+     */
+    for (const fi of activeDresses) {
+      const days = dayCounts[fi.item_sku] ?? 1;
+      if (days < 1) {
+        setConvertError("Each dress needs at least 1 rental day.");
+        return;
+      }
+    }
+
     setConverting(true);
+    setConvertError("");
+
     const res = await convertFittingToOrder(initialFitting.id, {
       pick_up_method: convertMethod,
+      dayCounts,
     });
+
     if (res?.error) {
-      setErrorMsg(res.error);
+      setConvertError(res.error);
       setConverting(false);
-    } else if (res?.orderId) {
+      return;
+    }
+
+    if (res?.orderId) {
       router.push(`/admin/orders/${res.orderId}`);
     }
   };
@@ -220,9 +278,17 @@ export default function FittingDetailForm({
             </select>
             <button
               type="button"
-              onClick={handleConvertToOrder}
-              disabled={converting || initialFitting.status === "Cancelled"}
-              title="Create a new manual order draft from this fitting"
+              onClick={handleOpenConvertModal}
+              disabled={
+                converting ||
+                initialFitting.status === "Cancelled" ||
+                activeDresses.length === 0
+              }
+              title={
+                activeDresses.length === 0
+                  ? "No active dresses to convert — evicted or empty fitting."
+                  : "Open the day-count dialog to create a new order draft"
+              }
               className="px-3.5 py-1.5 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
             >
               {converting ? (
@@ -535,6 +601,174 @@ export default function FittingDetailForm({
           )}
         </div>
       </div>
+
+      {/*
+       * ── Convert-to-Order Modal (Step 14) ─────────────────────────────
+       *
+       * Replaces the old `confirm()` prompt with a day-count dialog. Each
+       * active dress gets a days input (default 1) and a live price
+       * preview driven by `allItems` — the same source used for the
+       * server-side recalc, so the numbers shown here will match what
+       * the DB writes when Confirm fires.
+       *
+       * Cancel aborts the conversion. Confirm fires
+       * `convertFittingToOrder(id, { pick_up_method, dayCounts })`.
+       */}
+      {isConvertModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseConvertModal();
+          }}
+        >
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl border border-line max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-5 border-b border-line">
+              <div>
+                <h3 className="font-serif text-[20px]">
+                  Convert to Rental Order
+                </h3>
+                <p className="text-[12px] text-muted mt-0.5">
+                  Choose how many rental days for each dress. Day 1 is billed at
+                  the base rate; extra days use the add-on rate.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseConvertModal}
+                disabled={converting}
+                className="text-muted hover:text-ink p-1 cursor-pointer disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex justify-between items-center py-2 border-b border-line text-xs">
+                <span className="text-muted">Fulfilment</span>
+                <span className="font-medium text-ink">{convertMethod}</span>
+              </div>
+
+              <div>
+                <div className="text-[10px] tracking-wider uppercase text-muted font-bold mb-2">
+                  Dresses ({activeDresses.length})
+                </div>
+                <div className="space-y-3">
+                  {activeDresses.map((fi: any) => {
+                    /*
+                     * Look up the current rate for this SKU from `allItems`.
+                     * The server recalc will re-fetch these values from the
+                     * DB — the client preview is a mirror of the same math,
+                     * not the source of truth. `!= null` preserves an
+                     * intentional 0 (free extra days) rather than falling
+                     * back to `base`.
+                     */
+                    const itemInfo = allItems.find(
+                      (i: any) => i.sku === fi.item_sku,
+                    );
+                    const base = Number(itemInfo?.rental_price) || 0;
+                    const addOn =
+                      itemInfo?.add_on_price != null
+                        ? Number(itemInfo.add_on_price)
+                        : base;
+                    const days = dayCounts[fi.item_sku] ?? 1;
+                    const unit = base + addOn * Math.max(0, days - 1);
+
+                    return (
+                      <div
+                        key={fi.id}
+                        className="border border-line rounded-lg p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0">
+                            <div className="font-mono font-bold text-ink text-[12px]">
+                              {fi.item_sku}
+                            </div>
+                            <div className="text-muted text-[11px] truncate">
+                              {fi.items?.name || "Garment"}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <label className="text-[10px] uppercase tracking-wider text-muted">
+                              Days
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={days}
+                              onChange={(e) => {
+                                const next = Math.max(
+                                  1,
+                                  parseInt(e.target.value) || 1,
+                                );
+                                setDayCounts((prev) => ({
+                                  ...prev,
+                                  [fi.item_sku]: next,
+                                }));
+                              }}
+                              disabled={converting}
+                              className="w-16 text-center text-xs border border-line rounded-lg py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:opacity-50"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-muted border-t border-line pt-2">
+                          Day 1: {formatRupiah(base)}
+                          {days > 1 && (
+                            <>
+                              {" "}
+                              · Each extra:{" "}
+                              {addOn > 0 ? formatRupiah(addOn) : "Free"} ×{" "}
+                              {days - 1}
+                            </>
+                          )}
+                          <div className="text-ink font-semibold mt-1 text-[12px]">
+                            Line total: {formatRupiah(unit)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {convertError && (
+                <div className="p-3 bg-bad-bg border border-bad/30 text-bad rounded-lg text-[11.5px]">
+                  {convertError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 p-5 border-t border-line bg-[#FDFCFA] rounded-b-xl">
+              <button
+                type="button"
+                onClick={handleCloseConvertModal}
+                disabled={converting}
+                className="px-4 py-2 border border-line rounded-lg text-xs font-medium hover:bg-white transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmConvert}
+                disabled={converting}
+                className="px-4 py-2 bg-wine text-white rounded-lg text-xs font-semibold hover:bg-[#181E15] transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {converting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    Create Order
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,9 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "./auth";
 import { getNextManualOrderId } from "./orders";
-import {
-  markFittingBookingPaid,
-} from "./customerFittingBooking";
+import { markFittingBookingPaid } from "./customerFittingBooking";
 import { getXenditInvoiceByExternalId } from "@/lib/xendit";
 import { revalidatePath } from "next/cache";
 
@@ -429,18 +427,24 @@ export async function markFittingReminderSent(fittingId: string) {
     .eq("id", fittingId);
 
   const customer = (fitting as any).customers as
-    | { first_name?: string; last_name?: string; phone?: string }
-    | undefined;
+    { first_name?: string; last_name?: string; phone?: string } | undefined;
 
   if (!customer?.phone) {
     revalidatePath("/admin/fittings");
     revalidatePath(`/admin/fittings/${fittingId}`);
-    return { success: true, sent: false, error: "Customer has no phone number." };
+    return {
+      success: true,
+      sent: false,
+      error: "Customer has no phone number.",
+    };
   }
 
   const customerName =
-    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "there";
-  const timeFormatted = fitting.slot ? String(fitting.slot).slice(0, 5) : "10:00";
+    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+    "there";
+  const timeFormatted = fitting.slot
+    ? String(fitting.slot).slice(0, 5)
+    : "10:00";
 
   try {
     const { emitWa } = await import("@/lib/notifications");
@@ -460,7 +464,12 @@ export async function markFittingReminderSent(fittingId: string) {
 
     revalidatePath("/admin/fittings");
     revalidatePath(`/admin/fittings/${fittingId}`);
-    return { success: true, waUrl: res.waUrl, sent: res.sent, error: res.error };
+    return {
+      success: true,
+      waUrl: res.waUrl,
+      sent: res.sent,
+      error: res.error,
+    };
   } catch (e: any) {
     revalidatePath("/admin/fittings");
     revalidatePath(`/admin/fittings/${fittingId}`);
@@ -468,13 +477,42 @@ export async function markFittingReminderSent(fittingId: string) {
   }
 }
 
+/**
+ * Convert a fitting session into a new Manual Order draft.
+ *
+ * Caller must supply a `dayCounts` map keyed by item SKU. Every active
+ * (non-evicted) dress in the fitting is billed as:
+ *
+ *   lineUnit = base + addOn × (days − 1)
+ *
+ * where `base` = items.rental_price and `addOn` = items.add_on_price
+ * (falling back to `base` when the DB column is null — Q1 semantics).
+ *
+ * The same formula is applied server-side in `createWebsiteOrder` and
+ * `saveOrder` — the three anti-tamper paths must stay in lockstep.
+ *
+ * `order_products` rows carry the permanent `base_price` /
+ * `add_on_price` / `days` breakdown so historical invoices never change
+ * when a dress's pricing is later edited.
+ */
 export async function convertFittingToOrder(
   fittingId: string,
-  options?: { pick_up_method?: string },
+  options: {
+    pick_up_method?: string;
+    /** Key = item_sku, value = number of rental days (>= 1). */
+    dayCounts: Record<string, number>;
+  },
 ) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
   if (!admin) return { error: "Unauthorized: Session not found." };
+
+  // Q3 requirement — admin must choose a day count for every dress.
+  if (!options.dayCounts || Object.keys(options.dayCounts).length === 0) {
+    return {
+      error: "A day count is required for each dress in this session.",
+    };
+  }
 
   const { data: fitting, error: fitErr } = await supabase
     .from("fittings")
@@ -497,22 +535,79 @@ export async function convertFittingToOrder(
     (fi: any) => !fi.is_evicted,
   );
 
+  /*
+   * ── SERVER-SIDE PRICE RECALCULATION (anti-tamper) ──────────────────
+   *
+   * Same formula as createWebsiteOrder (Step 9) and saveOrder (Step 11):
+   *   base    = items.rental_price
+   *   addOn   = items.add_on_price ?? base   (Q1 fallback)
+   *   lineUnit = base + addOn × (days − 1)
+   *   deposit  = 250_000 if base > 1_000_000, else 150_000
+   *
+   * Client-supplied `dayCounts` are NOT trusted for pricing — they only
+   * decide how many days to bill per dress, and the multiplication is
+   * done entirely on the server against DB prices.
+   */
+  const activeSkus = activeItems.map((fi: any) => fi.item_sku);
+
+  const { data: itemRows } = await supabase
+    .from("items")
+    .select("sku, rental_price, add_on_price")
+    .in("sku", activeSkus);
+
+  const priceMap = new Map<string, { base: number; addOn: number }>();
+  for (const row of itemRows || []) {
+    const base = Number(row.rental_price) || 0;
+    const addOn = row.add_on_price != null ? Number(row.add_on_price) : base;
+    priceMap.set(row.sku, { base, addOn });
+  }
+
   let totalPrice = 0;
   let totalDeposit = 0;
-  const orderProductRows = activeItems.map((fi: any) => {
-    const price = Number(fi.items?.rental_price) || 0;
-    const deposit = price > 1000000 ? 250000 : 150000;
-    totalPrice += price;
+  const orderProductRows: Array<{
+    order_id: string;
+    item_sku: string;
+    quantity: number;
+    price: number;
+    base_price: number;
+    add_on_price: number;
+    days: number;
+    deposit: number;
+    subtotal: number;
+  }> = [];
+
+  for (const fi of activeItems) {
+    const info = priceMap.get(fi.item_sku);
+    if (!info) {
+      /*
+       * Guard: a dress removed from the catalog between fitting booking
+       * and admin conversion. Return a clean error rather than throwing,
+       * so the client's `res?.error` handler surfaces it in the modal.
+       * No DB writes have occurred yet at this point.
+       */
+      return {
+        error: `Item ${fi.item_sku} is no longer in the catalog. Update the fitting and try again.`,
+      };
+    }
+    const days = Math.max(1, Number(options.dayCounts[fi.item_sku]) || 1);
+    const unit = info.base + info.addOn * (days - 1);
+    const deposit = info.base > 1000000 ? 250000 : 150000;
+
+    totalPrice += unit;
     totalDeposit += deposit;
-    return {
+
+    orderProductRows.push({
       order_id: newOrderId,
       item_sku: fi.item_sku,
       quantity: 1,
-      price,
+      price: unit, // per-unit, matches invoice convention
+      base_price: info.base,
+      add_on_price: info.addOn,
+      days,
       deposit,
-      subtotal: price,
-    };
-  });
+      subtotal: unit,
+    });
+  }
 
   const [fy, fm, fd] = fitting.date.split("-").map(Number);
   const eventDate = new Date(fy, fm - 1, fd);
@@ -521,7 +616,7 @@ export async function convertFittingToOrder(
   const returnDate = new Date(eventDate);
   returnDate.setDate(returnDate.getDate() + 3);
 
-  const pickUpMethod = options?.pick_up_method || "Self pickup";
+  const pickUpMethod = options.pick_up_method || "Self pickup";
 
   const { error: orderErr } = await supabase.from("orders").insert({
     id: newOrderId,
@@ -565,7 +660,16 @@ export async function convertFittingToOrder(
     action_type: "CONVERT_TO_ORDER",
     field_name: "converted_order_id",
     new_value: newOrderId,
-    details: { pick_up_method: pickUpMethod },
+    details: {
+      pick_up_method: pickUpMethod,
+      /*
+       * Permanent record of the day counts the admin chose, keyed by SKU.
+       * Useful for auditing pricing disputes — the browser's payload
+       * cannot be retroactively edited, but this audit row captures
+       * exactly what was decided at conversion time.
+       */
+      day_counts: options.dayCounts,
+    },
   });
 
   revalidatePath("/admin/fittings");

@@ -1,7 +1,7 @@
-import { createClient } from '@/lib/supabase/server';
-import { getCurrentAdmin } from '@/app/actions/auth';
-import { notFound } from 'next/navigation';
-import FittingDetailForm from './FittingDetailForm';
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentAdmin } from "@/app/actions/auth";
+import { notFound } from "next/navigation";
+import FittingDetailForm from "./FittingDetailForm";
 
 export default async function FittingDetailPage({
   params,
@@ -15,8 +15,9 @@ export default async function FittingDetailPage({
   const [fittingRes, allItemsRes, settingsRes, auditRes, adminsRes] =
     await Promise.all([
       supabase
-        .from('fittings')
-        .select(`
+        .from("fittings")
+        .select(
+          `
           *,
           customers (
             id,
@@ -40,22 +41,37 @@ export default async function FittingDetailPage({
               rental_price
             )
           )
-        `)
-        .eq('id', id)
+        `,
+        )
+        .eq("id", id)
         .single(),
 
-      supabase.from('items').select('sku, name, size, rental_price').order('name'),
-      supabase.from('app_settings').select('value').eq('key', 'notifications').single(),
+      /*
+       * `add_on_price` is required by the convert-to-order modal (Step 14)
+       * so the live price preview can render the correct extra-day rate.
+       * NULL is tolerated client-side and falls back to `rental_price`
+       * (Q1 semantics). Sorting by name (not sku) matches the original
+       * intent for the picker.
+       */
       supabase
-        .from('admin_audit_logs')
-        .select('*')
-        .eq('entity_id', id)
-        .order('created_at', { ascending: false }),
+        .from("items")
+        .select("sku, name, size, rental_price, add_on_price")
+        .order("name"),
       supabase
-        .from('admins')
-        .select('id, name, role')
-        .eq('is_active', true)
-        .order('name'),
+        .from("app_settings")
+        .select("value")
+        .eq("key", "notifications")
+        .single(),
+      supabase
+        .from("admin_audit_logs")
+        .select("*")
+        .eq("entity_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("admins")
+        .select("id, name, role")
+        .eq("is_active", true)
+        .order("name"),
     ]);
 
   if (fittingRes.error || !fittingRes.data) {
