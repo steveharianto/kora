@@ -18,6 +18,33 @@ import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import { STYLE_TAGS, normalizeStyleTags, type StyleTag } from "@/lib/styleTags";
 
+/**
+ * Tiered default for the per-dress add-on rate, keyed on base rental price:
+ *
+ *   base <  500.000  →    50.000
+ *   base < 1.000.000 →    70.000
+ *   base < 2.000.000 →   100.000
+ *   base >= 2.000.000 →  200.000
+ *
+ * Used by the admin item form to pre-fill the "Add-On Price / Additional
+ * Day" input as the admin types the base rental price. An empty or
+ * invalid base returns `""` so the field renders blank rather than "0".
+ *
+ * This is a FORM-DEFAULT only. It does NOT change the server-side Q1
+ * fallback (`add_on_price == null → base`), which stays as-is for
+ * defensive safety on legacy rows and carts.
+ */
+function defaultAddOnForBase(
+  base: number | string | null | undefined,
+): number | "" {
+  const n = Number(base);
+  if (!n || !isFinite(n) || n <= 0) return "";
+  if (n < 500_000) return 50_000;
+  if (n < 1_000_000) return 70_000;
+  if (n < 2_000_000) return 100_000;
+  return 200_000;
+}
+
 export default function ItemForm({
   isNew,
   initialData,
@@ -74,6 +101,12 @@ export default function ItemForm({
    * `add_on_price` uses `??` (not `||`) so an explicit 0 is preserved —
    * a 0 add-on means "extra days are free" per the multi-day pricing
    * feature, and `||` would silently coerce it to "".
+   *
+   * Fallback chain for the initial value:
+   *   1. Explicit `viewData.add_on_price` from the DB (or pending edit)
+   *   2. Tiered default keyed on the item's base price — used only for
+   *      brand-new items, or legacy rows that somehow have a NULL
+   *      add-on (which the Step 1 backfill prevents in practice).
    */
   const [formData, setFormData] = useState({
     sku: viewData.sku || "",
@@ -84,7 +117,8 @@ export default function ItemForm({
     size: viewData.size || "",
     color: viewData.color || "",
     rental_price: viewData.rental_price || "",
-    add_on_price: viewData.add_on_price ?? viewData.rental_price ?? "",
+    add_on_price:
+      viewData.add_on_price ?? defaultAddOnForBase(viewData.rental_price),
     buffer_override: viewData.buffer_override ?? "",
     status: viewData.status || "Available",
     website_status: viewData.website_status || "Draft",
@@ -125,7 +159,13 @@ export default function ItemForm({
       size: merged.size || "",
       color: merged.color || "",
       rental_price: merged.rental_price || "",
-      add_on_price: merged.add_on_price ?? merged.rental_price ?? "",
+      /*
+       * Same fallback chain as the initial useState — explicit value
+       * wins, tiered default for the base price otherwise. An empty
+       * base produces "" so the field renders blank.
+       */
+      add_on_price:
+        merged.add_on_price ?? defaultAddOnForBase(merged.rental_price),
       buffer_override: merged.buffer_override ?? "",
       status: merged.status || "Available",
       website_status: merged.website_status || "Draft",
@@ -494,28 +534,35 @@ export default function ItemForm({
                 Rental Price (Rp) <span className="text-bad">*</span>
               </label>
               {/*
-               * Two-way "same as base" tracker:
-               *   • On rental_price change, if add_on_price still equals the
-               *     previous rental_price (i.e. the admin hasn't broken the
-               *     default link), mirror the new value into add_on_price.
-               *   • If the admin has already set add_on_price to something
-               *     else (including 0 for "free extra days"), leave it alone.
+               * Tiered default tracker:
+               *   • On rental_price change, if add_on_price still equals
+               *     the tiered default for the PREVIOUS base price (i.e.
+               *     the admin hasn't broken the default link), bump it to
+               *     the tiered default for the NEW base price.
+               *   • If the admin has already set add_on_price to anything
+               *     else — including 0 for "free extra days" — leave it
+               *     alone.
                *
-               * Number() coercion handles the "" initial state (0 === 0
-               * when both are blank), so the very first rental_price entry
-               * on a new item also auto-fills the add-on field.
+               * Comparing against `defaultAddOnForBase(prev.rental_price)`
+               * (not `prev.rental_price` itself) is what makes the tier
+               * change stick: the default value moves with the tier, not
+               * with every keystroke.
                */}
               <RupiahInput
                 required
                 value={Number(formData.rental_price) || 0}
                 onChange={(v) =>
                   setFormData((prev) => {
-                    const tracking =
-                      Number(prev.add_on_price) === Number(prev.rental_price);
+                    const prevDefault = defaultAddOnForBase(prev.rental_price);
+                    const prevAddOn =
+                      prev.add_on_price === "" ? "" : Number(prev.add_on_price);
+                    const wasTracking = prevAddOn === prevDefault;
                     return {
                       ...prev,
                       rental_price: v,
-                      add_on_price: tracking ? v : prev.add_on_price,
+                      add_on_price: wasTracking
+                        ? defaultAddOnForBase(v)
+                        : prev.add_on_price,
                     };
                   })
                 }
@@ -531,9 +578,8 @@ export default function ItemForm({
                 onChange={(v) => setFormData({ ...formData, add_on_price: v })}
               />
               <p className="text-[10px] text-muted mt-1 leading-tight">
-                Charged for each rental day beyond Day 1. Defaults to track the
-                base rental price until you override it — set to 0 for free
-                extra days.
+                Per-extra-day rate. Auto-fills by price tier — override freely,
+                or set to 0 for free extra days.
               </p>
             </div>
 
