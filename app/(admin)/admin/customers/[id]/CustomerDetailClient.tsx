@@ -29,13 +29,11 @@ export default function CustomerDetailClient({
   ktpLogs,
   ktpPhotoUrl,
   orders,
-  auditLogs,
 }: any) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // KTP review state
   const [ktpNotes, setKtpNotes] = useState("");
   const [ktpBusy, setKtpBusy] = useState(false);
   const [ktpFlash, setKtpFlash] = useState<{
@@ -44,7 +42,6 @@ export default function CustomerDetailClient({
   } | null>(null);
   const [ktpCaptureOpen, setKtpCaptureOpen] = useState(false);
 
-  // Profile Form State
   const [profile, setProfile] = useState({
     first_name: customer.first_name || "",
     last_name: customer.last_name || "",
@@ -55,7 +52,6 @@ export default function CustomerDetailClient({
     current_credit: customer.current_credit || 0,
   });
 
-  // Keep state in sync with server prop refreshes
   useEffect(() => {
     setProfile({
       first_name: customer.first_name || "",
@@ -68,14 +64,12 @@ export default function CustomerDetailClient({
     });
   }, [customer]);
 
-  // Auto-clear the KTP flash after a few seconds
   useEffect(() => {
     if (!ktpFlash) return;
     const t = setTimeout(() => setKtpFlash(null), 4000);
     return () => clearTimeout(t);
   }, [ktpFlash]);
 
-  // Address Modal State
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<any>(null);
   const [addressForm, setAddressForm] = useState({
@@ -88,7 +82,6 @@ export default function CustomerDetailClient({
     is_default: false,
   });
 
-  // Save Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -105,7 +98,6 @@ export default function CustomerDetailClient({
     setLoading(false);
   };
 
-  // Open Address Modal
   const openAddressModal = (addr?: any) => {
     if (addr) {
       setEditingAddress(addr);
@@ -133,7 +125,6 @@ export default function CustomerDetailClient({
     setIsAddressModalOpen(true);
   };
 
-  // Save Address (Add or Edit)
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -169,7 +160,6 @@ export default function CustomerDetailClient({
     setLoading(false);
   };
 
-  // KTP Review — approve or reject (reject requires a reason)
   const handleKtpReview = async (newStatus: "Verified" | "Not Submitted") => {
     if (newStatus === "Not Submitted" && !ktpNotes.trim()) {
       setKtpFlash({
@@ -218,10 +208,6 @@ export default function CustomerDetailClient({
 
   const latestKtp = ktpLogs?.[0] ?? null;
 
-  // Normalise the stored phone to wa.me format: digits only, country code
-  // prefixed. The DB stores numbers like "62821229228280"; a leading "0"
-  // (occasionally present from manual entry) is upgraded to "62" so the
-  // link still resolves.
   const waDigits = String(customer.phone || "").replace(/\D/g, "");
   const waPhone = waDigits.startsWith("0")
     ? `62${waDigits.slice(1)}`
@@ -230,7 +216,6 @@ export default function CustomerDetailClient({
 
   return (
     <div>
-      {/* Header & Badges */}
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1.5">
@@ -307,11 +292,8 @@ export default function CustomerDetailClient({
         </div>
       )}
 
-      {/* Grid: Left = Info & Addresses, Right = KTP Review & Orders */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* LEFT COLUMN */}
         <div className="space-y-4">
-          {/* 1. Customer Information Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-3">
               Customer Information
@@ -436,7 +418,6 @@ export default function CustomerDetailClient({
             </form>
           </div>
 
-          {/* 2. Addresses Management Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-serif text-[18px] font-normal">
@@ -533,9 +514,7 @@ export default function CustomerDetailClient({
           </div>
         </div>
 
-        {/* RIGHT COLUMN */}
         <div className="space-y-4">
-          {/* KTP Verification Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
               <h3 className="font-serif text-[18px] font-normal">
@@ -552,7 +531,6 @@ export default function CustomerDetailClient({
               </button>
             </div>
 
-            {/* Photo preview */}
             <div className="mb-4">
               {ktpPhotoUrl ? (
                 <div className="border border-line rounded-lg overflow-hidden bg-[#F6F4EF]">
@@ -670,7 +648,6 @@ export default function CustomerDetailClient({
               </div>
             </div>
 
-            {/* KTP Logs */}
             <div className="text-xs mt-4">
               <h4 className="font-semibold text-muted uppercase text-[10px] tracking-wider mb-2">
                 Review History
@@ -698,7 +675,6 @@ export default function CustomerDetailClient({
             </div>
           </div>
 
-          {/* Orders History Card */}
           <div className="bg-card border border-line rounded-[10px] p-5">
             <h3 className="font-serif text-[18px] font-normal mb-3">
               Order History
@@ -734,7 +710,6 @@ export default function CustomerDetailClient({
         </div>
       </div>
 
-      {/* MODAL: Add / Edit Address with Map */}
       {isAddressModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-card border border-line rounded-xl w-full max-w-xl p-6 shadow-xl relative my-8 animate-in fade-in zoom-in-95">
@@ -907,7 +882,6 @@ export default function CustomerDetailClient({
         </div>
       )}
 
-      {/* MODAL: Admin KTP Capture / Upload */}
       <AdminKtpCaptureModal
         isOpen={ktpCaptureOpen}
         onClose={() => setKtpCaptureOpen(false)}

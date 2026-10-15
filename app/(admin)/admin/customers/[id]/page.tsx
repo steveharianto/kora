@@ -11,15 +11,11 @@ export default async function CustomerDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Explicit columns — previously `select('*')`, which pulled the bcrypt
-  // password hash and its timing-resistant wrapper across the wire for
-  // no reason. The detail form doesn't render password.
-  const [customerRes, addressesRes, ktpRes, ordersRes, auditRes] =
-    await Promise.all([
-      supabase
-        .from("customers")
-        .select(
-          `
+  const [customerRes, addressesRes, ktpRes, ordersRes] = await Promise.all([
+    supabase
+      .from("customers")
+      .select(
+        `
           id,
           first_name,
           last_name,
@@ -32,30 +28,25 @@ export default async function CustomerDetailPage({
           date_joined,
           created_at
         `,
-        )
-        .eq("id", id)
-        .single(),
-      supabase
-        .from("addresses")
-        .select("*")
-        .eq("customer_id", id)
-        .order("is_default", { ascending: false }),
-      supabase
-        .from("ktp_logs")
-        .select("*")
-        .eq("customer_id", id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("orders")
-        .select("*")
-        .eq("customer_id", id)
-        .order("order_date", { ascending: false }),
-      supabase
-        .from("admin_audit_logs")
-        .select("*")
-        .eq("entity_id", id)
-        .order("created_at", { ascending: false }),
-    ]);
+      )
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("addresses")
+      .select("*")
+      .eq("customer_id", id)
+      .order("is_default", { ascending: false }),
+    supabase
+      .from("ktp_logs")
+      .select("*")
+      .eq("customer_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("orders")
+      .select("*")
+      .eq("customer_id", id)
+      .order("order_date", { ascending: false }),
+  ]);
 
   if (customerRes.error || !customerRes.data) {
     notFound();
@@ -89,7 +80,6 @@ export default async function CustomerDetailPage({
         ktpLogs={ktpLogs}
         ktpPhotoUrl={ktpPhotoUrl}
         orders={ordersRes.data || []}
-        auditLogs={auditRes.data || []}
       />
     </div>
   );

@@ -41,7 +41,6 @@ const COURIER_OPTIONS = [
 export default function FittingDetailForm({
   initialFitting,
   allItems,
-  notificationTemplates,
   auditLogs,
   admins = [],
   currentAdmin = null,
@@ -61,13 +60,6 @@ export default function FittingDetailForm({
     text: string;
   } | null>(null);
 
-  /*
-   * Convert-to-order modal state (Step 14 — Q3).
-   *
-   * The admin picks a per-dress day count before the fitting is
-   * converted. `dayCounts` is keyed by item_sku — the same shape the
-   * server-side convertFittingToOrder expects.
-   */
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [dayCounts, setDayCounts] = useState<Record<string, number>>({});
   const [convertError, setConvertError] = useState("");
@@ -121,11 +113,6 @@ export default function FittingDetailForm({
     router.refresh();
   };
 
-  /*
-   * Open the day-count modal. Defaults every active dress to 1 day —
-   * the admin raises days only when the customer confirmed a longer
-   * rental. The modal keeps `dayCounts` local until Confirm.
-   */
   const handleOpenConvertModal = () => {
     if (activeDresses.length === 0) {
       setErrorMsg("This fitting has no active dresses to convert.");
@@ -152,12 +139,6 @@ export default function FittingDetailForm({
       return;
     }
 
-    /*
-     * Validate before firing the server action — the modal's Confirm
-     * button is also disabled on this condition, but a defensive check
-     * here means a paste-driven or programmatic submission can't bypass
-     * the guard.
-     */
     for (const fi of activeDresses) {
       const days = dayCounts[fi.item_sku] ?? 1;
       if (days < 1) {
@@ -602,18 +583,6 @@ export default function FittingDetailForm({
         </div>
       </div>
 
-      {/*
-       * ── Convert-to-Order Modal (Step 14) ─────────────────────────────
-       *
-       * Replaces the old `confirm()` prompt with a day-count dialog. Each
-       * active dress gets a days input (default 1) and a live price
-       * preview driven by `allItems` — the same source used for the
-       * server-side recalc, so the numbers shown here will match what
-       * the DB writes when Confirm fires.
-       *
-       * Cancel aborts the conversion. Confirm fires
-       * `convertFittingToOrder(id, { pick_up_method, dayCounts })`.
-       */}
       {isConvertModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -655,14 +624,6 @@ export default function FittingDetailForm({
                 </div>
                 <div className="space-y-3">
                   {activeDresses.map((fi: any) => {
-                    /*
-                     * Look up the current rate for this SKU from `allItems`.
-                     * The server recalc will re-fetch these values from the
-                     * DB — the client preview is a mirror of the same math,
-                     * not the source of truth. `!= null` preserves an
-                     * intentional 0 (free extra days) rather than falling
-                     * back to `base`.
-                     */
                     const itemInfo = allItems.find(
                       (i: any) => i.sku === fi.item_sku,
                     );

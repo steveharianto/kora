@@ -43,12 +43,10 @@ export default function StorefrontHeader({
   const [openKtpModal, setOpenKtpModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setIsMenuOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while the mobile drawer is open.
   useEffect(() => {
     if (!isMenuOpen) return;
     const prev = document.body.style.overflow;
@@ -58,7 +56,6 @@ export default function StorefrontHeader({
     };
   }, [isMenuOpen]);
 
-  // Escape closes the mobile drawer.
   useEffect(() => {
     if (!isMenuOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -100,10 +97,6 @@ export default function StorefrontHeader({
     <>
       <header className="sticky top-0 z-50 w-full bg-[#ECEBE4] border-b border-[#DFDDD4] transition-colors">
         <div className="max-w-[1512px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between relative">
-          {/* Left cluster — hamburger (mobile only) + logo.
-              Mobile (Figma): the logo is absolutely centered in the bar and
-              only the hamburger sits at the left edge. From md up the logo
-              returns to its static position in the left cluster. */}
           <div className="flex items-center gap-3 md:gap-0">
             <button
               type="button"
@@ -130,7 +123,6 @@ export default function StorefrontHeader({
               />
             </Link>
           </div>
-          {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8 text-[12px] tracking-[0.14em] text-[#3B4736] font-medium uppercase">
             <div
               className="relative"
@@ -183,15 +175,13 @@ export default function StorefrontHeader({
               About Kora
             </Link>
           </nav>
-          {/* Right cluster — mobile (Figma) shows ONLY the rental bag;
-              search, account and the fitting cart return from md up. */}
-          <div className="flex items-center gap-4 sm:gap-6 text-[#485642]">
+          <div className="flex items-center gap-3 sm:gap-6 text-[#485642]">
             <button
               type="button"
               aria-label={isSearchOpen ? "Close search" : "Search"}
               aria-expanded={isSearchOpen}
               onClick={() => setIsSearchOpen((v) => !v)}
-              className="hidden md:block hover:text-[#1F261C] transition-colors cursor-pointer"
+              className="hover:text-[#1F261C] transition-colors cursor-pointer"
             >
               <SearchIcon className="w-[22px] h-[22px]" />
             </button>
@@ -200,11 +190,11 @@ export default function StorefrontHeader({
               aria-label={
                 displayName ? `My account — ${displayName}` : "Account"
               }
-              className="hidden md:flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
+              className="flex items-center gap-2 hover:text-[#1F261C] transition-colors min-w-0"
             >
               <AccountIcon className="w-[22px] h-[22px] flex-shrink-0" />
               {displayName && (
-                <span className="hidden sm:inline text-[11.5px] tracking-[0.06em] font-medium text-[#3B4736] max-w-[140px] truncate">
+                <span className="hidden lg:inline text-[11.5px] tracking-[0.06em] font-medium text-[#3B4736] max-w-[140px] truncate">
                   {displayName}
                 </span>
               )}
@@ -234,7 +224,6 @@ export default function StorefrontHeader({
           onClose={() => setIsSearchOpen(false)}
         />
       </header>
-      {/* Mobile navigation drawer */}
       {isMenuOpen && (
         <>
           <div

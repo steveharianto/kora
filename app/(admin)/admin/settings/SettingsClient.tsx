@@ -27,7 +27,6 @@ interface SettingsClientProps {
   settingsMap: Record<string, any>;
   depositTiers: any[];
   admins: any[];
-  types: any[];
   currentAdmin: any;
 }
 
@@ -43,14 +42,6 @@ const TABS = [
   { key: "change-password", label: "Change password" },
   { key: "business-info", label: "Business info" },
 ];
-
-/* ── Showroom origin card ────────────────────────────────────────────
-   Renders one dispatch address (primary or secondary) using the same
-   AddressMapPicker used by every other address form in the app.
-   Contact name + phone are showroom-specific extras that ride above
-   the map; phone auto-normalises from local 08… to 62… on every
-   keystroke, matching the AddCustomerModal / OrderForm pattern.
-   ─────────────────────────────────────────────────────────────────── */
 
 interface DispatchAddress {
   name?: string;
@@ -179,7 +170,6 @@ export default function SettingsClient({
   const isSuperAdmin =
     currentAdmin?.role?.toLowerCase().replace(/[\s_-]+/g, "") === "superadmin";
 
-  // ---- Automation ----
   const [automation, setAutomation] = useState(
     settingsMap.automation || {
       dress_buffers: [
@@ -198,7 +188,6 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Rental rules ----
   const [rentalRules, setRentalRules] = useState(
     settingsMap.rental_rules || {
       period: {
@@ -219,7 +208,6 @@ export default function SettingsClient({
   );
   const [depositTiers, setDepositTiers] = useState(initialDepositTiers);
 
-  // ---- Orders ----
   const [ordersSettings, setOrdersSettings] = useState(
     settingsMap.orders || {
       draft_stale_days: 30,
@@ -227,7 +215,6 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Fittings ----
   const [fittings, setFittings] = useState(
     settingsMap.fittings || {
       operating_hours: {
@@ -243,12 +230,10 @@ export default function SettingsClient({
     },
   );
 
-  // ---- Notifications ----
   const [notifications, setNotifications] = useState(
     settingsMap.notifications || {},
   );
 
-  // ---- Shipping ----
   const [shipping, setShipping] = useState(() => {
     const raw = settingsMap.shipping || {};
     const rawPrimary = raw.dispatch_addresses?.primary;
@@ -315,12 +300,10 @@ export default function SettingsClient({
   });
   const [overridesDraft, setOverridesDraft] = overridesText;
 
-  // ---- Website content ----
   const [websiteContent, setWebsiteContent] = useState(
     settingsMap.website_content || { shipping_return_policy: "" },
   );
 
-  // ---- Permissions ----
   const [permissions, setPermissions] = useState(
     settingsMap.permissions || {
       reset_order_draft: "superadmin_only",
@@ -340,7 +323,6 @@ export default function SettingsClient({
     role: "staff",
   });
 
-  // ---- Business info — operating hours only ----
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(() =>
     normaliseOperatingHours(settingsMap.business_info?.operating_hours),
   );
@@ -351,7 +333,6 @@ export default function SettingsClient({
       [key]: { ...prev[key], ...patch },
     }));
 
-  // ---- Change password ----
   const [pwForm, setPwForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -499,7 +480,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 1. AUTOMATION */}
       {activeTab === "automation" && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -582,7 +562,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 2. RENTAL RULES */}
       {activeTab === "rental-rules" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -723,7 +702,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 3. ORDERS */}
       {activeTab === "orders" && (
         <div className="space-y-4">
           <div className="bg-card border border-line rounded-[10px] p-5 max-w-2xl space-y-4">
@@ -784,7 +762,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 4. FITTINGS */}
       {activeTab === "fittings" && (
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -894,7 +871,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 5. NOTIFICATIONS */}
       {activeTab === "notifications" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-5 space-y-4">
@@ -934,7 +910,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 6. SHIPPING */}
       {activeTab === "shipping" && (
         <div className="space-y-4">
           <ShowroomOriginCard
@@ -1042,7 +1017,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 7. WEBSITE CONTENT */}
       {activeTab === "website-content" && (
         <div>
           <div className="bg-card border border-line rounded-[10px] p-5 mb-4 max-w-2xl">
@@ -1073,7 +1047,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 8. USERS & ROLES */}
       {activeTab === "users-roles" && (
         <div className="space-y-5">
           <div className="bg-card border border-line rounded-[10px] p-5">
@@ -1289,7 +1262,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 9. CHANGE PASSWORD */}
       {activeTab === "change-password" && (
         <div className="bg-card border border-line rounded-[10px] p-5 mb-5 max-w-xl space-y-3.5">
           <div>
@@ -1380,7 +1352,6 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* 10. BUSINESS INFO — only Operating Hours editable */}
       {activeTab === "business-info" && (
         <div className="space-y-4">
           <div className="bg-card border border-line rounded-[10px] p-5 max-w-2xl">

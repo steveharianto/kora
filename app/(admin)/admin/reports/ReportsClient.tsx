@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Calendar } from 'lucide-react';
-import { formatRupiah } from '@/lib/utils';
-import ReportCardWrapper from '@/components/admin/reports/ReportCardWrapper';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Calendar, AlertCircle } from "lucide-react";
+import { formatRupiah } from "@/lib/utils";
+import ReportCardWrapper from "@/components/admin/reports/ReportCardWrapper";
 
-export type ReportRange = 'all' | 'year' | 'month' | 'custom';
+export type ReportRange = "all" | "year" | "month" | "custom";
 
 const RANGE_PRESETS: { key: ReportRange; label: string }[] = [
-  { key: 'all', label: 'All Time' },
-  { key: 'year', label: 'This Year' },
-  { key: 'month', label: 'This Month' },
-  { key: 'custom', label: 'Custom' },
+  { key: "all", label: "All Time" },
+  { key: "year", label: "This Year" },
+  { key: "month", label: "This Month" },
+  { key: "custom", label: "Custom" },
 ];
 
 function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—';
-  const clean = String(dateStr).split('T')[0].split(' ')[0];
-  const parts = clean.split('-');
+  if (!dateStr) return "—";
+  const clean = String(dateStr).split("T")[0].split(" ")[0];
+  const parts = clean.split("-");
   if (parts.length !== 3) return clean;
   const [year, month, day] = parts;
   return `${day}/${month}/${year}`;
@@ -50,48 +50,49 @@ export default function ReportsClient({
 }: Props) {
   const router = useRouter();
 
-  // Local state for the custom-range inputs, so typing doesn't navigate
-  // on every keystroke. Apply on explicit click.
   const [draftStart, setDraftStart] = useState(rangeStart);
   const [draftEnd, setDraftEnd] = useState(rangeEnd);
+  const [customError, setCustomError] = useState("");
 
   const applyCustom = () => {
-    if (!draftStart || !draftEnd || draftStart > draftEnd) return;
+    setCustomError("");
+    if (!draftStart || !draftEnd) {
+      setCustomError("Pick both a start and end date.");
+      return;
+    }
+    if (draftStart > draftEnd) {
+      setCustomError("Start date must be on or before the end date.");
+      return;
+    }
     router.push(
       `/admin/reports?range=custom&start=${draftStart}&end=${draftEnd}`,
     );
   };
 
   const revRows =
-    'rows' in revenueData && Array.isArray(revenueData.rows)
+    "rows" in revenueData && Array.isArray(revenueData.rows)
       ? revenueData.rows
       : [];
   const invRows =
-    'rows' in inventoryData && Array.isArray(inventoryData.rows)
+    "rows" in inventoryData && Array.isArray(inventoryData.rows)
       ? inventoryData.rows
       : [];
   const retRows =
-    'rows' in returnsData && Array.isArray(returnsData.rows)
+    "rows" in returnsData && Array.isArray(returnsData.rows)
       ? returnsData.rows
       : [];
   const cusRows =
-    'rows' in customersData && Array.isArray(customersData.rows)
+    "rows" in customersData && Array.isArray(customersData.rows)
       ? customersData.rows
       : [];
   const audRows =
-    'rows' in auditData && Array.isArray(auditData.rows)
-      ? auditData.rows
-      : [];
+    "rows" in auditData && Array.isArray(auditData.rows) ? auditData.rows : [];
 
-  // Appended to every CSV export URL so downloads respect the current range.
   const rangeQS =
-    rangeStart && rangeEnd
-      ? `?start=${rangeStart}&end=${rangeEnd}`
-      : '';
+    rangeStart && rangeEnd ? `?start=${rangeStart}&end=${rangeEnd}` : "";
 
   return (
     <div className="mx-auto pb-24 font-sans text-ink space-y-6">
-      {/* ── Header ──────────────────────────────────────────────── */}
       <div>
         <div className="text-[11px] tracking-[0.22em] uppercase text-muted mb-1 font-medium">
           Insight
@@ -105,77 +106,88 @@ export default function ReportsClient({
         </p>
       </div>
 
-      {/* ── Range bar ───────────────────────────────────────────── */}
-      <div className="bg-card border border-line rounded-[10px] p-3 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 flex-wrap">
-          {RANGE_PRESETS.map((p) => {
-            const active = range === p.key;
-            // Custom has no href — clicking it reveals the date inputs
-            // and the Apply button below.
-            const href =
-              p.key === 'custom'
-                ? undefined
-                : p.key === 'all'
-                  ? '/admin/reports'
-                  : `/admin/reports?range=${p.key}`;
-            return active || p.key === 'custom' ? (
-              <span
-                key={p.key}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                  active
-                    ? 'bg-wine text-white'
-                    : 'border border-line bg-card text-muted'
-                }`}
+      <div className="bg-card border border-line rounded-[10px] p-3 flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 flex-wrap">
+            {RANGE_PRESETS.map((p) => {
+              const active = range === p.key;
+              const href =
+                p.key === "custom"
+                  ? undefined
+                  : p.key === "all"
+                    ? "/admin/reports"
+                    : `/admin/reports?range=${p.key}`;
+              return active || p.key === "custom" ? (
+                <span
+                  key={p.key}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                    active
+                      ? "bg-wine text-white"
+                      : "border border-line bg-card text-muted"
+                  }`}
+                >
+                  {p.label}
+                </span>
+              ) : (
+                <Link
+                  key={p.key}
+                  href={href!}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-line bg-card text-ink hover:bg-[#F6F4EF] transition"
+                >
+                  {p.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          {range === "custom" ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={draftStart}
+                onChange={(e) => {
+                  setDraftStart(e.target.value);
+                  setCustomError("");
+                }}
+                max={draftEnd || undefined}
+                className="px-2.5 py-1.5 rounded-lg border border-line bg-card text-ink text-xs focus:outline-none focus:ring-1 focus:ring-wine"
+              />
+              <span className="text-muted text-xs">→</span>
+              <input
+                type="date"
+                value={draftEnd}
+                onChange={(e) => {
+                  setDraftEnd(e.target.value);
+                  setCustomError("");
+                }}
+                min={draftStart || undefined}
+                className="px-2.5 py-1.5 rounded-lg border border-line bg-card text-ink text-xs focus:outline-none focus:ring-1 focus:ring-wine"
+              />
+              <button
+                type="button"
+                onClick={applyCustom}
+                disabled={!draftStart || !draftEnd || draftStart > draftEnd}
+                className="px-3.5 py-1.5 rounded-lg bg-wine text-white text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                {p.label}
-              </span>
-            ) : (
-              <Link
-                key={p.key}
-                href={href!}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-line bg-card text-ink hover:bg-[#F6F4EF] transition"
-              >
-                {p.label}
-              </Link>
-            );
-          })}
+                Apply
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted ml-auto">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{rangeLabel}</span>
+            </div>
+          )}
         </div>
 
-        {range === 'custom' ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={draftStart}
-              onChange={(e) => setDraftStart(e.target.value)}
-              max={draftEnd || undefined}
-              className="px-2.5 py-1.5 rounded-lg border border-line bg-card text-ink text-xs focus:outline-none focus:ring-1 focus:ring-wine"
-            />
-            <span className="text-muted text-xs">→</span>
-            <input
-              type="date"
-              value={draftEnd}
-              onChange={(e) => setDraftEnd(e.target.value)}
-              min={draftStart || undefined}
-              className="px-2.5 py-1.5 rounded-lg border border-line bg-card text-ink text-xs focus:outline-none focus:ring-1 focus:ring-wine"
-            />
-            <button
-              type="button"
-              onClick={applyCustom}
-              disabled={!draftStart || !draftEnd || draftStart > draftEnd}
-              className="px-3.5 py-1.5 rounded-lg bg-wine text-white text-xs font-medium hover:bg-[#181E15] transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              Apply
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted ml-auto">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{rangeLabel}</span>
+        {range === "custom" && customError && (
+          <div className="flex items-center gap-1.5 text-[11.5px] text-bad">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{customError}</span>
           </div>
         )}
       </div>
 
-      {/* ── 1. REVENUE & CASHFLOW ───────────────────────────────── */}
       <ReportCardWrapper
         title="Revenue & Cashflow Report"
         subtitle="Gross rental turnover, refundable deposit custody, shipping collections, and net realized cashflow."
@@ -205,16 +217,17 @@ export default function ReportsClient({
           const refundedDeposits = Number(
             revenueData?.kpis?.totalRefundedDeposits || 0,
           );
-          const fittingsIncome = Number(
-            revenueData?.kpis?.fittingsIncome || 0,
-          );
+          const fittingsIncome = Number(revenueData?.kpis?.fittingsIncome || 0);
           const realizedNet =
             grossCollected - refundedDeposits + fittingsIncome;
 
           return (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 font-tabular-nums">
-                <KPI label="Rental Subtotal" value={formatRupiah(grossRental)} />
+                <KPI
+                  label="Rental Subtotal"
+                  value={formatRupiah(grossRental)}
+                />
                 <KPI
                   label="Deposits Held"
                   value={formatRupiah(depositsHeld)}
@@ -300,7 +313,6 @@ export default function ReportsClient({
         }}
       />
 
-      {/* ── 2. INVENTORY (lifetime) ─────────────────────────────── */}
       <ReportCardWrapper
         title="Inventory Performance & Fleet Utilization"
         subtitle="Individual garment yield, total days on loan, rental turnover cycles, and active maintenance condition. (Lifetime totals — the range filter does not apply.)"
@@ -312,13 +324,16 @@ export default function ReportsClient({
             0,
           );
           const activeFleetCount = rows.filter(
-            (r) => r.status !== 'Under Repair' && r.status !== 'Archived',
+            (r) => r.status !== "Under Repair" && r.status !== "Archived",
           ).length;
 
           return (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 font-tabular-nums mb-3">
-                <KPI label="Total Catalog Items" value={`${rows.length} items`} />
+                <KPI
+                  label="Total Catalog Items"
+                  value={`${rows.length} items`}
+                />
                 <KPI
                   label="Active Fleet"
                   value={`${activeFleetCount} garments`}
@@ -386,7 +401,6 @@ export default function ReportsClient({
         }}
       />
 
-      {/* ── 3. RETURNS ──────────────────────────────────────────── */}
       <ReportCardWrapper
         title="Returns & Deposit Settlement Ledger"
         subtitle="Reverse logistics tracking, quality control deductions, late fees retained, and deposit payout records."
@@ -395,21 +409,21 @@ export default function ReportsClient({
         renderContent={(rows) => {
           const totalUnderCustody = rows.reduce(
             (acc, r) =>
-              r.refundStatus === 'Refunded'
+              r.refundStatus === "Refunded"
                 ? acc
                 : acc + (Number(r.depositHeld) || 0),
             0,
           );
           const totalDeductions = rows.reduce(
             (acc, r) =>
-              r.refundStatus === 'Refunded'
+              r.refundStatus === "Refunded"
                 ? acc + (Number(r.qcDeduction) || 0)
                 : acc,
             0,
           );
           const totalRefunded = rows.reduce(
             (acc, r) =>
-              r.refundStatus === 'Refunded'
+              r.refundStatus === "Refunded"
                 ? acc + (Number(r.refundAmount) || 0)
                 : acc,
             0,
@@ -418,10 +432,7 @@ export default function ReportsClient({
           return (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-tabular-nums mb-3">
-                <KPI
-                  label="Total Returns Handled"
-                  value={`${rows.length}`}
-                />
+                <KPI label="Total Returns Handled" value={`${rows.length}`} />
                 <KPI
                   label="Deposits Under Custody"
                   value={formatRupiah(totalUnderCustody)}
@@ -497,7 +508,6 @@ export default function ReportsClient({
         }}
       />
 
-      {/* ── 4. CUSTOMERS (lifetime) ─────────────────────────────── */}
       <ReportCardWrapper
         title="Customer Lifetime Value (LTV) & Accounts"
         subtitle="Individual customer spend totals (net of refundable deposits), order counts, average order value, and outstanding store credit balance. (Lifetime totals — the range filter does not apply.)"
@@ -518,14 +528,8 @@ export default function ReportsClient({
           return (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-tabular-nums mb-3">
-                <KPI
-                  label="Registered Renters"
-                  value={`${rows.length}`}
-                />
-                <KPI
-                  label="Cumulative LTV"
-                  value={formatRupiah(totalLtv)}
-                />
+                <KPI label="Registered Renters" value={`${rows.length}`} />
+                <KPI label="Cumulative LTV" value={formatRupiah(totalLtv)} />
                 <KPI label="Average LTV" value={formatRupiah(avgLtv)} />
                 <KPI
                   label="Store Credit Liability"
@@ -586,7 +590,6 @@ export default function ReportsClient({
         }}
       />
 
-      {/* ── 5. AUDIT ────────────────────────────────────────────── */}
       <ReportCardWrapper
         title="Administrative Security & Audit Log"
         subtitle="Complete chronological trail of overrides, role approvals, manual credit top-ups, and courier dispatches."
@@ -601,8 +604,8 @@ export default function ReportsClient({
             <>
               {truncated && (
                 <div className="mb-3 p-2.5 bg-warn-bg border border-[#F1DFB7] text-warn-ink rounded-lg text-[11.5px]">
-                  Showing the latest <strong>{shown}</strong> of{' '}
-                  <strong>{total.toLocaleString('id-ID')}</strong> entries.
+                  Showing the latest <strong>{shown}</strong> of{" "}
+                  <strong>{total.toLocaleString("id-ID")}</strong> entries.
                   Narrow the range or export the CSV for the full set.
                 </div>
               )}
@@ -660,31 +663,29 @@ export default function ReportsClient({
   );
 }
 
-/* ── Reusable KPI tile ──────────────────────────────────────────── */
-
 function KPI({
   label,
   value,
   sub,
-  tone = 'default',
+  tone = "default",
 }: {
   label: string;
   value: string;
   sub?: string;
-  tone?: 'default' | 'ok' | 'warn' | 'bad';
+  tone?: "default" | "ok" | "warn" | "bad";
 }) {
   const cls = {
-    default: 'bg-[#F6F4EF] border-line text-ink',
-    ok: 'bg-[#EAF3E7] border-[#CAD3C5] text-[#2E7D47]',
-    warn: 'bg-[#FDF3DE] border-[#F1DFB7] text-[#84661E]',
-    bad: 'bg-[#FBEBE8] border-[#E8C0B9] text-[#A63222]',
+    default: "bg-[#F6F4EF] border-line text-ink",
+    ok: "bg-[#EAF3E7] border-[#CAD3C5] text-[#2E7D47]",
+    warn: "bg-[#FDF3DE] border-[#F1DFB7] text-[#84661E]",
+    bad: "bg-[#FBEBE8] border-[#E8C0B9] text-[#A63222]",
   }[tone];
 
   const labelCls = {
-    default: 'text-muted',
-    ok: 'text-[#2E7D47]',
-    warn: 'text-[#84661E]',
-    bad: 'text-[#A63222]',
+    default: "text-muted",
+    ok: "text-[#2E7D47]",
+    warn: "text-[#84661E]",
+    bad: "text-[#A63222]",
   }[tone];
 
   return (

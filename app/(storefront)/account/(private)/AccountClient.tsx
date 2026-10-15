@@ -2,8 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Upload, ChevronDown } from "lucide-react";
-import { updateCustomerProfile, saveCustomerAddress, deleteCustomerAddress, setDefaultCustomerAddress } from "@/app/actions/customerProfile";
+import { Eye, Upload, ChevronDown } from "lucide-react";
+import {
+  updateCustomerProfile,
+  saveCustomerAddress,
+  deleteCustomerAddress,
+  setDefaultCustomerAddress,
+} from "@/app/actions/customerProfile";
 import type { CustomerSession } from "@/app/actions/customerAuth";
 import ChangePasswordModal from "./ChangePasswordModal";
 import AddressModal from "./AddressModal";
@@ -26,7 +31,26 @@ interface Props {
   latestKtp: { photo_url: string; status: string; created_at: string } | null;
 }
 
-export default function AccountClient({ customer, addresses, latestKtp }: Props) {
+function friendlyStatus(raw: string): string {
+  switch (raw) {
+    case "Verified":
+      return "Verified";
+    case "KTP Pending":
+      return "Pending review";
+    case "Not Submitted":
+      return "Not submitted";
+    case "Inactive":
+      return "Inactive";
+    default:
+      return raw;
+  }
+}
+
+export default function AccountClient({
+  customer,
+  addresses,
+  latestKtp,
+}: Props) {
   const router = useRouter();
   const [profile, setProfile] = useState({
     firstName: customer.firstName || "",
@@ -35,7 +59,9 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
     phone: customer.phone || "",
   });
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(
+    null,
+  );
 
   const [changePwOpen, setChangePwOpen] = useState(false);
   const [ktpOpen, setKtpOpen] = useState(false);
@@ -83,7 +109,6 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
 
   return (
     <div className="space-y-16">
-      {/* ── Account section ─────────────────────────────────── */}
       <section>
         <h2 className="font-serif text-[28px] sm:text-[32px] text-store-fg mb-8 font-normal">
           Account
@@ -110,7 +135,9 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
               <input
                 required
                 value={profile.firstName}
-                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e) =>
+                  setProfile({ ...profile, firstName: e.target.value })
+                }
                 className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent"
               />
             </div>
@@ -120,7 +147,9 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
               </label>
               <input
                 value={profile.lastName}
-                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e) =>
+                  setProfile({ ...profile, lastName: e.target.value })
+                }
                 className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent"
               />
             </div>
@@ -134,13 +163,17 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
               <input
                 type="date"
                 value={profile.dob}
-                onChange={(e) => setProfile({ ...profile, dob: e.target.value })}
+                onChange={(e) =>
+                  setProfile({ ...profile, dob: e.target.value })
+                }
                 max="9999-12-31"
                 className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent"
               />
             </div>
             <div>
-              <label className="block text-[12.5px] text-store-fg-muted mb-2">Email</label>
+              <label className="block text-[12.5px] text-store-fg-muted mb-2">
+                Email
+              </label>
               <input
                 disabled
                 value={customer.email || ""}
@@ -157,7 +190,9 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
               <input
                 required
                 value={profile.phone}
-                onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                onChange={(e) =>
+                  setProfile({ ...profile, phone: e.target.value })
+                }
                 className="w-full text-[13.5px] text-store-fg bg-transparent border border-store-border-strong px-4 py-3 focus:outline-none focus:border-store-accent font-mono"
               />
             </div>
@@ -172,7 +207,10 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
                   value="••••••••"
                   className="w-full text-[13.5px] text-store-fg-muted bg-store-bg border border-store-border px-4 py-3 pr-11 font-mono"
                 />
-                <Eye className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2" strokeWidth={1.6} />
+                <Eye
+                  className="w-4 h-4 text-store-fg-muted absolute right-3 top-1/2 -translate-y-1/2"
+                  strokeWidth={1.6}
+                />
               </div>
               <button
                 type="button"
@@ -185,13 +223,17 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
           </div>
 
           <div className="pt-2">
-            <label className="block text-[12.5px] text-store-fg-muted mb-2">ID (KTP)</label>
+            <label className="block text-[12.5px] text-store-fg-muted mb-2">
+              ID (KTP)
+            </label>
             {ktpUploaded ? (
               <div className="border border-store-border bg-store-bg px-5 py-4 flex items-center justify-between gap-4 max-w-[560px]">
                 <div>
                   <p className="text-[13px] text-store-fg">
                     ID uploaded — status:{" "}
-                    <strong>{latestKtp?.status || customer.status}</strong>
+                    <strong>
+                      {friendlyStatus(latestKtp?.status || customer.status)}
+                    </strong>
                   </p>
                   <p className="text-[11.5px] text-store-fg-muted mt-0.5">
                     {latestKtp?.created_at
@@ -235,7 +277,6 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
         </form>
       </section>
 
-      {/* ── Address section ─────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between gap-4 mb-8">
           <h2 className="font-serif text-[28px] sm:text-[32px] text-store-fg font-normal">
@@ -251,7 +292,9 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
         </div>
 
         {addresses.length === 0 ? (
-          <p className="text-[13px] text-store-fg-muted">No saved addresses yet.</p>
+          <p className="text-[13px] text-store-fg-muted">
+            No saved addresses yet.
+          </p>
         ) : (
           <div className="space-y-4">
             {addresses.map((addr) => (
@@ -267,8 +310,10 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
         )}
       </section>
 
-      {/* ── Modals ─────────────────────────────────────────── */}
-      <ChangePasswordModal isOpen={changePwOpen} onClose={() => setChangePwOpen(false)} />
+      <ChangePasswordModal
+        isOpen={changePwOpen}
+        onClose={() => setChangePwOpen(false)}
+      />
 
       <AddressModal
         isOpen={addressModalOpen}
@@ -292,8 +337,6 @@ export default function AccountClient({ customer, addresses, latestKtp }: Props)
   );
 }
 
-/* ── Address row ──────────────────────────────────────────────── */
-
 function AddressRow({
   address,
   onEdit,
@@ -312,7 +355,9 @@ function AddressRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-2">
-            <p className="text-[14px] text-store-fg font-medium">{address.label}</p>
+            <p className="text-[14px] text-store-fg font-medium">
+              {address.label}
+            </p>
             {address.is_default && (
               <span className="text-[9.5px] tracking-wider uppercase bg-store-accent text-white px-2 py-0.5">
                 Default

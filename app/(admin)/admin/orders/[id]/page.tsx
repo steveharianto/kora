@@ -17,7 +17,6 @@ export default async function OrderDetailPage({
     customersRes,
     itemsRes,
     shippingSettingsRes,
-    notificationSettingsRes,
     auditRes,
     adminsRes,
   ] = await Promise.all([
@@ -50,31 +49,23 @@ export default async function OrderDetailPage({
       )
       .order("first_name"),
 
-    /*
-     * `add_on_price` added for the manual-order day-pricing editor — the
-     * OrderForm reads it in handleProductSelect to seed each line's
-     * default extra-day rate. NULL is tolerated and falls back to the
-     * item's `rental_price` (Q1 semantics).
-     */
     supabase
       .from("items")
       .select("sku, name, rental_price, add_on_price")
       .order("sku"),
+
     supabase
       .from("app_settings")
       .select("value")
       .eq("key", "shipping")
       .single(),
-    supabase
-      .from("app_settings")
-      .select("value")
-      .eq("key", "notifications")
-      .single(),
+
     supabase
       .from("admin_audit_logs")
       .select("*")
       .eq("entity_id", id)
       .order("created_at", { ascending: false }),
+
     supabase
       .from("admins")
       .select("id, name, role")
@@ -86,7 +77,6 @@ export default async function OrderDetailPage({
 
   const deliveryLeadTimes =
     shippingSettingsRes.data?.value?.delivery_lead_times || [];
-  const notificationTemplates = notificationSettingsRes.data?.value || {};
   const bookingWindowDays = Number(
     shippingSettingsRes.data?.value?.booking_window_days ?? 3,
   );
@@ -98,7 +88,6 @@ export default async function OrderDetailPage({
         allCustomers={customersRes.data || []}
         allItems={itemsRes.data || []}
         deliveryLeadTimes={deliveryLeadTimes}
-        notificationTemplates={notificationTemplates}
         bookingWindowDays={bookingWindowDays}
         auditLogs={auditRes.data || []}
         admins={adminsRes.data || []}

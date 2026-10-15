@@ -31,7 +31,6 @@ import NotificationPicker from "@/components/admin/NotificationPicker";
 import EntityChat from "@/components/admin/EntityChat";
 import { OUTBOUND_COURIER_LABELS } from "@/lib/courierMap";
 
-// Locale-safe date formatter — matches server and client output byte-for-byte.
 function formatLogDate(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -42,8 +41,6 @@ function formatLogDate(iso?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
-// Timezone-safe ISO (YYYY-MM-DD) from a Date. Uses local components so we
-// never drift a day backward when the server runs in UTC.
 function toISO(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -149,7 +146,6 @@ export default function OrderForm({
   allCustomers: initialCustomers,
   allItems,
   deliveryLeadTimes,
-  notificationTemplates,
   bookingWindowDays = 3,
   auditLogs,
   admins = [],
@@ -168,7 +164,6 @@ export default function OrderForm({
   const isDraft = initialOrder.status === "Draft";
   const isWebsite = initialOrder.order_method === "Website";
 
-  // Detect whether the WA-on-post notification was already dispatched
   const waPosted = useMemo(
     () =>
       (auditLogs || []).some(
@@ -202,8 +197,6 @@ export default function OrderForm({
   const [canRetryAsInstant, setCanRetryAsInstant] = useState(false);
   const [copiedWaybill, setCopiedWaybill] = useState(false);
 
-  // Date override escape hatch. Off by default — pickup/return stay derived
-  // from Event Date + Event Days, matching the customer checkout flow.
   const [datesOverridden, setDatesOverridden] = useState(false);
 
   useEffect(() => {
@@ -290,20 +283,6 @@ export default function OrderForm({
     setSelectedCustomerId(initialOrder.customer_id || "");
     setProducts(
       (initialOrder.order_products || []).map((op: any) => {
-        /*
-         * Multi-day pricing fallbacks:
-         *   • `base_price`     → the item's `rental_price` at purchase time.
-         *                        NULL on historical orders — fall back to
-         *                        the legacy flat `price` column.
-         *   • `add_on_price`   → per-extra-day rate at purchase time.
-         *                        NULL on historical orders — fall back to
-         *                        `base_price` (Q1: "same as base").
-         *   • `days`           → NULL on historical orders — default 1.
-         *
-         * `!= null` (not `||`) preserves an explicit 0 add-on. An item
-         * with free extra days must not silently inherit the base rate
-         * when this form loads it back in.
-         */
         const basePrice =
           op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
         const addOnPrice =
@@ -322,13 +301,11 @@ export default function OrderForm({
     setBookingNote(`KORA Rental ${initialOrder.id} - Handle with care`);
   }, [initialOrder]);
 
-  // Derived fulfilment flags — drive the schedule behaviour and UI guards.
   const isSelfPickup = (formData.pick_up_method || "")
     .toLowerCase()
     .includes("self pickup");
   const usesShipping = !isSelfPickup;
 
-  // KTP verification state — drives the courier button gate and the hold banner.
   const isKtpVerified = activeCustomer?.status === "Verified";
   const needsKtpAction =
     Boolean(activeCustomer?.id) &&
@@ -397,12 +374,6 @@ export default function OrderForm({
 
   const [products, setProducts] = useState<any[]>(
     (initialOrder.order_products || []).map((op: any) => {
-      /*
-       * Same fallbacks as the useEffect above — this branch is only hit on
-       * the very first render, before the effect runs. Kept identical so
-       * the initial paint matches the post-effect paint. See the useEffect
-       * for the full rationale on `!= null` vs `||`.
-       */
       const basePrice =
         op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
       const addOnPrice =
@@ -578,16 +549,6 @@ export default function OrderForm({
     const item = allItems.find((i: any) => i.sku === sku);
     const next = [...products];
     if (item) {
-      /*
-       * Price snapshot at selection time. The server recalculates from
-       * the DB on save (Step 11), so these values are display-only hints
-       * that populate the form fields immediately. They also handle the
-       * pre-save UX: the admin sees the correct line total before ever
-       * clicking Save.
-       *
-       * `add_on_price != null` (not `||`) preserves an intentional 0 —
-       * free extra days must stay free, not fall back to the base rate.
-       */
       const base = Number(item.rental_price) || 0;
       const addOn =
         item.add_on_price != null ? Number(item.add_on_price) : base;
@@ -642,16 +603,6 @@ export default function OrderForm({
       ? `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""} (${activeCustomer.phone || ""})`.trim()
       : "";
 
-  /*
-   * Line subtotal for a single product row.
-   *
-   *   day-adjusted unit = price + addOnPrice × (days − 1)
-   *   line subtotal     = unit × quantity
-   *
-   * Kept as a helper because both the products-subtotal reducer and the
-   * per-row display need the same math. Any divergence between the two
-   * would silently desync the financial summary from the visible rows.
-   */
   const lineUnitPrice = (p: any) => {
     const days = Math.max(1, Number(p.days) || 1);
     const base = Number(p.price) || 0;
@@ -722,15 +673,6 @@ export default function OrderForm({
     setLoading(false);
   };
 
-  /**
-   * Persists the form first when transitioning out of Draft, then applies
-   * the target status. This is the difference between "posting an order"
-   * actually writing the customer / products / dates to the DB, versus the
-   * bare status flip that used to wipe the customer.
-   *
-   * For self-pickup the caller passes "Active" directly — no courier step,
-   * order lands ready to track the return.
-   */
   const handleStatusTransition = async (newStatus: string) => {
     setLoading(true);
     setErrorMsg("");
@@ -1085,8 +1027,6 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* KTP hold banner — surfaces the courier-block and offers a one-click
-          jump to the customer profile where KTP can be approved or reset. */}
       {needsKtpAction && (
         <div className="mb-4 p-3.5 bg-[#FDF3DE] border border-[#F1DFB7] rounded-xl flex items-center gap-3 justify-between flex-wrap">
           <div className="flex items-start gap-2.5 min-w-0">
@@ -1124,9 +1064,7 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* Customer & Schedule + Fulfilment columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        {/* LEFT COLUMN — customer + schedule */}
         <div className="bg-card border border-line rounded-[10px] p-5">
           <h3 className="font-serif text-[18px] font-normal mb-3">
             Customer & schedule
@@ -1453,7 +1391,6 @@ export default function OrderForm({
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Fulfilment & payment */}
         <div className="bg-card border border-line rounded-[10px] p-5 flex flex-col justify-between">
           <div>
             <h3 className="font-serif text-[18px] font-normal mb-3">
@@ -1624,7 +1561,6 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* Product line items */}
       <div className="bg-card border border-line rounded-[10px] p-5 mb-4">
         <h3 className="font-serif text-[18px] font-normal mb-3">
           Product <span className="text-bad">*</span>
@@ -1742,7 +1678,6 @@ export default function OrderForm({
         )}
       </div>
 
-      {/* Financial summary */}
       <div className="bg-card border border-line rounded-[10px] p-5 mb-4">
         <h3 className="font-serif text-[18px] font-normal mb-3">
           Financial summary
@@ -1800,7 +1735,6 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* Notes (chat) + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-line rounded-[10px] p-5">
           <EntityChat
@@ -1847,7 +1781,6 @@ export default function OrderForm({
         </div>
       </div>
 
-      {/* BOOKING MODAL */}
       {bookingStep !== "closed" && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -2128,7 +2061,6 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* MODAL: CREATE CUSTOMER */}
       {isCustomerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
@@ -2259,7 +2191,6 @@ export default function OrderForm({
         </div>
       )}
 
-      {/* MODAL: ADD ADDRESS */}
       {isAddressModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-card border border-line rounded-xl w-full max-w-xl p-6 shadow-xl relative my-8 animate-in fade-in zoom-in-95">
