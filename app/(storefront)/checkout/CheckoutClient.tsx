@@ -253,10 +253,22 @@ export default function CheckoutClient({
     setCheckoutError("");
 
     const orderRes = await createWebsiteOrder({
+      /*
+       * Multi-day pricing:
+       *   `price`      → base per-day rate (Day 1 charge)
+       *   `addOnPrice` → extra-day rate, applied to every day beyond Day 1
+       *   `eventDays`  → total number of event days
+       *
+       * The server does NOT trust any of these — it recalculates the line
+       * total from the DB using the same formula. They're included here so
+       * the payload is self-documenting during debugging and so we can
+       * eventually log tampering attempts against the recomputed values.
+       */
       items: cart.map((c) => ({
         sku: c.sku,
         quantity: 1,
         price: c.price,
+        addOnPrice: c.addOnPrice,
         deposit: c.price > 1000000 ? 250000 : 150000,
         eventDays: c.eventDays,
       })),
@@ -657,12 +669,34 @@ export default function CheckoutClient({
                         <p className="text-[12.5px] text-store-fg leading-snug">
                           {c.sku}-{c.name}
                         </p>
-                        {days > 1 && (
-                          <p className="text-[11.5px] text-store-fg-muted mt-0.5">
-                            {formatRupiah(c.price)} × {days} days
+                        {/*
+                         * Two-line price breakdown:
+                         *   • "Day 1" is always shown — anchors the base rental fee.
+                         *   • "Each additional day" appears only when days > 1.
+                         *     A 0 add-on reads as "Free" so the customer isn't
+                         *     confused by a literal "Rp 0" multiplier.
+                         */}
+                        <div className="text-[11.5px] text-store-fg-muted mt-0.5 space-y-0.5">
+                          <p>
+                            Day 1:{" "}
+                            <span className="text-store-fg">
+                              {formatRupiah(c.price)}
+                            </span>
                           </p>
-                        )}
-                        <p className="text-[12px] text-store-fg font-medium mt-0.5">
+                          {days > 1 && (
+                            <p>
+                              Each additional day:{" "}
+                              <span className="text-store-fg">
+                                {c.addOnPrice > 0
+                                  ? formatRupiah(c.addOnPrice)
+                                  : "Free"}
+                              </span>
+                              {" × "}
+                              {days - 1}
+                            </p>
+                          )}
+                        </div>
+                        <p className="text-[12px] text-store-fg font-medium mt-1">
                           {formatRupiah(lineTotal)}
                         </p>
                         {c.eventStart && c.eventEnd && (
