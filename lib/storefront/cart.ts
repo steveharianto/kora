@@ -3,9 +3,21 @@
 export interface RentalCartItem {
   sku: string;
   name: string;
-  /** Per-event-day rental price in IDR. Total for this line = price × eventDays. */
+  /**
+   * Base per-rental-day price in IDR. Day 1 is always billed at this rate.
+   */
   price: number;
-  /** Number of event days the customer selected. Multiplies `price`. */
+  /**
+   * Per-extra-day rate in IDR, charged for every rental day beyond Day 1.
+   * Day 2 costs `addOnPrice`, Day 3 costs `addOnPrice`, and so on.
+   *
+   * A value of 0 means extra days are free. Legacy cart entries written
+   * before the multi-day pricing feature shipped do not carry this field;
+   * `readRentalCart()` backfills them with `price` so their totals stay
+   * `base × days` — the same number they rendered before the feature.
+   */
+  addOnPrice: number;
+  /** Number of event days the customer selected. */
   eventDays: number;
   image: string | null;
   rentalStart: string; // YYYY-MM-DD — delivery / pickup day
@@ -61,21 +73,48 @@ export function readRentalCart(): RentalCartItem[] {
         typeof x.rentalStart === "string" &&
         typeof x.rentalEnd === "string",
     )
-    .map((x) => ({
-      sku: x.sku,
-      name: x.name || "",
-      price: x.price,
-      // Backward-compat: older cart entries have no eventDays — treat as 1.
-      eventDays:
-        typeof x.eventDays === "number" && x.eventDays >= 1 ? x.eventDays : 1,
-      image: x.image ?? null,
-      rentalStart: x.rentalStart,
-      rentalEnd: x.rentalEnd,
-      eventStart: typeof x.eventStart === "string" ? x.eventStart : x.rentalStart,
-      eventEnd: typeof x.eventEnd === "string" ? x.eventEnd : x.rentalEnd,
-      postalCode: typeof x.postalCode === "string" ? x.postalCode : "",
-      accessories: Array.isArray(x.accessories) ? x.accessories : [],
-    })) as RentalCartItem[];
+    .map((x) => {
+      /*
+       * addOnPrice coercion:
+       *
+       *   • Valid (number, >= 0)          → use as-is.
+       *   • Missing (legacy cart entry),   → default to `price` so the
+       *     null, NaN, negative, string,      historical total is preserved:
+       *     or otherwise malformed             base + base × (days−1)
+       *                                          == base × days
+       *
+       * Q1 semantics: a null add-on price at the DB level means "same as
+       * base rental price". This mirrors that rule at the cart layer so a
+       * returning customer's saved cart behaves identically to a freshly
+       * constructed one.
+       *
+       * We do NOT default to 0 (free) — that would silently discount extra
+       * days on every legacy cart and change what the customer owes.
+       */
+      const price = typeof x.price === "number" ? x.price : 0;
+      const addOnPrice =
+        typeof x.addOnPrice === "number" && x.addOnPrice >= 0
+          ? x.addOnPrice
+          : price;
+
+      return {
+        sku: x.sku,
+        name: x.name || "",
+        price,
+        addOnPrice,
+        // Backward-compat: older cart entries have no eventDays — treat as 1.
+        eventDays:
+          typeof x.eventDays === "number" && x.eventDays >= 1 ? x.eventDays : 1,
+        image: x.image ?? null,
+        rentalStart: x.rentalStart,
+        rentalEnd: x.rentalEnd,
+        eventStart:
+          typeof x.eventStart === "string" ? x.eventStart : x.rentalStart,
+        eventEnd: typeof x.eventEnd === "string" ? x.eventEnd : x.rentalEnd,
+        postalCode: typeof x.postalCode === "string" ? x.postalCode : "",
+        accessories: Array.isArray(x.accessories) ? x.accessories : [],
+      };
+    }) as RentalCartItem[];
 }
 
 export function writeRentalCart(items: RentalCartItem[]) {
@@ -87,9 +126,31 @@ export function countRentalCart(): number {
   return readRentalCart().length;
 }
 
-/** Line-item total: per-day price × number of event days. */
+/**
+ * Line-item total for a rental line.
+ *
+ *   Day 1              → price
+ *   Each extra day     → + addOnPrice
+ *
+ *   total = price + addOnPrice × (days − 1)
+ *
+ * Worked examples (base = 1.700.000, add-on = 400.000):
+ *   1 day  → 1.700.000
+ *   2 days → 1.700.000 + 400.000 × 1 = 2.100.000
+ *   3 days → 1.700.000 + 400.000 × 2 = 2.500.000
+ *
+ * Edge cases:
+ *   • addOnPrice = 0        → total = price (extra days free)
+ *   • days = 0 or negative  → clamped to 1 by the `|| 1` guard and the
+ *                             `Math.max(0, days - 1)` clamp on the
+ *                             multiplier, so total = price
+ *   • Legacy cart item with addOnPrice backfilled to `price`
+ *                           → total = price × days (identical to the old
+ *                             formula — no behaviour change)
+ */
 export function rentalLineTotal(item: RentalCartItem): number {
-  return (item.price || 0) * (item.eventDays || 1);
+  const days = item.eventDays || 1;
+  return (item.price || 0) + (item.addOnPrice || 0) * Math.max(0, days - 1);
 }
 
 /** Sum of all line totals. */
