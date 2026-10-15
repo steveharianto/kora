@@ -34,18 +34,21 @@ interface Item {
   };
   images: string[];
 }
+
 interface RelatedItem {
   sku: string;
   name: string;
   rentalPrice: number;
   coverImage: string | null;
 }
+
 interface Accessory {
   sku: string;
   name: string;
   rentalPrice: number;
   image: string | null;
 }
+
 interface LeadTime {
   prefix: string;
   region: string;
@@ -139,10 +142,8 @@ export default function ProductDetail({
       const existing = sessions.find(
         (s) => s.date === payload.date && s.slot === payload.slot,
       );
-
       const isAfterHours = isAfterHoursSlot(payload.date, payload.slot);
       const fee = isAfterHours ? 100000 : 0;
-
       if (existing) {
         if (!existing.items.find((i) => i.sku === payload.sku)) {
           existing.items.push({
@@ -168,7 +169,6 @@ export default function ProductDetail({
           ],
         });
       }
-
       writeFittingCart(sessions);
       setToast("Added to fitting cart");
     } catch {
@@ -180,8 +180,16 @@ export default function ProductDetail({
     <div className="w-full">
       <div className="max-w-[1512px] mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr]">
-          {/* Gallery */}
-          <div className="flex gap-3 p-4 sm:p-6">
+          {/* Gallery
+              ─────────────────────────────────────────────────────────
+              Mobile (Figma, <sm): full-bleed ~10:9 hero cropped from the
+              top, with the alternate-image thumbnails FLOATING INSIDE the
+              hero as an overlay strip pinned to its bottom edge — small
+              bordered chips over a soft scrim, horizontally scrollable,
+              active chip highlighted.
+              sm and up: unchanged — padded row with the vertical
+              thumbnail rail on the left (rail appears from md). */}
+          <div className="flex gap-3 p-0 sm:p-6">
             {item.images.length > 1 && (
               <div className="hidden md:flex flex-col gap-2 w-[70px] flex-shrink-0 max-h-[720px] overflow-y-auto">
                 {item.images.map((url, i) => (
@@ -206,8 +214,7 @@ export default function ProductDetail({
                 ))}
               </div>
             )}
-
-            <div className="relative flex-1 aspect-[3/4] overflow-hidden">
+            <div className="relative flex-1 aspect-[10/9] sm:aspect-[3/4] overflow-hidden">
               {item.images[activeImg] ? (
                 <Image
                   src={item.images[activeImg]}
@@ -216,18 +223,48 @@ export default function ProductDetail({
                   priority
                   data-preload=""
                   sizes="(max-width: 1024px) 100vw, 55vw"
-                  className="object-cover"
+                  className="object-cover object-top sm:object-center"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-store-fg-subtle text-xs uppercase tracking-widest border border-store-border">
                   No image
                 </div>
               )}
+              {/* Mobile floating thumbnail strip — overlays the bottom
+                  of the hero image instead of sitting below it. */}
+              {item.images.length > 1 && (
+                <div className="sm:hidden absolute inset-x-0 bottom-0 z-10">
+                  <div className="bg-gradient-to-t from-black/45 via-black/20 to-transparent pt-10 pb-3 px-3">
+                    <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {item.images.map((url, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveImg(i)}
+                          aria-label={`View image ${i + 1}`}
+                          className={`relative w-12 aspect-[3/4] flex-shrink-0 overflow-hidden border-2 shadow-md transition-all cursor-pointer ${
+                            activeImg === i
+                              ? "border-white opacity-100"
+                              : "border-white/60 opacity-75 hover:opacity-100"
+                          }`}
+                        >
+                          <Image
+                            src={url}
+                            alt=""
+                            fill
+                            sizes="48px"
+                            className="object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
           {/* Info panel */}
-          <div className="px-6 sm:px-10 lg:pl-4 lg:pr-12 py-8 lg:py-12">
+          <div className="px-6 sm:px-10 lg:pl-4 lg:pr-12 pt-4 pb-8 sm:pt-8 sm:pb-10 lg:pt-12 lg:pb-12">
             <h1 className="font-serif text-[24px] sm:text-[28px] leading-snug text-store-fg mb-3">
               {item.sku}-{item.name}
             </h1>
@@ -235,7 +272,6 @@ export default function ProductDetail({
               {formatRupiah(item.rentalPrice)}{" "}
               <span className="text-store-fg-subtle">/rental</span>
             </p>
-
             <div className="flex flex-wrap gap-3 mb-9">
               <button
                 type="button"
@@ -244,7 +280,6 @@ export default function ProductDetail({
               >
                 See Availability
               </button>
-
               <button
                 type="button"
                 onClick={() => setFitOpen(true)}
@@ -253,7 +288,6 @@ export default function ProductDetail({
                 Book Fitting Session
               </button>
             </div>
-
             <div className="border-b border-store-border mb-6">
               <div className="flex gap-8 text-[13px] tracking-[0.02em]">
                 {(["size", "tnc", "fitting"] as TabKey[]).map((k) => (
@@ -274,7 +308,6 @@ export default function ProductDetail({
                 ))}
               </div>
             </div>
-
             <div className="text-[13.5px] leading-relaxed text-store-fg-muted">
               {activeTab === "size" && (
                 <div className="space-y-6">
@@ -301,7 +334,6 @@ export default function ProductDetail({
                       How we size
                     </button>
                   </div>
-
                   <MeasurementBlock
                     label="Outer"
                     data={item.measurements.outer}
@@ -322,7 +354,6 @@ export default function ProductDetail({
                   </p>
                 </div>
               )}
-
               {activeTab === "tnc" && (
                 <div className="space-y-3.5">
                   <ul className="list-disc pl-5 space-y-2 text-[13.5px]">
@@ -350,7 +381,6 @@ export default function ProductDetail({
                   </Link>
                 </div>
               )}
-
               {activeTab === "fitting" && (
                 <div className="space-y-5 text-[13.5px]">
                   <p>Want to try before you rent? Book in-store fitting.</p>
@@ -377,7 +407,6 @@ export default function ProductDetail({
             </div>
           </div>
         </div>
-
         {relatedItems.length > 0 && (
           <section className="px-6 sm:px-12 pt-8 pb-20">
             <h2 className="font-serif text-[26px] sm:text-[30px] text-store-fg mb-7">
@@ -417,7 +446,6 @@ export default function ProductDetail({
           </section>
         )}
       </div>
-
       <AvailabilityModal
         isOpen={availOpen}
         onClose={() => setAvailOpen(false)}
@@ -431,7 +459,6 @@ export default function ProductDetail({
           setAvailOpen(false);
         }}
       />
-
       <FittingModal
         isOpen={fitOpen}
         onClose={() => setFitOpen(false)}
@@ -441,7 +468,6 @@ export default function ProductDetail({
           setFitOpen(false);
         }}
       />
-
       <SizeGuideModal
         isOpen={sizeGuideOpen}
         onClose={() => setSizeGuideOpen(false)}
@@ -452,7 +478,6 @@ export default function ProductDetail({
           measurements: item.measurements as any,
         }}
       />
-
       {toast && (
         <div className="fixed bottom-6 right-6 z-[60] bg-store-fg text-white text-[12px] tracking-wider px-5 py-3 shadow-xl">
           {toast}
@@ -472,12 +497,10 @@ function MeasurementBlock({
   size: string | null;
 }) {
   if (!data || Object.keys(data).length === 0) return null;
-
   const rows = SIZE_LABELS.filter(
     ([k]) => data[k] !== undefined && data[k] !== "",
   );
   if (rows.length === 0 && !size) return null;
-
   return (
     <div>
       <p className="text-[11px] tracking-[0.2em] uppercase text-store-fg mb-2.5">
