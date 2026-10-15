@@ -289,13 +289,35 @@ export default function OrderForm({
     }));
     setSelectedCustomerId(initialOrder.customer_id || "");
     setProducts(
-      (initialOrder.order_products || []).map((op: any) => ({
-        item_sku: op.item_sku,
-        label: op.items?.name || "",
-        quantity: op.quantity || 1,
-        price: Number(op.price) || 0,
-        deposit: Number(op.deposit) || 0,
-      })),
+      (initialOrder.order_products || []).map((op: any) => {
+        /*
+         * Multi-day pricing fallbacks:
+         *   • `base_price`     → the item's `rental_price` at purchase time.
+         *                        NULL on historical orders — fall back to
+         *                        the legacy flat `price` column.
+         *   • `add_on_price`   → per-extra-day rate at purchase time.
+         *                        NULL on historical orders — fall back to
+         *                        `base_price` (Q1: "same as base").
+         *   • `days`           → NULL on historical orders — default 1.
+         *
+         * `!= null` (not `||`) preserves an explicit 0 add-on. An item
+         * with free extra days must not silently inherit the base rate
+         * when this form loads it back in.
+         */
+        const basePrice =
+          op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
+        const addOnPrice =
+          op.add_on_price != null ? Number(op.add_on_price) : basePrice;
+        return {
+          item_sku: op.item_sku,
+          label: op.items?.name || "",
+          quantity: op.quantity || 1,
+          price: basePrice,
+          addOnPrice,
+          days: Number(op.days) || 1,
+          deposit: Number(op.deposit) || 0,
+        };
+      }),
     );
     setBookingNote(`KORA Rental ${initialOrder.id} - Handle with care`);
   }, [initialOrder]);
@@ -374,13 +396,27 @@ export default function OrderForm({
   });
 
   const [products, setProducts] = useState<any[]>(
-    (initialOrder.order_products || []).map((op: any) => ({
-      item_sku: op.item_sku,
-      label: op.items?.name || "",
-      quantity: op.quantity || 1,
-      price: Number(op.price) || 0,
-      deposit: Number(op.deposit) || 0,
-    })),
+    (initialOrder.order_products || []).map((op: any) => {
+      /*
+       * Same fallbacks as the useEffect above — this branch is only hit on
+       * the very first render, before the effect runs. Kept identical so
+       * the initial paint matches the post-effect paint. See the useEffect
+       * for the full rationale on `!= null` vs `||`.
+       */
+      const basePrice =
+        op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
+      const addOnPrice =
+        op.add_on_price != null ? Number(op.add_on_price) : basePrice;
+      return {
+        item_sku: op.item_sku,
+        label: op.items?.name || "",
+        quantity: op.quantity || 1,
+        price: basePrice,
+        addOnPrice,
+        days: Number(op.days) || 1,
+        deposit: Number(op.deposit) || 0,
+      };
+    }),
   );
 
   const leadTimeDays = useMemo(() => {
@@ -527,19 +563,42 @@ export default function OrderForm({
   const handleAddLine = () =>
     setProducts([
       ...products,
-      { item_sku: "", label: "", quantity: 1, price: 0, deposit: 150000 },
+      {
+        item_sku: "",
+        label: "",
+        quantity: 1,
+        price: 0,
+        addOnPrice: 0,
+        days: 1,
+        deposit: 150000,
+      },
     ]);
 
   const handleProductSelect = (index: number, sku: string) => {
     const item = allItems.find((i: any) => i.sku === sku);
     const next = [...products];
     if (item) {
+      /*
+       * Price snapshot at selection time. The server recalculates from
+       * the DB on save (Step 11), so these values are display-only hints
+       * that populate the form fields immediately. They also handle the
+       * pre-save UX: the admin sees the correct line total before ever
+       * clicking Save.
+       *
+       * `add_on_price != null` (not `||`) preserves an intentional 0 —
+       * free extra days must stay free, not fall back to the base rate.
+       */
+      const base = Number(item.rental_price) || 0;
+      const addOn =
+        item.add_on_price != null ? Number(item.add_on_price) : base;
       next[index] = {
         item_sku: item.sku,
         label: item.name,
         quantity: 1,
-        price: Number(item.rental_price) || 0,
-        deposit: Number(item.rental_price) > 1000000 ? 250000 : 150000,
+        price: base,
+        addOnPrice: addOn,
+        days: 1,
+        deposit: base > 1000000 ? 250000 : 150000,
       };
     } else {
       next[index].item_sku = sku;
@@ -583,14 +642,31 @@ export default function OrderForm({
       ? `${activeCustomer.first_name || ""} ${activeCustomer.last_name || ""} (${activeCustomer.phone || ""})`.trim()
       : "";
 
+  /*
+   * Line subtotal for a single product row.
+   *
+   *   day-adjusted unit = price + addOnPrice × (days − 1)
+   *   line subtotal     = unit × quantity
+   *
+   * Kept as a helper because both the products-subtotal reducer and the
+   * per-row display need the same math. Any divergence between the two
+   * would silently desync the financial summary from the visible rows.
+   */
+  const lineUnitPrice = (p: any) => {
+    const days = Math.max(1, Number(p.days) || 1);
+    const base = Number(p.price) || 0;
+    const addOn = Number(p.addOnPrice) || 0;
+    return base + addOn * Math.max(0, days - 1);
+  };
+  const lineSubtotal = (p: any) =>
+    lineUnitPrice(p) * Math.max(1, Number(p.quantity) || 1);
+
   const productsSubtotal = useMemo(
-    () =>
-      products.reduce(
-        (s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 1),
-        0,
-      ),
+    () => products.reduce((s, p) => s + lineSubtotal(p), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [products],
   );
+
   const totalDeposit = useMemo(
     () =>
       products.reduce(
@@ -1556,15 +1632,16 @@ export default function OrderForm({
         <div className="space-y-2.5 mb-3">
           <div className="hidden sm:grid grid-cols-12 gap-2.5 px-0.5 text-[10px] uppercase tracking-[0.14em] text-muted font-medium pb-2 border-b border-line items-center">
             <div className="col-span-3">Product SKU</div>
-            <div className="col-span-4">Product Label</div>
+            <div className="col-span-3">Product Label</div>
+            <div className="col-span-1 text-center">Days</div>
             <div className="col-span-1 text-center">Qty</div>
-            <div className="col-span-2 text-right">Price (Locked)</div>
+            <div className="col-span-2 text-right">Unit Price (Locked)</div>
             <div className="col-span-1 text-right">Deposit</div>
             <div className="col-span-1"></div>
           </div>
 
           {products.map((p, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2.5 items-center">
+            <div key={idx} className="grid grid-cols-12 gap-2.5 items-start">
               <div className="col-span-3">
                 <ProductSkuSelect
                   value={p.item_sku}
@@ -1574,13 +1651,40 @@ export default function OrderForm({
                   onSelect={(sku) => handleProductSelect(idx, sku)}
                 />
               </div>
-              <div className="col-span-4">
+              <div className="col-span-3">
                 <input
                   value={p.label}
                   readOnly
                   placeholder="Auto-fills from SKU"
                   className="w-full text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted truncate"
                 />
+              </div>
+              <div className="col-span-1">
+                <input
+                  type="number"
+                  min={1}
+                  disabled={isWebsite || isAddressLocked}
+                  value={p.days}
+                  onChange={(e) => {
+                    const next = [...products];
+                    next[idx] = {
+                      ...next[idx],
+                      days: Math.max(1, parseInt(e.target.value) || 1),
+                    };
+                    setProducts(next);
+                  }}
+                  className="w-full text-center text-xs border border-line rounded-lg py-1.5 bg-[#FDFCFA] focus:ring-1 focus:ring-wine focus:outline-none disabled:bg-[#F6F4EF]"
+                />
+                <p className="text-[9.5px] text-muted mt-0.5 leading-tight">
+                  Day 1: {formatRupiah(p.price)}
+                  {p.days > 1 && (
+                    <>
+                      {" "}
+                      · Each extra:{" "}
+                      {p.addOnPrice > 0 ? formatRupiah(p.addOnPrice) : "Free"}
+                    </>
+                  )}
+                </p>
               </div>
               <div className="col-span-1">
                 <input
@@ -1600,7 +1704,7 @@ export default function OrderForm({
                 <input
                   type="text"
                   disabled
-                  value={formatRupiah(p.price)}
+                  value={formatRupiah(lineUnitPrice(p))}
                   className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
@@ -1612,7 +1716,7 @@ export default function OrderForm({
                   className="w-full text-right text-xs border border-line rounded-lg px-2.5 py-1.5 bg-[#F6F4EF] text-muted font-medium font-tabular-nums"
                 />
               </div>
-              <div className="col-span-1 flex justify-end">
+              <div className="col-span-1 flex justify-end pt-1">
                 {!isWebsite && !isAddressLocked && (
                   <button
                     type="button"

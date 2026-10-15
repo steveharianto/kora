@@ -1,7 +1,7 @@
-import { createClient } from '@/lib/supabase/server';
-import { getCurrentAdmin } from '@/app/actions/auth';
-import { notFound } from 'next/navigation';
-import OrderForm from './OrderForm';
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentAdmin } from "@/app/actions/auth";
+import { notFound } from "next/navigation";
+import OrderForm from "./OrderForm";
 
 export default async function OrderDetailPage({
   params,
@@ -22,8 +22,9 @@ export default async function OrderDetailPage({
     adminsRes,
   ] = await Promise.all([
     supabase
-      .from('orders')
-      .select(`
+      .from("orders")
+      .select(
+        `
         *,
         customers (
           id, first_name, last_name, phone, status, current_credit,
@@ -31,40 +32,64 @@ export default async function OrderDetailPage({
         ),
         order_products (
           id, item_sku, quantity, price, deposit, subtotal,
-          items (name, rental_price)
+          base_price, add_on_price, days,
+          items (name, rental_price, add_on_price)
         )
-      `)
-      .eq('id', id)
+      `,
+      )
+      .eq("id", id)
       .single(),
 
     supabase
-      .from('customers')
-      .select(`
+      .from("customers")
+      .select(
+        `
         id, first_name, last_name, phone, status, current_credit,
         addresses (id, label, city, postal_code, street_address, latitude, longitude, is_default)
-      `)
-      .order('first_name'),
+      `,
+      )
+      .order("first_name"),
 
-    supabase.from('items').select('sku, name, rental_price').order('sku'),
-    supabase.from('app_settings').select('value').eq('key', 'shipping').single(),
-    supabase.from('app_settings').select('value').eq('key', 'notifications').single(),
+    /*
+     * `add_on_price` added for the manual-order day-pricing editor — the
+     * OrderForm reads it in handleProductSelect to seed each line's
+     * default extra-day rate. NULL is tolerated and falls back to the
+     * item's `rental_price` (Q1 semantics).
+     */
     supabase
-      .from('admin_audit_logs')
-      .select('*')
-      .eq('entity_id', id)
-      .order('created_at', { ascending: false }),
+      .from("items")
+      .select("sku, name, rental_price, add_on_price")
+      .order("sku"),
     supabase
-      .from('admins')
-      .select('id, name, role')
-      .eq('is_active', true)
-      .order('name'),
+      .from("app_settings")
+      .select("value")
+      .eq("key", "shipping")
+      .single(),
+    supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "notifications")
+      .single(),
+    supabase
+      .from("admin_audit_logs")
+      .select("*")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("admins")
+      .select("id, name, role")
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   if (orderRes.error || !orderRes.data) notFound();
 
-  const deliveryLeadTimes = shippingSettingsRes.data?.value?.delivery_lead_times || [];
+  const deliveryLeadTimes =
+    shippingSettingsRes.data?.value?.delivery_lead_times || [];
   const notificationTemplates = notificationSettingsRes.data?.value || {};
-  const bookingWindowDays = Number(shippingSettingsRes.data?.value?.booking_window_days ?? 3);
+  const bookingWindowDays = Number(
+    shippingSettingsRes.data?.value?.booking_window_days ?? 3,
+  );
 
   return (
     <div className="pb-24 font-sans text-ink">
