@@ -1,39 +1,18 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   saveItem,
-  deleteItem,
-  toggleArchive,
-  saveNotes,
   addImageRecord,
   deleteImageRecord,
   reorderImages,
-  approvePendingChanges,
-  rejectPendingAction,
 } from "@/app/actions/inventory";
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import { STYLE_TAGS, normalizeStyleTags, type StyleTag } from "@/lib/styleTags";
 
-/**
- * Tiered default for the per-dress add-on rate, keyed on base rental price:
- *
- *   base <  500.000  →    50.000
- *   base < 1.000.000 →    70.000
- *   base < 2.000.000 →   100.000
- *   base >= 2.000.000 →  200.000
- *
- * Used by the admin item form to pre-fill the "Add-On Price / Additional
- * Day" input as the admin types the base rental price. An empty or
- * invalid base returns `""` so the field renders blank rather than "0".
- *
- * This is a FORM-DEFAULT only. It does NOT change the server-side Q1
- * fallback (`add_on_price == null → base`), which stays as-is for
- * defensive safety on legacy rows and carts.
- */
 function defaultAddOnForBase(
   base: number | string | null | undefined,
 ): number | "" {
@@ -49,13 +28,10 @@ export default function ItemForm({
   isNew,
   initialData,
   brands,
-  categories,
   types,
-  colorOptions,
   depositTiers,
   initialImages,
   orders,
-  auditLogs,
   currentAdmin,
 }: any) {
   const router = useRouter();
@@ -90,24 +66,6 @@ export default function ItemForm({
     };
   }, [initialData]);
 
-  /*
-   * No explicit useState generic here — letting TS infer types from the
-   * initial object keeps `rental_price` and `buffer_override` compatible
-   * with both their text input handlers and RupiahInput (which emits a
-   * number, not a string). The one field that MUST stay narrowly typed
-   * is `tags`, which is inferred as `StyleTag[]` from normalizeStyleTags
-   * — that's what makes toggleStyleTag(tag: StyleTag) type-check.
-   *
-   * `add_on_price` uses `??` (not `||`) so an explicit 0 is preserved —
-   * a 0 add-on means "extra days are free" per the multi-day pricing
-   * feature, and `||` would silently coerce it to "".
-   *
-   * Fallback chain for the initial value:
-   *   1. Explicit `viewData.add_on_price` from the DB (or pending edit)
-   *   2. Tiered default keyed on the item's base price — used only for
-   *      brand-new items, or legacy rows that somehow have a NULL
-   *      add-on (which the Step 1 backfill prevents in practice).
-   */
   const [formData, setFormData] = useState({
     sku: viewData.sku || "",
     brand_id: viewData.brand_id || "",
@@ -137,7 +95,6 @@ export default function ItemForm({
     skirt: viewData.measurements?.skirt || {},
   });
 
-  const [notes, setNotes] = useState(initialData?.notes || "");
   const [images, setImages] = useState(initialImages || []);
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -159,11 +116,6 @@ export default function ItemForm({
       size: merged.size || "",
       color: merged.color || "",
       rental_price: merged.rental_price || "",
-      /*
-       * Same fallback chain as the initial useState — explicit value
-       * wins, tiered default for the base price otherwise. An empty
-       * base produces "" so the field renders blank.
-       */
       add_on_price:
         merged.add_on_price ?? defaultAddOnForBase(merged.rental_price),
       buffer_override: merged.buffer_override ?? "",
@@ -191,13 +143,8 @@ export default function ItemForm({
         ...(pending.measurements?.skirt || {}),
       },
     });
-    setNotes(initialData?.notes || "");
     setImages(initialImages || []);
   }, [initialData, initialImages]);
-
-  const colorInputRef = useRef<HTMLInputElement>(null);
-  const [isColorOpen, setIsColorOpen] = useState(false);
-  const [colorFocusedIndex, setColorFocusedIndex] = useState(-1);
 
   const defaultBufferDays = useMemo(() => {
     const selectedType = types?.find(
@@ -265,27 +212,15 @@ export default function ItemForm({
     });
   };
 
-  /**
-   * Toggle a canonical style tag. Only STYLE_TAGS values can enter
-   * formData.tags — freeform text is no longer accepted.
-   *
-   * `tag` is typed as `StyleTag` (not `string`) so `prev.tags.includes(tag)`
-   * type-checks against the inferred `StyleTag[]` on the state shape.
-   */
   const toggleStyleTag = (tag: StyleTag) => {
     setFormData((prev) => {
       const has = prev.tags.includes(tag);
       const next = has
         ? prev.tags.filter((t) => t !== tag)
-        : // Re-sort through STYLE_TAGS order so the saved array is canonical
-          normalizeStyleTags([...prev.tags, tag]);
+        : normalizeStyleTags([...prev.tags, tag]);
       return { ...prev, tags: next };
     });
   };
-
-  const filteredColors = colorOptions.filter((c: string) =>
-    c.toLowerCase().includes(formData.color.toLowerCase()),
-  );
 
   const handleImageUpload = async (e: any) => {
     const targetSku = initialData?.sku || formData.sku;
@@ -496,7 +431,6 @@ export default function ItemForm({
               </div>
             </div>
 
-            {/* STYLE TAGS — fixed canonical set, no freeform entry */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-[11px] tracking-[0.14em] uppercase text-muted font-medium">
@@ -533,21 +467,6 @@ export default function ItemForm({
               <label className="block text-[11px] tracking-[0.14em] uppercase text-muted mb-1">
                 Rental Price (Rp) <span className="text-bad">*</span>
               </label>
-              {/*
-               * Tiered default tracker:
-               *   • On rental_price change, if add_on_price still equals
-               *     the tiered default for the PREVIOUS base price (i.e.
-               *     the admin hasn't broken the default link), bump it to
-               *     the tiered default for the NEW base price.
-               *   • If the admin has already set add_on_price to anything
-               *     else — including 0 for "free extra days" — leave it
-               *     alone.
-               *
-               * Comparing against `defaultAddOnForBase(prev.rental_price)`
-               * (not `prev.rental_price` itself) is what makes the tier
-               * change stick: the default value moves with the tier, not
-               * with every keystroke.
-               */}
               <RupiahInput
                 required
                 value={Number(formData.rental_price) || 0}
@@ -643,7 +562,6 @@ export default function ItemForm({
             </div>
           </div>
 
-          {/* RIGHT: Pictures & Measurements */}
           <div className="space-y-4">
             <div className="bg-card border border-line rounded-[10px] p-5">
               <h3 className="font-serif text-[18px] font-normal mb-3">
