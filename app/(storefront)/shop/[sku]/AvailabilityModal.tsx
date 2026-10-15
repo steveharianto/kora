@@ -30,11 +30,8 @@ interface Props {
   rentalPrice: number;
   /**
    * Per-extra-day rate charged for every rental day beyond Day 1.
-   * Declared here so the parent (ProductDetail) can pass it without a
-   * TS error — but NOT consumed yet. Step 7 of the multi-day pricing
-   * rollout rewrites the price panel to use this value. Deliberately
-   * not destructured in the function signature yet to keep the prop
-   * visible as "wired but not rendered".
+   * Applied as: rentalPrice + addOnPrice × (days − 1).
+   * A value of 0 means extra days are free.
    */
   addOnPrice: number;
   accessories: Accessory[];
@@ -171,10 +168,7 @@ export default function AvailabilityModal({
   sku,
   name,
   rentalPrice,
-  // addOnPrice is accepted via Props (parent passes it in Step 4) but is
-  // intentionally not destructured yet — Step 7 consumes it in the price
-  // panel rewrite. Declaring the prop now keeps the call site stable
-  // across the two steps.
+  addOnPrice,
   accessories,
   deliveryLeadTimes,
   onAdded,
@@ -420,7 +414,20 @@ export default function AvailabilityModal({
   const infoEventCount = committed
     ? diffDays(committed.lo, committed.hi) + 1
     : 0;
-  const lineTotal = infoEventCount > 0 ? rentalPrice * infoEventCount : 0;
+
+  /*
+   * Multi-day pricing:
+   *   Day 1           → rentalPrice
+   *   Each extra day  → addOnPrice (0 = free)
+   *   lineTotal       = rentalPrice + addOnPrice × extraDays
+   *
+   * `extraDays` is clamped at 0 so a 1-day selection never trips the
+   * multiplier row, and `lineTotal` stays 0 until the customer picks
+   * a valid event range.
+   */
+  const extraDays = Math.max(0, infoEventCount - 1);
+  const addOnTotal = addOnPrice * extraDays;
+  const lineTotal = infoEventCount > 0 ? rentalPrice + addOnTotal : 0;
 
   const selectionStillValid = useMemo(() => {
     if (!committed) return false;
@@ -674,9 +681,29 @@ export default function AvailabilityModal({
                 </div>
                 {infoEventCount > 0 ? (
                   <>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-[12.5px] text-store-fg-muted">
-                        {formatRupiah(rentalPrice)} × {infoEventCount}
+                    <div className="space-y-1.5 border-t border-[#DBD7C6] pt-2">
+                      <div className="flex justify-between gap-3 text-[12.5px]">
+                        <span className="text-store-fg-muted">Day 1</span>
+                        <span className="text-store-fg">
+                          {formatRupiah(rentalPrice)}
+                        </span>
+                      </div>
+                      {extraDays > 0 && (
+                        <div className="flex justify-between gap-3 text-[12.5px]">
+                          <span className="text-store-fg-muted">
+                            Each additional day
+                          </span>
+                          <span className="text-store-fg">
+                            {addOnPrice > 0 ? formatRupiah(addOnPrice) : "Free"}
+                            {" × "}
+                            {extraDays}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 border-t border-[#DBD7C6] pt-2">
+                      <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
+                        Rental Total
                       </span>
                       <span className="text-[17px] font-semibold text-store-fg">
                         {formatRupiah(lineTotal)}
@@ -684,13 +711,16 @@ export default function AvailabilityModal({
                     </div>
                     <p className="text-[11px] text-store-fg-muted leading-relaxed border-t border-[#DBD7C6] pt-2">
                       Your rental is priced per event day. Every additional day
-                      you keep the piece multiplies the base rate.
+                      you keep the piece is charged at the add-on rate above.
                     </p>
                   </>
                 ) : (
                   <p className="text-[12px] text-store-fg-muted leading-relaxed">
                     Select your event day(s) on the calendar to see the rental
-                    total. Pricing is {formatRupiah(rentalPrice)} per event day.
+                    total. Day 1 is {formatRupiah(rentalPrice)}
+                    {addOnPrice > 0
+                      ? `; each additional day is ${formatRupiah(addOnPrice)}.`
+                      : "; extra days are free."}
                   </p>
                 )}
               </div>
@@ -873,9 +903,11 @@ export default function AvailabilityModal({
               <p className="text-[22px] font-semibold text-store-fg leading-none">
                 {infoEventCount > 0 ? formatRupiah(lineTotal) : "—"}
               </p>
-              {infoEventCount > 1 && (
+              {extraDays > 0 && (
                 <p className="text-[11px] text-store-fg-muted mt-1">
-                  {formatRupiah(rentalPrice)} × {infoEventCount} days
+                  {formatRupiah(rentalPrice)} +{" "}
+                  {addOnPrice > 0 ? formatRupiah(addOnPrice) : "Free"} ×{" "}
+                  {extraDays}
                 </p>
               )}
             </div>
