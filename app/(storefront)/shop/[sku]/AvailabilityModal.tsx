@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
@@ -81,14 +80,12 @@ function diffDays(a: string, b: string): number {
 function isoOf(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
-
 function resolveLead(
   postalCode: string,
   leadTimes: LeadTime[],
 ): { region: string; days: number } | null {
   if (!postalCode || postalCode.length < 5) return null;
   const p2 = postalCode.slice(0, 2);
-
   for (const lt of leadTimes) {
     if (lt.prefix.includes("-")) {
       const [s, e] = lt.prefix.replace("xxx", "").split("-");
@@ -99,14 +96,12 @@ function resolveLead(
       return { region: lt.region, days: Number(lt.days) };
     }
   }
-
   const other = leadTimes.find((l) => l.prefix === "other");
   if (other) return { region: other.region, days: Number(other.days) };
   return { region: "Indonesia", days: 2 };
 }
 
 type CellOwner = "prev" | "current" | "next";
-
 interface Cell {
   date: string;
   dayNum: number;
@@ -119,13 +114,10 @@ function buildCells(year: number, month: number): Cell[] {
   const firstOfMonth = new Date(year, month - 1, 1);
   const firstDow = firstOfMonth.getDay();
   const offset = firstDow === 0 ? 6 : firstDow - 1;
-
   const prev = prevMonth(year, month);
   const prevTotal = daysInMonth(prev.y, prev.m);
   const next = nextMonth(year, month);
-
   const cells: Cell[] = [];
-
   for (let i = offset - 1; i >= 0; i--) {
     const d = prevTotal - i;
     cells.push({
@@ -135,7 +127,6 @@ function buildCells(year: number, month: number): Cell[] {
       interactive: false,
     });
   }
-
   for (let d = 1; d <= total; d++) {
     cells.push({
       date: isoOf(year, month, d),
@@ -144,7 +135,6 @@ function buildCells(year: number, month: number): Cell[] {
       interactive: true,
     });
   }
-
   const remainder = cells.length % 7;
   const trailingCount = remainder === 0 ? 0 : 7 - remainder;
   for (let d = 1; d <= trailingCount; d++) {
@@ -155,7 +145,6 @@ function buildCells(year: number, month: number): Cell[] {
       interactive: true,
     });
   }
-
   return cells;
 }
 
@@ -170,21 +159,16 @@ export default function AvailabilityModal({
   onAdded,
 }: Props) {
   const todayISO = useMemo(() => toISO(new Date()), []);
-
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-
   const [availCurrent, setAvailCurrent] = useState<Record<string, boolean>>({});
   const [availNext, setAvailNext] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
-
   const [eventStart, setEventStart] = useState<string | null>(null);
   const [eventEnd, setEventEnd] = useState<string | null>(null);
-
   const [dragAnchor, setDragAnchor] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-
   const [postalCode, setPostalCode] = useState("");
   const [addedAccessories, setAddedAccessories] = useState<string[]>([]);
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -242,13 +226,11 @@ export default function AvailabilityModal({
     () => resolveLead(postalCode, deliveryLeadTimes),
     [postalCode, deliveryLeadTimes],
   );
-
   const earliestReceipt = useMemo(() => {
     const base = addDays(todayISO, BASE_PREP_DAYS);
     if (!resolvedLead) return base;
     return addDays(base, resolvedLead.days);
   }, [todayISO, resolvedLead]);
-
   const earliestEventStart = useMemo(
     () => addDays(earliestReceipt, 1),
     [earliestReceipt],
@@ -260,14 +242,12 @@ export default function AvailabilityModal({
     const hi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
     return { lo, hi };
   }, [isDragging, dragAnchor, dragHover]);
-
   const committed = useMemo(() => {
     if (!eventStart || !eventEnd) return null;
     const lo = cmpISO(eventStart, eventEnd) <= 0 ? eventStart : eventEnd;
     const hi = cmpISO(eventStart, eventEnd) <= 0 ? eventEnd : eventStart;
     return { lo, hi };
   }, [eventStart, eventEnd]);
-
   const displayRange = previewRange || committed;
 
   const isSelectable = useCallback(
@@ -284,14 +264,12 @@ export default function AvailabilityModal({
     (lo: string, hi: string): { ok: boolean; reason?: string } => {
       const deliv = addDays(lo, -1);
       const ret = addDays(hi, 2);
-
       if (deliv < earliestReceipt) {
         return {
           ok: false,
           reason: `Earliest delivery is ${fmtShort(earliestReceipt)} — pick a later event day.`,
         };
       }
-
       let cursor = deliv;
       while (cmpISO(cursor, ret) <= 0) {
         if (availability[cursor] === false) {
@@ -316,7 +294,6 @@ export default function AvailabilityModal({
     }
     const lo = cmpISO(dragAnchor, dragHover) <= 0 ? dragAnchor : dragHover;
     const hi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
-
     const v = validateRange(lo, hi);
     if (!v.ok) {
       setRangeError(v.reason || "That range is unavailable.");
@@ -326,18 +303,10 @@ export default function AvailabilityModal({
       setEventEnd(hi);
       setRangeError(null);
     }
-
     setIsDragging(false);
     setDragAnchor(null);
     setDragHover(null);
   }, [dragAnchor, dragHover, validateRange]);
-
-  useEffect(() => {
-    if (!isDragging) return;
-    const onUp = () => commitDrag();
-    window.addEventListener("pointerup", onUp);
-    return () => window.removeEventListener("pointerup", onUp);
-  }, [isDragging, commitDrag]);
 
   const handlePointerDown = (dateStr: string) => {
     if (!isSelectable(dateStr)) return;
@@ -346,11 +315,46 @@ export default function AvailabilityModal({
     setIsDragging(true);
     setRangeError(null);
   };
-
   const handlePointerEnter = (dateStr: string) => {
     if (!isDragging) return;
     setDragHover(dateStr);
   };
+
+  /* ── Touch drag support ────────────────────────────────────────────
+     Touch pointers are implicitly captured by the element that received
+     pointerdown, so sibling day cells never fire pointerenter on mobile.
+     While dragging we therefore listen to pointermove on window and
+     hit-test the finger position with elementFromPoint against the
+     cell's data-date attribute. pointercancel aborts the drag instead
+     of committing it (e.g. if the browser steals the gesture). */
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = (el as HTMLElement | null)?.closest?.(
+      "button[data-date]",
+    ) as HTMLElement | null;
+    if (!cell) return;
+    if (cell.dataset.selectable !== "true") return;
+    const dateStr = cell.dataset.date;
+    if (dateStr) setDragHover(dateStr);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onUp = () => commitDrag();
+    const onCancel = () => {
+      setIsDragging(false);
+      setDragAnchor(null);
+      setDragHover(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  }, [isDragging, commitDrag, handlePointerMove]);
 
   type CellState =
     | "past"
@@ -361,15 +365,12 @@ export default function AvailabilityModal({
     | "rest"
     | "return"
     | "available";
-
   const getCellState = (dateStr: string): CellState => {
     if (dateStr < todayISO) return "past";
-
     if (displayRange) {
       const deliv = addDays(displayRange.lo, -1);
       const rest = addDays(displayRange.hi, 1);
       const ret = addDays(displayRange.hi, 2);
-
       if (dateStr === deliv) return "delivery";
       if (
         cmpISO(dateStr, displayRange.lo) >= 0 &&
@@ -379,7 +380,6 @@ export default function AvailabilityModal({
       if (dateStr === rest) return "rest";
       if (dateStr === ret) return "return";
     }
-
     if (dateStr < earliestEventStart) return "disabled-earliest";
     if (availability[dateStr] === false) return "unavailable";
     return "available";
@@ -391,7 +391,6 @@ export default function AvailabilityModal({
   const infoEventCount = committed
     ? diffDays(committed.lo, committed.hi) + 1
     : 0;
-
   const lineTotal = infoEventCount > 0 ? rentalPrice * infoEventCount : 0;
 
   const selectionStillValid = useMemo(() => {
@@ -425,7 +424,6 @@ export default function AvailabilityModal({
   const cells = useMemo(() => buildCells(year, month), [year, month]);
 
   if (!isOpen) return null;
-
   return (
     <>
       <div
@@ -443,11 +441,9 @@ export default function AvailabilityModal({
           >
             <X className="w-5 h-5" />
           </button>
-
           <h2 className="font-serif text-[32px] sm:text-[40px] text-store-accent text-center pt-10 pb-8">
             Check Availability
           </h2>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 px-6 sm:px-10 pb-8">
             <div className="space-y-4">
               <div className="border border-store-border-strong p-6">
@@ -480,22 +476,18 @@ export default function AvailabilityModal({
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </div>
-
                 <div className="grid grid-cols-7 text-center text-[11px] tracking-widest uppercase text-store-fg-muted mb-2">
                   {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
                     <div key={i}>{d}</div>
                   ))}
                 </div>
-
                 <div className="grid grid-cols-7 gap-1">
                   {cells.map((cell) => {
                     const state = getCellState(cell.date);
                     const selectable =
                       cell.interactive && isSelectable(cell.date);
-
                     const base =
                       "aspect-square flex items-center justify-center text-[13.5px] rounded-sm transition-colors select-none";
-
                     let cls = "";
                     switch (state) {
                       case "past":
@@ -527,7 +519,6 @@ export default function AvailabilityModal({
                           "text-store-fg hover:bg-store-hover cursor-pointer";
                         break;
                     }
-
                     const isPaddingMuted =
                       cell.owner !== "current" &&
                       state === "available" &&
@@ -535,12 +526,13 @@ export default function AvailabilityModal({
                     if (isPaddingMuted) {
                       cls = "text-store-fg-subtle/60 cursor-not-allowed";
                     }
-
                     return (
                       <button
                         key={cell.date}
                         type="button"
                         disabled={!selectable}
+                        data-date={cell.date}
+                        data-selectable={selectable ? "true" : "false"}
                         onPointerDown={() =>
                           selectable && handlePointerDown(cell.date)
                         }
@@ -556,7 +548,6 @@ export default function AvailabilityModal({
                     );
                   })}
                 </div>
-
                 {cells[cells.length - 1]?.owner === "next" && (
                   <p className="text-[10.5px] text-store-fg-muted text-center mt-3">
                     Faded trailing dates belong to{" "}
@@ -567,7 +558,6 @@ export default function AvailabilityModal({
                     — drag onto them to extend your selection across the month.
                   </p>
                 )}
-
                 <div className="flex flex-wrap gap-x-4 gap-y-2 mt-6 text-[11px] text-store-fg-muted">
                   <LegendSwatch color="#D6D3C9" label="Unavailable Date" />
                   <LegendSwatch color="#C69B32" label="Event Date" />
@@ -578,14 +568,12 @@ export default function AvailabilityModal({
                     label="Delivery"
                   />
                 </div>
-
                 {rangeError && (
                   <div className="mt-4 p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-md text-[11.5px]">
                     {rangeError}
                   </div>
                 )}
               </div>
-
               <div className="p-5 bg-[#F1EFE1] border border-store-border">
                 {!committed ? (
                   <p className="text-[12.5px] text-store-fg-muted leading-relaxed">
@@ -633,7 +621,6 @@ export default function AvailabilityModal({
                 )}
               </div>
             </div>
-
             <div className="space-y-5">
               <div>
                 <label className="block text-[13px] text-store-fg mb-2">
@@ -645,7 +632,6 @@ export default function AvailabilityModal({
                     : "Select event days to see your rental range"}
                 </div>
               </div>
-
               <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
@@ -679,7 +665,6 @@ export default function AvailabilityModal({
                   </p>
                 )}
               </div>
-
               <div>
                 <label className="block text-[13px] text-store-fg mb-2">
                   Postal Code
@@ -696,7 +681,6 @@ export default function AvailabilityModal({
                   className="w-full border border-store-border-strong px-4 py-3 text-[13.5px] text-store-fg bg-transparent focus:outline-none focus:border-store-accent font-mono"
                 />
               </div>
-
               <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-3">
                 <div className="flex items-center gap-2">
                   <MapPin
@@ -707,7 +691,6 @@ export default function AvailabilityModal({
                     Delivery Estimation
                   </p>
                 </div>
-
                 {!resolvedLead ? (
                   <>
                     <div className="space-y-1.5 text-[12.5px] text-store-fg">
@@ -786,7 +769,6 @@ export default function AvailabilityModal({
                   </div>
                 )}
               </div>
-
               {committed && !selectionStillValid && (
                 <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md text-[11.5px] leading-relaxed">
                   Your postal code shifted the earliest delivery to{" "}
@@ -794,7 +776,6 @@ export default function AvailabilityModal({
                   your event days.
                 </div>
               )}
-
               {accessories.length > 0 && (
                 <div>
                   <h3 className="font-serif text-[17px] text-store-fg mb-2">
@@ -855,7 +836,6 @@ export default function AvailabilityModal({
               )}
             </div>
           </div>
-
           <div className="px-6 sm:px-10 pb-12 pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-store-border mt-2 pt-6">
             <div className="text-left sm:text-left text-center">
               <p className="text-[11px] tracking-[0.14em] uppercase text-store-fg-muted mb-1">
@@ -883,7 +863,6 @@ export default function AvailabilityModal({
               Add to Cart
             </button>
           </div>
-
           {loading && (
             <div className="absolute inset-0 bg-store-bg/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none" />
           )}

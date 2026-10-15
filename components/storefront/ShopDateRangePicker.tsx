@@ -1,5 +1,4 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -22,7 +21,6 @@ interface Props {
 }
 
 /* ── Date helpers (local, no deps) ────────────────────────────────── */
-
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -48,7 +46,6 @@ function monthLabel(y: number, m: number): string {
 function isoOf(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
-
 function fmtSingle(s: string): string {
   return parseISO(s).toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -56,23 +53,18 @@ function fmtSingle(s: string): string {
     year: "numeric",
   });
 }
-
 /** "14 Oct 2026" | "14 – 18 Oct 2026" | "14 Oct – 18 Nov 2026" */
 function fmtRange(range: DateRange): string {
   const a = parseISO(range.start);
   const b = parseISO(range.end);
-
   if (range.start === range.end) return fmtSingle(range.start);
-
   const sameMonth =
     a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
   const sameYear = a.getFullYear() === b.getFullYear();
-
   const dayA = String(a.getDate()).padStart(2, "0");
   const dayB = String(b.getDate()).padStart(2, "0");
   const monthA = a.toLocaleDateString("en-GB", { month: "short" });
   const monthB = b.toLocaleDateString("en-GB", { month: "short" });
-
   if (sameMonth) {
     return `${dayA} – ${dayB} ${monthA} ${a.getFullYear()}`;
   }
@@ -88,7 +80,6 @@ interface Cell {
   dayNum: number;
   owner: CellOwner;
 }
-
 /** Monday-first grid with leading/trailing padding from adjacent months. */
 function buildCells(year: number, month: number): Cell[] {
   const total = daysInMonth(year, month);
@@ -97,7 +88,6 @@ function buildCells(year: number, month: number): Cell[] {
   const prev = prevMonth(year, month);
   const prevTotal = daysInMonth(prev.y, prev.m);
   const next = nextMonth(year, month);
-
   const cells: Cell[] = [];
   for (let i = offset - 1; i >= 0; i--) {
     const d = prevTotal - i;
@@ -115,7 +105,6 @@ function buildCells(year: number, month: number): Cell[] {
 }
 
 /* ── Component ────────────────────────────────────────────────────── */
-
 export default function ShopDateRangePicker({
   value,
   onChange,
@@ -125,18 +114,15 @@ export default function ShopDateRangePicker({
   className = "",
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-
-  // Drag state — set on pointerdown, updated on pointerenter, committed
-  // on window pointerup. Because a click is a zero-length drag, single-day
-  // selection comes for free (anchor === hover).
+  // Drag state — set on pointerdown, updated on pointerenter / pointermove
+  // hit-testing, committed on window pointerup. Because a click is a
+  // zero-length drag, single-day selection comes for free (anchor === hover).
   const [isDragging, setIsDragging] = useState(false);
   const [dragAnchor, setDragAnchor] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState<string | null>(null);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const today = useMemo(() => new Date(), []);
   const todayISO = useMemo(() => toISO(today), [today]);
-
   const [viewYear, setViewYear] = useState(() => {
     const anchor = value?.start ? parseISO(value.start) : today;
     return anchor.getFullYear();
@@ -224,9 +210,37 @@ export default function ShopDateRangePicker({
       setDragAnchor(null);
       setDragHover(null);
     };
+    const onCancel = () => {
+      setIsDragging(false);
+      setDragAnchor(null);
+      setDragHover(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", onUp);
-    return () => window.removeEventListener("pointerup", onUp);
-  }, [isDragging, dragAnchor, dragHover, onChange]);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDragging, dragAnchor, dragHover, onChange, handlePointerMove]);
+
+  /* ── Touch drag support ────────────────────────────────────────────
+     Touch pointers are implicitly captured by the element that received
+     pointerdown, so sibling day cells never fire pointerenter on mobile.
+     While dragging we listen to pointermove on window and hit-test the
+     finger position with elementFromPoint against the cell's data-date
+     attribute — restoring drag-to-select-range on touch devices. */
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = (el as HTMLElement | null)?.closest?.(
+      "button[data-date]",
+    ) as HTMLElement | null;
+    if (!cell || cell.dataset.selectable !== "true") return;
+    const dateStr = cell.dataset.date;
+    if (dateStr) setDragHover(dateStr);
+  }, []);
 
   const goPrev = () => {
     const p = prevMonth(viewYear, viewMonth);
@@ -238,24 +252,20 @@ export default function ShopDateRangePicker({
     setViewYear(n.y);
     setViewMonth(n.m);
   };
-
   const handlePointerDown = (date: string) => {
     if (isDisabled(date)) return;
     setDragAnchor(date);
     setDragHover(date);
     setIsDragging(true);
   };
-
   const handlePointerEnter = (date: string) => {
     if (!isDragging) return;
     setDragHover(date);
   };
-
   const handleClear = () => {
     onChange(null);
     setIsOpen(false);
   };
-
   const handleToday = () => {
     if (isDisabled(todayISO)) return;
     onChange({ start: todayISO, end: todayISO });
@@ -280,7 +290,6 @@ export default function ShopDateRangePicker({
           strokeWidth={1.5}
         />
       </button>
-
       {/* Popover calendar */}
       {isOpen && (
         <div
@@ -310,7 +319,6 @@ export default function ShopDateRangePicker({
               <ChevronRight className="w-4 h-4" strokeWidth={1.6} />
             </button>
           </div>
-
           {/* Weekday row — Monday first */}
           <div className="grid grid-cols-7 mb-1">
             {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
@@ -322,7 +330,6 @@ export default function ShopDateRangePicker({
               </div>
             ))}
           </div>
-
           {/* Day grid — no gap so range bands connect across cells */}
           <div className="grid grid-cols-7 select-none">
             {cells.map((cell, i) => {
@@ -333,28 +340,22 @@ export default function ShopDateRangePicker({
                 !!displayRange &&
                 cell.date > displayRange.start &&
                 cell.date < displayRange.end;
-
               const col = i % 7;
               const rowStart = col === 0;
               const rowEnd = col === 6;
-
               /* Rounding: true edge cells round their outer side; between
                  cells round when they're at a row boundary so the band
                  looks continuous across week wraps. */
               const roundLeft = isStart || (isBetween && rowStart);
               const roundRight = isEnd || (isBetween && rowEnd);
-
               const disabled = isDisabled(cell.date);
               const isOutside = cell.owner !== "current";
               const isToday = cell.date === todayISO;
-
               let cls =
                 "absolute top-1 bottom-1 left-0 right-0 flex items-center justify-center text-[12.5px] transition-colors duration-100";
-
               if (roundLeft && roundRight) cls += " rounded-sm";
               else if (roundLeft) cls += " rounded-l-sm";
               else if (roundRight) cls += " rounded-r-sm";
-
               if (disabled) {
                 cls += " text-store-fg-subtle/40 cursor-not-allowed";
               } else if (isEdge) {
@@ -372,12 +373,13 @@ export default function ShopDateRangePicker({
               } else {
                 cls += " text-store-fg hover:bg-store-hover cursor-pointer";
               }
-
               return (
                 <div key={cell.date} className="relative aspect-square">
                   <button
                     type="button"
                     disabled={disabled}
+                    data-date={cell.date}
+                    data-selectable={!disabled ? "true" : "false"}
                     onPointerDown={() => handlePointerDown(cell.date)}
                     onPointerEnter={() => handlePointerEnter(cell.date)}
                     className={cls}
@@ -391,12 +393,10 @@ export default function ShopDateRangePicker({
               );
             })}
           </div>
-
           {/* Hint row */}
           <p className="mt-2 text-[10.5px] text-store-fg-subtle leading-snug">
             Click a day, or drag across days to select a range.
           </p>
-
           {/* Footer — clear / today */}
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-store-border">
             <button
