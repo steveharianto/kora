@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Plus, ChevronDown } from "lucide-react";
@@ -80,7 +80,7 @@ export default function ShopClient({ items, facets, initial }: Props) {
   const [sortBy, setSortBy] = useState(initial.sort || "date-desc");
   const [category, setCategory] = useState(initial.category);
   const [presetFilter, setPresetFilter] = useState(initial.filter);
-  const [query] = useState(initial.q);
+  const [query, setQuery] = useState(initial.q);
 
   const [intent, setIntent] = useState<Intent>("rent");
   const [rentRange, setRentRange] = useState<DateRange | null>(null);
@@ -93,6 +93,27 @@ export default function ShopClient({ items, facets, initial }: Props) {
     colors: initial.color ? initial.color.split(",").filter(Boolean) : [],
     styles: initial.style ? initial.style.split(",").filter(Boolean) : [],
   });
+
+  const initialKey = `${initial.q}|${initial.category}|${initial.filter}|${initial.sort}|${initial.brand}|${initial.size}|${initial.color}|${initial.style}`;
+  const initialKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (initialKeyRef.current === initialKey) return;
+    const isFirst = initialKeyRef.current === null;
+    initialKeyRef.current = initialKey;
+    if (isFirst) return;
+
+    setSortBy(initial.sort || "date-desc");
+    setCategory(initial.category);
+    setPresetFilter(initial.filter);
+    setQuery(initial.q);
+    setFilters({
+      brands: initial.brand ? initial.brand.split(",").filter(Boolean) : [],
+      sizes: initial.size ? initial.size.split(",").filter(Boolean) : [],
+      colors: initial.color ? initial.color.split(",").filter(Boolean) : [],
+      styles: initial.style ? initial.style.split(",").filter(Boolean) : [],
+    });
+  }, [initialKey, initial]);
 
   useEffect(() => {
     if (isFilterOpen) {
@@ -208,14 +229,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
     return list;
   }, [items, category, presetFilter, query, filters, sortBy]);
 
-  // ── Pagination state with synchronous reset on filter/sort change ──
-  //
-  // The previous implementation reset `visibleCount` inside a useEffect,
-  // which caused a one-frame intermediate render where the old
-  // visibleCount was still in effect on the NEW filtered array — briefly
-  // mounting animated cards that immediately unmounted. This pattern
-  // resets the count during render (a supported React technique), so the
-  // very first paint after a filter change already shows PAGE_SIZE.
   const filterKey = `${sortBy}|${category}|${presetFilter}|${query}|${filters.brands.join(",")}|${filters.sizes.join(",")}|${filters.colors.join(",")}|${filters.styles.join(",")}`;
 
   const [visibleState, setVisibleState] = useState({
@@ -224,8 +237,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
   });
 
   if (visibleState.key !== filterKey) {
-    // Adjust during render — React discards this pass and re-renders
-    // immediately with the reset value. No paint, no flash.
     setVisibleState({ key: filterKey, count: PAGE_SIZE });
   }
 
@@ -423,9 +434,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
                 key={item.sku}
                 item={item}
                 priority={i < ABOVE_THE_FOLD}
-                /* Animate only cards beyond the initial batch. Index-based
-                   modulo keeps the stagger fresh per wave — indices
-                   12–23, 24–35, 36–47 all get delays 0…330ms. */
                 appearDelay={
                   i >= PAGE_SIZE
                     ? (i % PAGE_SIZE) * REVEAL_STAGGER_MS
@@ -448,18 +456,6 @@ export default function ShopClient({ items, facets, initial }: Props) {
           </div>
         )}
 
-        {/* ── Invisible preloader for the NEXT batch ──────────────────
-            Mounted off-screen the moment a batch is revealed. Uses the
-            same next/image props (fill + matching `sizes`) as the real
-            ProductCard so the requested URL — and therefore the Next.js
-            optimizer cache entry + browser cache key — is identical.
-            `loading="eager"` forces the fetch despite zero visual
-            footprint.
-
-            Result: by the time the user clicks View More, the images
-            are almost always already in cache, so `onLoad` on the real
-            cards fires immediately and the stagger animation runs
-            without any empty-image window. */}
         {hasMore && (
           <div
             aria-hidden

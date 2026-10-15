@@ -11,13 +11,13 @@ import {
   isCommittable,
   snapshotOrder,
   restoreOrder,
+  isUniqueViolation,
 } from "@/lib/orderLifecycle";
 import { emitWa } from "@/lib/notifications";
 import { formatRupiah } from "@/lib/utils";
 
 export async function getNextManualOrderId(): Promise<string> {
   const supabase = await createClient();
-  // Housekeeping: clear stale availability locks (>2 min old)
   const staleCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   await supabase
     .from("admin_audit_logs")
@@ -47,39 +47,55 @@ export async function createOrderDraft(): Promise<{
   const admin = await getCurrentAdmin();
   if (!admin) return { error: "Unauthorized: Session not found." };
 
-  const newId = await getNextManualOrderId();
-  const { error } = await supabase.from("orders").insert({
-    id: newId,
-    order_date: new Date().toISOString().split("T")[0],
-    order_method: "Manual",
-    status: "Draft",
-    event_days: 1,
-    shipping_fee: 0,
-    store_credit_applied: 0,
-    total_price: 0,
-    total_deposit: 0,
-    total: 0,
-    pick_up_method: "Self pickup",
-    payment_method: "QRIS (EDC)",
-  });
-  if (error) return { error: error.message };
+  let orderId: string | null = null;
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = await getNextManualOrderId();
+    const { error } = await supabase.from("orders").insert({
+      id: candidate,
+      order_date: new Date().toISOString().split("T")[0],
+      order_method: "Manual",
+      status: "Draft",
+      event_days: 1,
+      shipping_fee: 0,
+      store_credit_applied: 0,
+      total_price: 0,
+      total_deposit: 0,
+      total: 0,
+      pick_up_method: "Self pickup",
+      payment_method: "QRIS (EDC)",
+    });
+
+    if (!error) {
+      orderId = candidate;
+      break;
+    }
+    if (!isUniqueViolation(error)) return { error: error.message };
+    lastErr = error;
+  }
+
+  if (!orderId) {
+    return {
+      error:
+        lastErr?.message ||
+        "Could not allocate a unique order ID after 5 attempts.",
+    };
+  }
 
   await supabase.from("admin_audit_logs").insert({
     admin_id: admin.id,
     admin_name: admin.name,
     entity_type: "order",
-    entity_id: newId,
+    entity_id: orderId,
     action_type: "CREATE_DRAFT",
     field_name: "all",
   });
 
   revalidatePath("/admin/orders");
-  return { orderId: newId };
+  return { orderId };
 }
 
-// -----------------------------------------------------------------------------
-// SOFT LOCK: prevent concurrent double-booking of the same SKU/window
-// -----------------------------------------------------------------------------
 async function acquireLock(
   supabase: any,
   orderId: string,
@@ -106,9 +122,6 @@ async function releaseLock(supabase: any, lockKey: string) {
     .eq("entity_id", lockKey);
 }
 
-// -----------------------------------------------------------------------------
-// SAVE ORDER
-// -----------------------------------------------------------------------------
 export async function saveOrder(orderData: {
   id: string;
   customer_id?: string;
@@ -129,16 +142,6 @@ export async function saveOrder(orderData: {
   payment_method?: string;
   shipping_fee: number;
   store_credit_applied: number;
-  /*
-   * Per-line product payload. The client sends `price`, `addOnPrice`, and
-   * `deposit` as hints — the server NEVER trusts them. All three are
-   * recomputed from `items.rental_price` / `items.add_on_price` below.
-   * `days` is the per-dress day count (multi-day feature); defaults to 1
-   * if omitted or malformed.
-   *
-   * `addOnPrice` and `days` are optional in the type so historical callers
-   * and test harnesses don't need to supply them.
-   */
   products: {
     item_sku: string;
     quantity: number;
@@ -159,14 +162,27 @@ export async function saveOrder(orderData: {
   );
   const isCommittableStatus = isCommittable(targetStatus);
 
-  const snap = await snapshotOrder(supabase, orderData.id);
+  const snap = await snapshotOrder(supabase, orderData.id, validSkus, [
+    null,
+    orderData.customer_id,
+  ]);
   const prevOrder = snap.order;
   if (!prevOrder) return { error: "Order not found." };
+
+  if (
+    prevOrder.customer_id &&
+    prevOrder.customer_id !== orderData.customer_id
+  ) {
+    const reSnap = await snapshotOrder(supabase, orderData.id, validSkus, [
+      prevOrder.customer_id,
+      orderData.customer_id,
+    ]);
+    Object.assign(snap, reSnap);
+  }
 
   const prevCredit = Number(prevOrder.store_credit_applied) || 0;
   const newCredit = Number(orderData.store_credit_applied) || 0;
 
-  // --- PREFLIGHT -------------------------------------------------------------
   let lockKey: string | null = null;
   try {
     if (isReserving) {
@@ -197,28 +213,6 @@ export async function saveOrder(orderData: {
       if (cr.error) return { error: cr.error };
     }
 
-    // --- WRITES --------------------------------------------------------------
-    /*
-     * ── SERVER-SIDE PRICE RECALCULATION (anti-tamper) ──────────────────
-     *
-     * The admin browser sends `price`, `addOnPrice`, and `deposit` as
-     * display hints, but we ignore them entirely. Every line's charge is
-     * derived from the DB here so a modified form payload (or a stale
-     * tab that loaded before an item was repriced) can never mis-price
-     * an order. This mirrors the exact formula used by
-     * `createWebsiteOrder()` in `app/actions/checkout.ts` — the two
-     * anti-tamper paths must stay in lockstep.
-     *
-     *   Day 1           → items.rental_price            (base)
-     *   Each extra day  → items.add_on_price            (addOn)
-     *   lineUnit        = base + addOn × (days − 1)
-     *   lineTotal       = lineUnit × quantity
-     *   deposit         = 250_000 if base > 1_000_000, else 150_000 (per unit)
-     *
-     * Q1 fallback: a null `add_on_price` at the DB level means "same as
-     * base". After Step 1's backfill this should never fire, but the
-     * `!= null` guard keeps the path defensive.
-     */
     const distinctSkus = Array.from(
       new Set(orderData.products.map((p) => p.item_sku).filter(Boolean)),
     );
@@ -252,11 +246,6 @@ export async function saveOrder(orderData: {
       if (!p.item_sku) continue;
       const info = priceMap.get(p.item_sku);
       if (!info) {
-        /*
-         * The item was removed or archived between form-load and save.
-         * Throwing here aborts the write and lets the catch block restore
-         * the snapshot — no partially-priced rows ever land in the DB.
-         */
         throw new Error(
           `Item "${p.item_sku}" is not in the catalog and cannot be priced.`,
         );
@@ -265,8 +254,6 @@ export async function saveOrder(orderData: {
       const days = Math.max(1, Number(p.days) || 1);
       const unit = info.base + info.addOn * (days - 1);
       const lineTotal = unit * qty;
-      // Deposit keys on the BASE rental price only — unchanged from the
-      // pre-feature behaviour. A large add-on must not inflate deposits.
       const deposit = info.base > 1000000 ? 250000 : 150000;
 
       subtotalPrice += lineTotal;
@@ -275,7 +262,7 @@ export async function saveOrder(orderData: {
       pricedRows.push({
         item_sku: p.item_sku,
         quantity: qty,
-        price: unit, // per-unit, matches invoice convention
+        price: unit,
         base_price: info.base,
         add_on_price: info.addOn,
         days,
@@ -335,12 +322,6 @@ export async function saveOrder(orderData: {
       if (pErr) throw new Error(pErr.message);
     }
 
-    // --- SIDE EFFECTS --------------------------------------------------------
-    /*
-     * Pass the SERVER-validated SKU list (not the client-supplied one) so
-     * that item availability flips, fitting evictions, and auto-return
-     * creation only fire for lines we successfully priced.
-     */
     await applyOrderSideEffects(supabase, admin, {
       orderId: orderData.id,
       prevStatus: prevOrder.status,
@@ -376,9 +357,6 @@ export async function saveOrder(orderData: {
   return { success: true };
 }
 
-// -----------------------------------------------------------------------------
-// UPDATE STATUS
-// -----------------------------------------------------------------------------
 export async function updateOrderStatus(orderId: string, newStatus: string) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
@@ -397,7 +375,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
   const isSuper =
     admin.role?.toLowerCase().replace(/[\s_-]+/g, "") === "superadmin";
 
-  // Draft reset guards
   if (newStatus === "Draft") {
     if (currentOrder.order_method === "Website") {
       return { error: "Website orders cannot be reset to draft." };
@@ -416,7 +393,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
     }
   }
 
-  // Website-cancel guard
   if (newStatus === "Cancelled") {
     const cw = await guardCanCancelWebsite(
       supabase,
@@ -430,7 +406,10 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
     .map((op: any) => op.item_sku)
     .filter(Boolean);
 
-  // Availability guard on transitions INTO reserving state
+  const snap = await snapshotOrder(supabase, orderId, skus, [
+    currentOrder.customer_id,
+  ]);
+
   const wasReserving = ["Ordered", "In Shipping", "Active"].includes(
     currentOrder.status,
   );
@@ -451,7 +430,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
   }
 
   try {
-    // Cancel refund (credit only, zero out to prevent loops)
     if (
       newStatus === "Cancelled" &&
       currentOrder.status !== "Cancelled" &&
@@ -492,7 +470,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
       .eq("id", orderId);
     if (error) throw new Error(error.message);
 
-    // Reconcile credit for non-cancel transitions using lifecycle helper
     if (newStatus !== "Cancelled") {
       await applyOrderSideEffects(supabase, admin, {
         orderId,
@@ -532,7 +509,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
       new_value: newStatus,
     });
 
-    // Notification on Post Order
     if (newStatus === "Ordered") {
       const { data: cust } = await supabase
         .from("customers")
@@ -561,11 +537,12 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
               "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Total: [TOTAL].",
           });
         } catch {
-          // Non-blocking
+          // Non-blocking.
         }
       }
     }
   } catch (e: any) {
+    await restoreOrder(supabase, snap);
     return { error: e.message };
   } finally {
     if (lockKey) await releaseLock(supabase, lockKey);
@@ -578,9 +555,6 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
   return { success: true };
 }
 
-// -----------------------------------------------------------------------------
-// ADDRESS + NOTE (unchanged public shapes)
-// -----------------------------------------------------------------------------
 export async function createCustomerAddress(data: {
   customer_id: string;
   label: string;
@@ -600,8 +574,15 @@ export async function createCustomerAddress(data: {
     return { error: "Street address and City are required." };
   }
 
-  // If this will become the default, clear the flag on all other addresses first.
-  if (data.is_default) {
+  const { count } = await supabase
+    .from("addresses")
+    .select("*", { count: "exact", head: true })
+    .eq("customer_id", data.customer_id);
+
+  const isFirstAddress = (count ?? 0) === 0;
+  const finalIsDefault = isFirstAddress || Boolean(data.is_default);
+
+  if (finalIsDefault) {
     await supabase
       .from("addresses")
       .update({ is_default: false })
@@ -618,7 +599,7 @@ export async function createCustomerAddress(data: {
       postal_code: data.postal_code?.trim() || null,
       latitude: data.latitude ?? null,
       longitude: data.longitude ?? null,
-      is_default: data.is_default ?? false,
+      is_default: finalIsDefault,
     })
     .select()
     .single();

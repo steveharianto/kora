@@ -2,12 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentCustomer } from "./customerAuth";
-import { createXenditInvoice, getXenditInvoiceByExternalId } from "@/lib/xendit";
+import {
+  createXenditInvoice,
+  getXenditInvoiceByExternalId,
+} from "@/lib/xendit";
+import { isUniqueViolation } from "@/lib/orderLifecycle";
 import { revalidatePath } from "next/cache";
 
-const BLOCKING_STATUSES = ["Cancelled", "Conflict Evicted", "No Show"];
-
-/** Today's date in Asia/Jakarta, as YYYY-MM-DD. */
 function todayJakartaISO(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(
     new Date(),
@@ -22,10 +23,6 @@ export interface FittingBookingSession {
   skus: string[];
 }
 
-/**
- * Metadata captured from a Xendit invoice lookup.
- * Shared by both the webhook path and the client / admin verification paths.
- */
 export interface FittingPaymentMeta {
   invoice_id?: string;
   status?: string;
@@ -35,7 +32,20 @@ export interface FittingPaymentMeta {
   payment_channel?: string;
 }
 
-/* ── Create booking (inserts fittings + optional Xendit invoice) ─── */
+async function fetchLastFittingNumber(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<number> {
+  const { data } = await supabase
+    .from("fittings")
+    .select("id")
+    .like("id", "FIT-%")
+    .order("id", { ascending: false })
+    .limit(1);
+
+  if (!data || data.length === 0) return 346;
+  const num = parseInt(data[0].id.replace("FIT-", ""), 10);
+  return isNaN(num) ? 346 : num;
+}
 
 export async function createFittingBooking(sessions: FittingBookingSession[]) {
   const customer = await getCurrentCustomer();
@@ -81,46 +91,54 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
     }
   }
 
-  const { data: lastFit } = await supabase
-    .from("fittings")
-    .select("id")
-    .like("id", "FIT-%")
-    .order("id", { ascending: false })
-    .limit(1);
-
-  const lastNum = lastFit?.[0]?.id
-    ? parseInt(lastFit[0].id.replace("FIT-", ""), 10)
-    : 346;
-
   const totalFee = sessions.reduce((sum, s) => sum + (Number(s.fee) || 0), 0);
   const hasPayment = totalFee > 0;
 
-  const bookingId = `FB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  let fittingRows: any[] = [];
+  let bookingId: string | null = null;
+  let lastErr: any = null;
 
-  const fittingRows = sessions.map((s, i) => {
-    const hour = parseInt(s.slot.split(":")[0], 10);
-    const endHour = String(hour + 1).padStart(2, "0");
-    const isPaid = (Number(s.fee) || 0) > 0;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const lastNum = await fetchLastFittingNumber(supabase);
+    const candidateBookingId = `FB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
+    const candidateRows = sessions.map((s, i) => {
+      const hour = parseInt(s.slot.split(":")[0], 10);
+      const endHour = String(hour + 1).padStart(2, "0");
+      const isPaid = (Number(s.fee) || 0) > 0;
+
+      return {
+        id: `FIT-${String(lastNum + 1 + i).padStart(4, "0")}`,
+        customer_id: customer.id,
+        date: s.date,
+        slot: `${s.slot}:00`,
+        end_time: `${endHour}:00`,
+        status: isPaid ? "Pending" : "Confirmed",
+        source: "Website",
+        is_after_hours: s.isAfterHours,
+        after_hours_fee: Number(s.fee) || 0,
+        fee_payment_status: isPaid ? "Unpaid" : "n/a",
+        booking_id: candidateBookingId,
+      };
+    });
+
+    const { error } = await supabase.from("fittings").insert(candidateRows);
+    if (!error) {
+      fittingRows = candidateRows;
+      bookingId = candidateBookingId;
+      break;
+    }
+    if (!isUniqueViolation(error)) return { error: error.message };
+    lastErr = error;
+  }
+
+  if (!bookingId) {
     return {
-      id: `FIT-${String(lastNum + 1 + i).padStart(4, "0")}`,
-      customer_id: customer.id,
-      date: s.date,
-      slot: `${s.slot}:00`,
-      end_time: `${endHour}:00`,
-      status: isPaid ? "Pending" : "Confirmed",
-      source: "Website",
-      is_after_hours: s.isAfterHours,
-      after_hours_fee: Number(s.fee) || 0,
-      fee_payment_status: isPaid ? "Unpaid" : "n/a",
-      booking_id: bookingId,
+      error:
+        lastErr?.message ||
+        "Could not allocate unique fitting IDs after 5 attempts.",
     };
-  });
-
-  const { error: fitErr } = await supabase
-    .from("fittings")
-    .insert(fittingRows);
-  if (fitErr) return { error: fitErr.message };
+  }
 
   const itemRows = sessions.flatMap((s, i) =>
     s.skus.map((sku, j) => ({
@@ -139,7 +157,10 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
       await supabase
         .from("fittings")
         .delete()
-        .in("id", fittingRows.map((f) => f.id));
+        .in(
+          "id",
+          fittingRows.map((f) => f.id),
+        );
       return { error: itemErr.message };
     }
   }
@@ -173,7 +194,10 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
       await supabase
         .from("fittings")
         .delete()
-        .in("id", fittingRows.map((f) => f.id));
+        .in(
+          "id",
+          fittingRows.map((f) => f.id),
+        );
       return { error: invoice.error || "Could not create payment session." };
     }
 
@@ -208,8 +232,6 @@ export async function createFittingBooking(sessions: FittingBookingSession[]) {
   revalidatePath("/account/fittings");
   return { success: true, bookingId, free: true };
 }
-
-/* ── Webhook handler: mark booking paid ──────────────────────────── */
 
 export async function markFittingBookingPaid(
   bookingId: string,
@@ -266,23 +288,11 @@ export async function markFittingBookingPaid(
   return { success: true };
 }
 
-/* ── Client-side verification (mirrors the order success verifier) ─── */
-
-/**
- * Polls Xendit directly to confirm payment for a booking, then flips the
- * fittings to Paid if the invoice is settled.
- *
- * Called from the fittings page when it loads with `?booking=FB-...`,
- * giving the customer an immediate confirmation even if the webhook
- * hasn't landed yet (dev environments, transient delivery failures, or
- * Xendit retry backoff).
- */
 export async function verifyAndConfirmFittingBooking(bookingId: string) {
   if (!bookingId) return { error: "booking_id is required." };
 
   const supabase = await createClient();
 
-  // Idempotency: if already paid, nothing to do.
   const { data: existing } = await supabase
     .from("fittings")
     .select("fee_payment_status")
@@ -299,7 +309,6 @@ export async function verifyAndConfirmFittingBooking(bookingId: string) {
     return { success: true, alreadyProcessed: true };
   }
 
-  // Look up the invoice by external_id (== bookingId) on Xendit.
   const lookup = await getXenditInvoiceByExternalId(bookingId);
   if (!lookup.success || !lookup.invoice) {
     return { error: lookup.error || "Invoice not found on Xendit." };

@@ -5,6 +5,7 @@ import { getCurrentAdmin } from "./auth";
 import { getNextManualOrderId } from "./orders";
 import { markFittingBookingPaid } from "./customerFittingBooking";
 import { getXenditInvoiceByExternalId } from "@/lib/xendit";
+import { isUniqueViolation } from "@/lib/orderLifecycle";
 import { revalidatePath } from "next/cache";
 
 export async function getNextFittingId(): Promise<string> {
@@ -220,22 +221,40 @@ export async function createFittingSession(payload: {
     (dow >= 1 && dow <= 5 && slotHour >= 17) || (dow === 6 && slotHour >= 13);
   const afterHoursFee = isAfterHours ? configuredFee : 0;
 
-  const newId = await getNextFittingId();
   const endHour = String(slotHour + 1).padStart(2, "0");
 
-  const { error: fitErr } = await supabase.from("fittings").insert({
-    id: newId,
-    customer_id: payload.customer_id,
-    date: payload.date,
-    slot: `${payload.slot}:00`,
-    end_time: `${endHour}:00`,
-    status: "Confirmed",
-    source: "Manual",
-    is_after_hours: isAfterHours,
-    after_hours_fee: afterHoursFee,
-    fee_payment_status: isAfterHours ? "Unpaid" : "n/a",
-  });
-  if (fitErr) return { error: fitErr.message };
+  let newId: string | null = null;
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = await getNextFittingId();
+    const { error: fitErr } = await supabase.from("fittings").insert({
+      id: candidate,
+      customer_id: payload.customer_id,
+      date: payload.date,
+      slot: `${payload.slot}:00`,
+      end_time: `${endHour}:00`,
+      status: "Confirmed",
+      source: "Manual",
+      is_after_hours: isAfterHours,
+      after_hours_fee: afterHoursFee,
+      fee_payment_status: isAfterHours ? "Unpaid" : "n/a",
+    });
+    if (!fitErr) {
+      newId = candidate;
+      break;
+    }
+    if (!isUniqueViolation(fitErr)) return { error: fitErr.message };
+    lastErr = fitErr;
+  }
+
+  if (!newId) {
+    return {
+      error:
+        lastErr?.message ||
+        "Could not allocate a unique fitting ID after 5 attempts.",
+    };
+  }
 
   const itemRows = dresses.map((sku, i) => ({
     fitting_id: newId,
@@ -245,7 +264,10 @@ export async function createFittingSession(payload: {
   const { error: itemErr } = await supabase
     .from("fitting_items")
     .insert(itemRows);
-  if (itemErr) return { error: itemErr.message };
+  if (itemErr) {
+    await supabase.from("fittings").delete().eq("id", newId);
+    return { error: itemErr.message };
+  }
 
   await supabase.from("admin_audit_logs").insert({
     admin_id: admin.id,
@@ -347,13 +369,6 @@ export async function recordAfterHoursFeePayment(
   return { success: true };
 }
 
-/**
- * Admin-triggered verification. Looks up the booking's Xendit invoice by
- * external_id and, if settled, flips all fittings in the booking to Paid.
- *
- * Use when the webhook has been missed (dev testing, production hiccups,
- * Xendit retry backoff) but the customer already paid.
- */
 export async function verifyFittingPaymentAdmin(fittingId: string) {
   const supabase = await createClient();
   const admin = await getCurrentAdmin();
@@ -477,29 +492,10 @@ export async function markFittingReminderSent(fittingId: string) {
   }
 }
 
-/**
- * Convert a fitting session into a new Manual Order draft.
- *
- * Caller must supply a `dayCounts` map keyed by item SKU. Every active
- * (non-evicted) dress in the fitting is billed as:
- *
- *   lineUnit = base + addOn × (days − 1)
- *
- * where `base` = items.rental_price and `addOn` = items.add_on_price
- * (falling back to `base` when the DB column is null — Q1 semantics).
- *
- * The same formula is applied server-side in `createWebsiteOrder` and
- * `saveOrder` — the three anti-tamper paths must stay in lockstep.
- *
- * `order_products` rows carry the permanent `base_price` /
- * `add_on_price` / `days` breakdown so historical invoices never change
- * when a dress's pricing is later edited.
- */
 export async function convertFittingToOrder(
   fittingId: string,
   options: {
     pick_up_method?: string;
-    /** Key = item_sku, value = number of rental days (>= 1). */
     dayCounts: Record<string, number>;
   },
 ) {
@@ -507,7 +503,6 @@ export async function convertFittingToOrder(
   const admin = await getCurrentAdmin();
   if (!admin) return { error: "Unauthorized: Session not found." };
 
-  // Q3 requirement — admin must choose a day count for every dress.
   if (!options.dayCounts || Object.keys(options.dayCounts).length === 0) {
     return {
       error: "A day count is required for each dress in this session.",
@@ -535,19 +530,6 @@ export async function convertFittingToOrder(
     (fi: any) => !fi.is_evicted,
   );
 
-  /*
-   * ── SERVER-SIDE PRICE RECALCULATION (anti-tamper) ──────────────────
-   *
-   * Same formula as createWebsiteOrder (Step 9) and saveOrder (Step 11):
-   *   base    = items.rental_price
-   *   addOn   = items.add_on_price ?? base   (Q1 fallback)
-   *   lineUnit = base + addOn × (days − 1)
-   *   deposit  = 250_000 if base > 1_000_000, else 150_000
-   *
-   * Client-supplied `dayCounts` are NOT trusted for pricing — they only
-   * decide how many days to bill per dress, and the multiplication is
-   * done entirely on the server against DB prices.
-   */
   const activeSkus = activeItems.map((fi: any) => fi.item_sku);
 
   const { data: itemRows } = await supabase
@@ -579,12 +561,6 @@ export async function convertFittingToOrder(
   for (const fi of activeItems) {
     const info = priceMap.get(fi.item_sku);
     if (!info) {
-      /*
-       * Guard: a dress removed from the catalog between fitting booking
-       * and admin conversion. Return a clean error rather than throwing,
-       * so the client's `res?.error` handler surfaces it in the modal.
-       * No DB writes have occurred yet at this point.
-       */
       return {
         error: `Item ${fi.item_sku} is no longer in the catalog. Update the fitting and try again.`,
       };
@@ -600,7 +576,7 @@ export async function convertFittingToOrder(
       order_id: newOrderId,
       item_sku: fi.item_sku,
       quantity: 1,
-      price: unit, // per-unit, matches invoice convention
+      price: unit,
       base_price: info.base,
       add_on_price: info.addOn,
       days,
@@ -644,7 +620,13 @@ export async function convertFittingToOrder(
   if (orderErr) return { error: orderErr.message };
 
   if (orderProductRows.length > 0) {
-    await supabase.from("order_products").insert(orderProductRows);
+    const { error: prodErr } = await supabase
+      .from("order_products")
+      .insert(orderProductRows);
+    if (prodErr) {
+      await supabase.from("orders").delete().eq("id", newOrderId);
+      return { error: prodErr.message };
+    }
   }
 
   await supabase
@@ -662,12 +644,6 @@ export async function convertFittingToOrder(
     new_value: newOrderId,
     details: {
       pick_up_method: pickUpMethod,
-      /*
-       * Permanent record of the day counts the admin chose, keyed by SKU.
-       * Useful for auditing pricing disputes — the browser's payload
-       * cannot be retroactively edited, but this audit row captures
-       * exactly what was decided at conversion time.
-       */
       day_counts: options.dayCounts,
     },
   });

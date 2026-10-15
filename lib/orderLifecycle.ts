@@ -19,6 +19,20 @@ export function isCommittable(status: string): boolean {
   return status !== "Draft" && status !== "Cancelled";
 }
 
+/**
+ * Detects a Postgres unique-violation, whether exposed via SQLSTATE code
+ * (23505) or surfaced only as a message / details string. Used by ID
+ * allocation retry loops across the order / fitting creation flows.
+ */
+export function isUniqueViolation(err: any): boolean {
+  if (!err) return false;
+  if (err.code === "23505") return true;
+  const haystack = `${err.message || ""} ${err.details || ""}`.toLowerCase();
+  return (
+    haystack.includes("duplicate key") || haystack.includes("unique constraint")
+  );
+}
+
 export interface SideEffectContext {
   orderId: string;
   prevStatus: string;
@@ -32,9 +46,8 @@ export interface SideEffectContext {
   newCreditApplied: number;
 }
 
-// -----------------------------------------------------------------------------
-// GUARD: availability (turnaround buffer overlap + arch/repair)
-// -----------------------------------------------------------------------------
+/* ── GUARD: availability ─────────────────────────────────────────── */
+
 export async function guardAvailability(
   supabase: SupabaseClient,
   orderId: string,
@@ -98,9 +111,8 @@ export async function guardAvailability(
   return {};
 }
 
-// -----------------------------------------------------------------------------
-// GUARD: credit (server-side clamp — rejects over-spend)
-// -----------------------------------------------------------------------------
+/* ── GUARD: credit ───────────────────────────────────────────────── */
+
 export async function guardCredit(
   supabase: SupabaseClient,
   customerId: string,
@@ -122,9 +134,8 @@ export async function guardCredit(
   return {};
 }
 
-// -----------------------------------------------------------------------------
-// GUARD: can dispatch (idempotency + booking window)
-// -----------------------------------------------------------------------------
+/* ── GUARD: can dispatch ─────────────────────────────────────────── */
+
 export async function guardCanDispatch(
   supabase: SupabaseClient,
   orderId: string,
@@ -172,9 +183,8 @@ export async function guardCanDispatch(
   return { order };
 }
 
-// -----------------------------------------------------------------------------
-// GUARD: can cancel website orders (superadmin-only configurable)
-// -----------------------------------------------------------------------------
+/* ── GUARD: can cancel website orders ────────────────────────────── */
+
 export async function guardCanCancelWebsite(
   supabase: SupabaseClient,
   orderMethod: string,
@@ -198,9 +208,8 @@ export async function guardCanCancelWebsite(
   return {};
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: item status sync (safe across concurrent orders)
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: item status sync ───────────────────────────────── */
+
 async function syncItemStatus(
   supabase: SupabaseClient,
   skus: string[],
@@ -218,16 +227,26 @@ async function syncItemStatus(
   }
   if (!shouldReleaseItems(newStatus)) return;
 
-  // Only release SKUs that are not reserved by any other active order.
+  const { data: current } = await supabase
+    .from("items")
+    .select("sku, status")
+    .in("sku", skus);
+
+  const candidates = (current || [])
+    .filter((i: any) => i.status === "Unavailable")
+    .map((i: any) => i.sku);
+
+  if (candidates.length === 0) return;
+
   const { data: active } = await supabase
     .from("order_products")
     .select("item_sku, orders!inner(id, status)")
-    .in("item_sku", skus)
+    .in("item_sku", candidates)
     .neq("orders.id", excludeOrderId)
     .in("orders.status", ["Ordered", "In Shipping", "Active"]);
 
   const busy = new Set((active || []).map((r: any) => r.item_sku));
-  const releasable = skus.filter((s) => !busy.has(s));
+  const releasable = candidates.filter((s: string) => !busy.has(s));
   if (releasable.length > 0) {
     await supabase
       .from("items")
@@ -236,9 +255,8 @@ async function syncItemStatus(
   }
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: fitting eviction (with per-fitting status transition)
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: evict fittings ─────────────────────────────────── */
+
 async function evictFittings(
   supabase: SupabaseClient,
   orderId: string,
@@ -298,7 +316,6 @@ async function evictFittings(
     const activeCount = (all || []).filter((i: any) => !i.is_evicted).length;
 
     if (activeCount === 0) {
-      // Fetch the fitting's payment state to decide refund
       const { data: fitRow } = await supabase
         .from("fittings")
         .select("fee_payment_status, after_hours_fee")
@@ -337,16 +354,15 @@ async function evictFittings(
   }
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: unevict fittings (called on order Cancelled)
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: unevict fittings ───────────────────────────────── */
+
 async function unevictFittings(
   supabase: SupabaseClient,
   orderId: string,
 ): Promise<void> {
   const { data: evicted } = await supabase
     .from("fitting_items")
-    .select("id, fitting_id, fittings!inner(id, date, status)")
+    .select("id, fitting_id, fittings!inner(id, date, status, refund_status)")
     .eq("evicted_by_order_id", orderId)
     .eq("is_evicted", true);
 
@@ -358,6 +374,24 @@ async function unevictFittings(
   for (const ei of evicted) {
     const fit = ei.fittings as any;
     if (!fit || fit.date < today) continue;
+
+    if (fit.refund_status === "Refunded") {
+      await supabase.from("admin_audit_logs").insert({
+        admin_id: null,
+        admin_name: "Automation",
+        entity_type: "fitting",
+        entity_id: ei.fitting_id,
+        action_type: "CONFLICT_UNEVICTION_SKIPPED",
+        field_name: "is_evicted",
+        new_value: "true",
+        details: {
+          reason: "Refund already issued — un-eviction requires manual review.",
+          unevicted_by_order: orderId,
+        },
+      });
+      continue;
+    }
+
     await supabase
       .from("fitting_items")
       .update({
@@ -391,9 +425,8 @@ async function unevictFittings(
   }
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: credit reconciliation (delta-based)
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: credit reconciliation ──────────────────────────── */
+
 async function reconcileCredit(
   supabase: SupabaseClient,
   orderId: string,
@@ -402,7 +435,6 @@ async function reconcileCredit(
   prevApplied: number,
   newApplied: number,
 ): Promise<void> {
-  // Full customer reassignment: refund old, deduct from new.
   if (prevCustomerId && newCustomerId && prevCustomerId !== newCustomerId) {
     if (prevApplied > 0) {
       const { data: prev } = await supabase
@@ -473,9 +505,8 @@ async function reconcileCredit(
   });
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: auto-create return record when order becomes Active
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: auto-create return ─────────────────────────────── */
+
 async function autoCreateReturn(
   supabase: SupabaseClient,
   orderId: string,
@@ -534,9 +565,8 @@ async function autoCreateReturn(
   });
 }
 
-// -----------------------------------------------------------------------------
-// SIDE EFFECT: per-SKU audit log for item availability flips
-// -----------------------------------------------------------------------------
+/* ── SIDE EFFECT: log item flips ─────────────────────────────────── */
+
 async function logItemFlips(
   supabase: SupabaseClient,
   admin: Admin,
@@ -559,9 +589,8 @@ async function logItemFlips(
   });
 }
 
-// -----------------------------------------------------------------------------
-// PUBLIC: apply all side effects for a status transition
-// -----------------------------------------------------------------------------
+/* ── PUBLIC: apply all side effects ──────────────────────────────── */
+
 export async function applyOrderSideEffects(
   supabase: SupabaseClient,
   admin: Admin,
@@ -607,9 +636,6 @@ export async function applyOrderSideEffects(
     await unevictFittings(supabase, orderId);
   }
 
-  if (isCommittable(newStatus) || prevStatus === newStatus) {
-    // For committed orders, reconcile credit delta. Draft never touches customer balance.
-  }
   if (isCommittable(newStatus)) {
     await reconcileCredit(
       supabase,
@@ -626,41 +652,173 @@ export async function applyOrderSideEffects(
   }
 }
 
-// -----------------------------------------------------------------------------
-// PUBLIC: snapshot reader for saveOrder restore
-// -----------------------------------------------------------------------------
-export async function snapshotOrder(supabase: SupabaseClient, orderId: string) {
+/* ── PUBLIC: snapshot ────────────────────────────────────────────── */
+
+export interface OrderSnapshot {
+  order: any;
+  products: any[];
+  itemStatuses: Array<{ sku: string; status: string }>;
+  fittingItems: Array<{
+    id: number;
+    is_evicted: boolean;
+    evicted_by_order_id: string | null;
+    eviction_reason: string | null;
+  }>;
+  fittings: Array<{
+    id: string;
+    status: string;
+    conflict_notes: string | null;
+    refund_status: string | null;
+    refund_amount: number | null;
+  }>;
+  customerCredits: Array<{ id: string; current_credit: number }>;
+}
+
+export async function snapshotOrder(
+  supabase: SupabaseClient,
+  orderId: string,
+  skus: string[] = [],
+  customerIds: (string | null | undefined)[] = [],
+): Promise<OrderSnapshot> {
   const [{ data: order }, { data: products }] = await Promise.all([
     supabase.from("orders").select("*").eq("id", orderId).single(),
     supabase.from("order_products").select("*").eq("order_id", orderId),
   ]);
-  return { order, products: products || [] };
+
+  let itemStatuses: Array<{ sku: string; status: string }> = [];
+  if (skus.length > 0) {
+    const { data } = await supabase
+      .from("items")
+      .select("sku, status")
+      .in("sku", skus);
+    itemStatuses = (data || []) as any;
+  }
+
+  const fittingItemsMap = new Map<number, any>();
+  if (skus.length > 0) {
+    const { data } = await supabase
+      .from("fitting_items")
+      .select(
+        "id, fitting_id, is_evicted, evicted_by_order_id, eviction_reason",
+      )
+      .in("item_sku", skus);
+    for (const fi of data || []) fittingItemsMap.set(fi.id, fi);
+  }
+  {
+    const { data } = await supabase
+      .from("fitting_items")
+      .select(
+        "id, fitting_id, is_evicted, evicted_by_order_id, eviction_reason",
+      )
+      .eq("evicted_by_order_id", orderId);
+    for (const fi of data || []) fittingItemsMap.set(fi.id, fi);
+  }
+
+  const fittingItemsRaw = Array.from(fittingItemsMap.values());
+  const fittingIds = Array.from(
+    new Set(fittingItemsRaw.map((fi: any) => fi.fitting_id).filter(Boolean)),
+  );
+
+  let fittings: any[] = [];
+  if (fittingIds.length > 0) {
+    const { data } = await supabase
+      .from("fittings")
+      .select("id, status, conflict_notes, refund_status, refund_amount")
+      .in("id", fittingIds);
+    fittings = data || [];
+  }
+
+  const uniqueCustomerIds = Array.from(
+    new Set(customerIds.filter((id): id is string => Boolean(id))),
+  );
+  let customerCredits: Array<{ id: string; current_credit: number }> = [];
+  if (uniqueCustomerIds.length > 0) {
+    const { data } = await supabase
+      .from("customers")
+      .select("id, current_credit")
+      .in("id", uniqueCustomerIds);
+    customerCredits = (data || []) as any;
+  }
+
+  return {
+    order,
+    products: products || [],
+    itemStatuses,
+    fittingItems: fittingItemsRaw.map((fi: any) => ({
+      id: fi.id,
+      is_evicted: fi.is_evicted,
+      evicted_by_order_id: fi.evicted_by_order_id,
+      eviction_reason: fi.eviction_reason,
+    })),
+    fittings: fittings.map((f: any) => ({
+      id: f.id,
+      status: f.status,
+      conflict_notes: f.conflict_notes,
+      refund_status: f.refund_status,
+      refund_amount: f.refund_amount,
+    })),
+    customerCredits,
+  };
 }
+
+/* ── PUBLIC: restore ─────────────────────────────────────────────── */
 
 export async function restoreOrder(
   supabase: SupabaseClient,
-  snap: { order: any; products: any[] },
+  snap: OrderSnapshot,
 ): Promise<void> {
   if (!snap.order) return;
-  const { id, created_at, ...rest } = snap.order;
-  await supabase.from("orders").update(rest).eq("id", id);
-  await supabase.from("order_products").delete().eq("order_id", id);
-  if (snap.products.length > 0) {
-    await supabase.from("order_products").insert(snap.products);
+  try {
+    const { id, created_at, ...rest } = snap.order;
+    await supabase.from("orders").update(rest).eq("id", id);
+    await supabase.from("order_products").delete().eq("order_id", id);
+    if (snap.products.length > 0) {
+      await supabase.from("order_products").insert(snap.products);
+    }
+
+    for (const item of snap.itemStatuses) {
+      await supabase
+        .from("items")
+        .update({ status: item.status })
+        .eq("sku", item.sku);
+    }
+
+    for (const fi of snap.fittingItems) {
+      await supabase
+        .from("fitting_items")
+        .update({
+          is_evicted: fi.is_evicted,
+          evicted_by_order_id: fi.evicted_by_order_id,
+          eviction_reason: fi.eviction_reason,
+        })
+        .eq("id", fi.id);
+    }
+
+    for (const f of snap.fittings) {
+      await supabase
+        .from("fittings")
+        .update({
+          status: f.status,
+          conflict_notes: f.conflict_notes,
+          refund_status: f.refund_status,
+          refund_amount: f.refund_amount,
+        })
+        .eq("id", f.id);
+    }
+
+    for (const c of snap.customerCredits) {
+      await supabase
+        .from("customers")
+        .update({ current_credit: c.current_credit })
+        .eq("id", c.id);
+    }
+  } catch (e: any) {
+    console.error("[restoreOrder] Failed to fully restore snapshot:", e);
   }
 }
 
-// -----------------------------------------------------------------------------
-// PUBLIC: notification markers via audit log
-// -----------------------------------------------------------------------------
+/* ── PUBLIC: notification markers ────────────────────────────────── */
 
-/**
- * Payload shape stored on a WA_DISPATCHED audit row.
- *
- * `attachment` is only present for kinds that ship a PDF — currently only
- * `order_posted`. It records the mode (base64 vs url) so we can later
- * distinguish what actually went to Fonnte without persisting the raw bytes.
- */
 export interface NotificationDispatchDetails {
   waUrl: string;
   sent: boolean;
@@ -669,31 +827,29 @@ export interface NotificationDispatchDetails {
   attachment?: {
     url: string | null;
     filename: string;
-    mode: 'base64' | 'url';
+    mode: "base64" | "url";
   } | null;
 }
 
 export async function markNotification(
   supabase: SupabaseClient,
   admin: Admin | null,
-  entityType: 'order' | 'return' | 'fitting' | 'customer',
+  entityType: "order" | "return" | "fitting" | "customer",
   entityId: string,
   kind: string,
   value: string | NotificationDispatchDetails,
 ): Promise<void> {
   const payload: NotificationDispatchDetails =
-    typeof value === 'string'
-      ? { waUrl: value, sent: false }
-      : value;
+    typeof value === "string" ? { waUrl: value, sent: false } : value;
 
-  await supabase.from('admin_audit_logs').insert({
+  await supabase.from("admin_audit_logs").insert({
     admin_id: admin?.id ?? null,
-    admin_name: admin?.name ?? 'Automation',
+    admin_name: admin?.name ?? "Automation",
     entity_type: entityType,
     entity_id: entityId,
-    action_type: 'WA_DISPATCHED',
+    action_type: "WA_DISPATCHED",
     field_name: kind,
-    new_value: payload.sent ? 'sent' : 'failed',
+    new_value: payload.sent ? "sent" : "failed",
     details: payload,
   });
 }

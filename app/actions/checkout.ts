@@ -11,20 +11,16 @@ import {
   guardAvailability,
   guardCredit,
   applyOrderSideEffects,
+  isUniqueViolation,
 } from "@/lib/orderLifecycle";
 import { emitWa } from "@/lib/notifications";
 import { formatRupiah } from "@/lib/utils";
 import { getPromoDiscountPercent, normalizePromoCode } from "@/lib/promo";
 import { revalidatePath } from "next/cache";
 
-/* ── Courier rate lookup ─────────────────────────────────────────── */
-
 const COURIER_QUERY =
   "jne,sicepat,gojek,paxel,grab,anteraja,ninja,pos,tiki,lion";
 
-// Curated display labels for the common combinations. Anything Biteship
-// returns that isn't in here still passes through — it just gets a
-// dynamically formatted label instead of being silently dropped.
 const COURIER_LABELS: Record<string, string> = {
   "jne|reg": "JNE - REG",
   "jne|yes": "JNE - YES",
@@ -60,8 +56,6 @@ function labelForCourier(company: string, type: string): string {
   return `${comp} - ${typ}`;
 }
 
-/* ── Courier tier classification ────────────────────────────────── */
-
 export type CourierTier = "same-day" | "next-day" | "regular";
 
 const COURIER_TIER_MAP: Record<string, CourierTier> = {
@@ -91,17 +85,9 @@ function tierFor(company: string, type: string): CourierTier {
   return COURIER_TIER_MAP[key] || "regular";
 }
 
-/**
- * True if a postal code is inside Jakarta proper (10110–14540).
- * All Jakarta postal codes begin with two digits in the 10–14 range;
- * neighbouring Jabodetabek (Tangerang 15xxx, Bekasi/Depok/Bogor 16–17xxx)
- * do NOT match, which is exactly what we want — those are intercity.
- */
 function isJakartaPostal(postalCode: string): boolean {
   return /^1[0-4]/.test((postalCode || "").trim());
 }
-
-/* ── Shipment rate fetch + curation ─────────────────────────────── */
 
 export interface CheckoutRateOption {
   label: string;
@@ -240,8 +226,6 @@ export async function getCheckoutShippingRates(input: {
   return { success: true, options, hint, sameCity };
 }
 
-/* ── Website order ID ────────────────────────────────────────────── */
-
 async function getNextWebsiteOrderId(): Promise<string> {
   const supabase = await createClient();
   const { data } = await supabase
@@ -258,14 +242,12 @@ async function getNextWebsiteOrderId(): Promise<string> {
   return `S${String(num + 1).padStart(4, "0")}`;
 }
 
-/* ── Create website order (Draft) ────────────────────────────────── */
-
 export async function createWebsiteOrder(input: {
   items: {
     sku: string;
     quantity: number;
     price: number;
-    addOnPrice?: number; // client hint only — never trusted
+    addOnPrice?: number;
     deposit: number;
     eventDays: number;
   }[];
@@ -281,7 +263,6 @@ export async function createWebsiteOrder(input: {
   courierLabel: string;
   shippingFee: number;
   storeCreditApplied: number;
-  /** Optional hardcoded promo code (e.g. "KORAWEB"). Applied to rental subtotal. */
   promoCode?: string | null;
 }) {
   const customer = await getCurrentCustomer();
@@ -316,23 +297,6 @@ export async function createWebsiteOrder(input: {
   );
   if (cr.error) return { error: cr.error };
 
-  /*
-   * ── SERVER-SIDE PRICE RECALCULATION (anti-tamper) ──────────────────
-   *
-   * The browser sends `price` and `addOnPrice` per line as hints, but we
-   * ignore both. Every line's charge is derived from the DB here so a
-   * modified client payload can never underpay.
-   *
-   *   Day 1           → items.rental_price            (base)
-   *   Each extra day  → items.add_on_price            (addOn)
-   *   lineUnit        = base + addOn × (days − 1)
-   *   lineTotal       = lineUnit × quantity
-   *   deposit         = 250_000 if base > 1_000_000, else 150_000 (per unit)
-   *
-   * Q1 fallback: a null `add_on_price` at the DB level means "same as
-   * base". After Step 1's backfill this should never fire, but the `??`
-   * guard keeps the path defensive.
-   */
   const { data: itemRows } = await supabase
     .from("items")
     .select("sku, rental_price, add_on_price")
@@ -359,8 +323,6 @@ export async function createWebsiteOrder(input: {
       const lineUnit = base + addOn * Math.max(0, days - 1);
       const lineTotal = lineUnit * qty;
 
-      // Deposit keys on the BASE rental price only — unchanged from
-      // legacy behaviour. A large add-on must not inflate the deposit.
       const deposit = base > 1000000 ? 250000 : 150000;
 
       totalPrice += lineTotal;
@@ -369,21 +331,15 @@ export async function createWebsiteOrder(input: {
       return {
         item_sku: i.sku,
         quantity: qty,
-        price: lineUnit, // per-unit, matches invoice convention
-        base_price: base, // permanent breakdown
-        add_on_price: addOn, // permanent breakdown (never null after recalc)
-        days, // permanent breakdown
+        price: lineUnit,
+        base_price: base,
+        add_on_price: addOn,
+        days,
         deposit,
         subtotal: lineTotal,
       };
     });
 
-  /*
-   * Guard: every client-supplied SKU must resolve against the catalog.
-   * Without this check a tampered payload (or a stale cart referring to
-   * a since-deleted item) would silently have that line dropped from
-   * the order, letting the customer "check out" only the cheaper items.
-   */
   if (productRows.length !== input.items.length) {
     const missing = input.items
       .filter((i) => !priceMap.has(i.sku))
@@ -393,12 +349,68 @@ export async function createWebsiteOrder(input: {
     };
   }
 
-  /*
-   * Generate the next website order ID here — moved above the shipping /
-   * credit / promo block so the dev diagnostic below can reference it.
-   * Harmless to call earlier; it's a plain SELECT.
-   */
-  const orderId = await getNextWebsiteOrderId();
+  const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
+  const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
+
+  const normalizedPromo = normalizePromoCode(input.promoCode);
+  const promoPercent = getPromoDiscountPercent(normalizedPromo);
+  const promoDiscount = Math.round((totalPrice * promoPercent) / 100);
+
+  const grandTotal = Math.max(
+    0,
+    totalPrice + totalDeposit + shippingFee - credit - promoDiscount,
+  );
+
+  const recipientName =
+    `${customer.firstName} ${customer.lastName || ""}`.trim() || "Customer";
+
+  let orderId: string | null = null;
+  let lastOrderErr: any = null;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = await getNextWebsiteOrderId();
+
+    const { error } = await supabase.from("orders").insert({
+      id: candidate,
+      customer_id: customer.id,
+      order_date: new Date().toISOString().split("T")[0],
+      event_start_date: input.eventStartDate,
+      event_days: input.eventDays,
+      pickup_date: input.pickupDate,
+      return_date: input.returnDate,
+      city: input.city,
+      postal_code: input.postalCode,
+      street_address: input.streetAddress,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      total_price: totalPrice,
+      total_deposit: totalDeposit,
+      shipping_fee: shippingFee,
+      store_credit_applied: credit,
+      total: grandTotal,
+      order_method: "Website",
+      status: "Draft",
+      pick_up_method: input.courierLabel,
+      payment_method: "Xendit",
+      return_shipping_cost: 0,
+      qc_deduction: 0,
+    });
+
+    if (!error) {
+      orderId = candidate;
+      break;
+    }
+    if (!isUniqueViolation(error)) return { error: error.message };
+    lastOrderErr = error;
+  }
+
+  if (!orderId) {
+    return {
+      error:
+        lastOrderErr?.message ||
+        "Could not allocate a unique order ID after 5 attempts.",
+    };
+  }
 
   if (process.env.NODE_ENV !== "production") {
     console.log("[createWebsiteOrder] server recalc", {
@@ -415,54 +427,9 @@ export async function createWebsiteOrder(input: {
     });
   }
 
-  const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
-  const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
-
-  // Hardcoded promo — percent off rental subtotal only.
-  // Deposits and shipping are never discounted.
-  const normalizedPromo = normalizePromoCode(input.promoCode);
-  const promoPercent = getPromoDiscountPercent(normalizedPromo);
-  const promoDiscount = Math.round((totalPrice * promoPercent) / 100);
-
-  const grandTotal = Math.max(
-    0,
-    totalPrice + totalDeposit + shippingFee - credit - promoDiscount,
-  );
-
-  const recipientName =
-    `${customer.firstName} ${customer.lastName || ""}`.trim() || "Customer";
-
-  const { error: orderErr } = await supabase.from("orders").insert({
-    id: orderId,
-    customer_id: customer.id,
-    order_date: new Date().toISOString().split("T")[0],
-    event_start_date: input.eventStartDate,
-    event_days: input.eventDays,
-    pickup_date: input.pickupDate,
-    return_date: input.returnDate,
-    city: input.city,
-    postal_code: input.postalCode,
-    street_address: input.streetAddress,
-    latitude: input.latitude,
-    longitude: input.longitude,
-    total_price: totalPrice,
-    total_deposit: totalDeposit,
-    shipping_fee: shippingFee,
-    store_credit_applied: credit,
-    total: grandTotal,
-    order_method: "Website",
-    status: "Draft",
-    pick_up_method: input.courierLabel,
-    payment_method: "Xendit",
-    return_shipping_cost: 0,
-    qc_deduction: 0,
-  });
-
-  if (orderErr) return { error: orderErr.message };
-
   const { error: prodErr } = await supabase
     .from("order_products")
-    .insert(productRows.map((p) => ({ ...p, order_id: orderId })));
+    .insert(productRows.map((p) => ({ ...p, order_id: orderId! })));
 
   if (prodErr) {
     await supabase.from("orders").delete().eq("id", orderId);
@@ -483,12 +450,6 @@ export async function createWebsiteOrder(input: {
       promo_code: normalizedPromo || null,
       promo_percent: promoPercent,
       promo_discount: promoDiscount,
-      /*
-       * Audit trail records the SERVER-recalculated day count and line
-       * total — not the client-sent values. Tamper attempts therefore
-       * leave a permanent record of what the browser *wanted* (visible
-       * in the request log) versus what we actually charged (here).
-       */
       lines: productRows.map((p) => ({
         sku: p.item_sku,
         unit_days: p.days,
@@ -500,8 +461,6 @@ export async function createWebsiteOrder(input: {
   revalidatePath("/account/orders");
   return { success: true, orderId, grandTotal };
 }
-
-/* ── Xendit invoice ──────────────────────────────────────────────── */
 
 export async function createXenditInvoiceForOrder(orderId: string) {
   const customer = await getCurrentCustomer();
@@ -564,8 +523,6 @@ export async function createXenditInvoiceForOrder(orderId: string) {
 
   return { success: true, invoiceUrl: invoice.invoice_url };
 }
-
-/* ── Webhook handler: mark paid ──────────────────────────────────── */
 
 export async function markWebsiteOrderPaid(
   orderId: string,
@@ -683,7 +640,7 @@ export async function markWebsiteOrderPaid(
           "Hi [CUSTOMER_NAME], thank you for your order [ORDER_ID]! Here is your invoice link: [INVOICE_LINK]. Total: [TOTAL].",
       });
     } catch {
-      // Non-blocking — payment has already committed.
+      // Non-blocking.
     }
   }
 
@@ -694,8 +651,6 @@ export async function markWebsiteOrderPaid(
 
   return { success: true };
 }
-
-/* ── Success-page verifier ───────────────────────────────────────── */
 
 const VERIFY_ATTEMPTS = 3;
 const VERIFY_DELAY_MS = 1500;
