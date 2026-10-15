@@ -61,6 +61,7 @@ export default async function InventoryPage({
       name,
       size,
       rental_price,
+      add_on_price,
       buffer_override,
       status,
       website_status,
@@ -275,7 +276,7 @@ export default async function InventoryPage({
 
       <div className="bg-card border border-line rounded-[10px] p-1.5 pb-0 overflow-hidden">
         <div className="w-full overflow-x-auto">
-          <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[980px]">
+          <table className="w-full border-collapse font-tabular-nums text-[13px] min-w-[1080px]">
             <thead>
               <tr>
                 <th className="text-[10.5px] tracking-[0.16em] uppercase text-muted text-left font-medium px-3 py-2.5 border-b border-line whitespace-nowrap">
@@ -296,6 +297,9 @@ export default async function InventoryPage({
                 <th className="text-[10.5px] tracking-[0.16em] uppercase text-muted text-right font-medium px-3 py-2.5 border-b border-line whitespace-nowrap">
                   Price
                 </th>
+                <th className="text-[10.5px] tracking-[0.16em] uppercase text-muted text-right font-medium px-3 py-2.5 border-b border-line whitespace-nowrap">
+                  Add-On / Day
+                </th>
                 <th className="text-[10.5px] tracking-[0.16em] uppercase text-muted text-left font-medium px-3 py-2.5 border-b border-line whitespace-nowrap">
                   Buffer
                 </th>
@@ -311,7 +315,7 @@ export default async function InventoryPage({
               {paginatedItems?.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-3 py-[11px] text-muted text-center"
                   >
                     No items found.
@@ -367,6 +371,15 @@ export default async function InventoryPage({
                         {item.rental_price
                           ? formatRupiah(item.rental_price)
                           : "—"}
+                      </td>
+                      <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top text-right">
+                        {item.add_on_price != null ? (
+                          formatRupiah(item.add_on_price)
+                        ) : (
+                          <span className="inline-block bg-warn-bg text-[#977028] text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded">
+                            Not set
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-[11px] border-b border-[#EFEBE2] align-top">
                         {item.buffer_override !== null ? (
