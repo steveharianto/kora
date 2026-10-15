@@ -265,6 +265,7 @@ export async function createWebsiteOrder(input: {
     sku: string;
     quantity: number;
     price: number;
+    addOnPrice?: number; // client hint only — never trusted
     deposit: number;
     eventDays: number;
   }[];
@@ -315,18 +316,35 @@ export async function createWebsiteOrder(input: {
   );
   if (cr.error) return { error: cr.error };
 
-  // Server-side price recalculation. The client sends the per-day unit price
-  // for display; the server independently derives the unit price from the
-  // items table and multiplies by event days, so a tampered client payload
-  // can't underpay.
+  /*
+   * ── SERVER-SIDE PRICE RECALCULATION (anti-tamper) ──────────────────
+   *
+   * The browser sends `price` and `addOnPrice` per line as hints, but we
+   * ignore both. Every line's charge is derived from the DB here so a
+   * modified client payload can never underpay.
+   *
+   *   Day 1           → items.rental_price            (base)
+   *   Each extra day  → items.add_on_price            (addOn)
+   *   lineUnit        = base + addOn × (days − 1)
+   *   lineTotal       = lineUnit × quantity
+   *   deposit         = 250_000 if base > 1_000_000, else 150_000 (per unit)
+   *
+   * Q1 fallback: a null `add_on_price` at the DB level means "same as
+   * base". After Step 1's backfill this should never fire, but the `??`
+   * guard keeps the path defensive.
+   */
   const { data: itemRows } = await supabase
     .from("items")
-    .select("sku, rental_price")
+    .select("sku, rental_price, add_on_price")
     .in("sku", skus);
 
-  const priceMap = new Map(
-    (itemRows || []).map((i: any) => [i.sku, Number(i.rental_price) || 0]),
-  );
+  type PriceInfo = { base: number; addOn: number };
+  const priceMap = new Map<string, PriceInfo>();
+  for (const i of itemRows || []) {
+    const base = Number(i.rental_price) || 0;
+    const addOn = i.add_on_price != null ? Number(i.add_on_price) : base;
+    priceMap.set(i.sku, { base, addOn });
+  }
 
   let totalPrice = 0;
   let totalDeposit = 0;
@@ -334,24 +352,68 @@ export async function createWebsiteOrder(input: {
   const productRows = input.items
     .filter((i) => priceMap.has(i.sku))
     .map((i) => {
-      const serverUnitPrice = priceMap.get(i.sku)!;
+      const { base, addOn } = priceMap.get(i.sku)!;
       const days = Math.max(1, Number(i.eventDays) || 1);
       const qty = Math.max(1, Number(i.quantity) || 1);
 
-      const lineSubtotal = serverUnitPrice * days * qty;
-      const deposit = serverUnitPrice > 1000000 ? 250000 : 150000;
+      const lineUnit = base + addOn * Math.max(0, days - 1);
+      const lineTotal = lineUnit * qty;
 
-      totalPrice += lineSubtotal;
+      // Deposit keys on the BASE rental price only — unchanged from
+      // legacy behaviour. A large add-on must not inflate the deposit.
+      const deposit = base > 1000000 ? 250000 : 150000;
+
+      totalPrice += lineTotal;
       totalDeposit += deposit * qty;
 
       return {
         item_sku: i.sku,
         quantity: qty,
-        price: lineSubtotal,
+        price: lineUnit, // per-unit, matches invoice convention
+        base_price: base, // permanent breakdown
+        add_on_price: addOn, // permanent breakdown (never null after recalc)
+        days, // permanent breakdown
         deposit,
-        subtotal: lineSubtotal,
+        subtotal: lineTotal,
       };
     });
+
+  /*
+   * Guard: every client-supplied SKU must resolve against the catalog.
+   * Without this check a tampered payload (or a stale cart referring to
+   * a since-deleted item) would silently have that line dropped from
+   * the order, letting the customer "check out" only the cheaper items.
+   */
+  if (productRows.length !== input.items.length) {
+    const missing = input.items
+      .filter((i) => !priceMap.has(i.sku))
+      .map((i) => i.sku);
+    return {
+      error: `These items are no longer available: ${missing.join(", ")}.`,
+    };
+  }
+
+  /*
+   * Generate the next website order ID here — moved above the shipping /
+   * credit / promo block so the dev diagnostic below can reference it.
+   * Harmless to call earlier; it's a plain SELECT.
+   */
+  const orderId = await getNextWebsiteOrderId();
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[createWebsiteOrder] server recalc", {
+      orderId,
+      lines: productRows.map((p) => ({
+        sku: p.item_sku,
+        base: p.base_price,
+        addOn: p.add_on_price,
+        days: p.days,
+        lineTotal: p.subtotal,
+      })),
+      totalPrice,
+      totalDeposit,
+    });
+  }
 
   const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
   const credit = Math.max(0, Number(input.storeCreditApplied) || 0);
@@ -367,7 +429,6 @@ export async function createWebsiteOrder(input: {
     totalPrice + totalDeposit + shippingFee - credit - promoDiscount,
   );
 
-  const orderId = await getNextWebsiteOrderId();
   const recipientName =
     `${customer.firstName} ${customer.lastName || ""}`.trim() || "Customer";
 
@@ -422,10 +483,16 @@ export async function createWebsiteOrder(input: {
       promo_code: normalizedPromo || null,
       promo_percent: promoPercent,
       promo_discount: promoDiscount,
+      /*
+       * Audit trail records the SERVER-recalculated day count and line
+       * total — not the client-sent values. Tamper attempts therefore
+       * leave a permanent record of what the browser *wanted* (visible
+       * in the request log) versus what we actually charged (here).
+       */
       lines: productRows.map((p) => ({
         sku: p.item_sku,
-        unit_days: input.items.find((x) => x.sku === p.item_sku)?.eventDays,
-        line_total: p.price,
+        unit_days: p.days,
+        line_total: p.subtotal,
       })),
     },
   });
