@@ -132,7 +132,21 @@ function CartRow({
   onRemove: () => void;
 }) {
   const days = item.eventDays || 1;
-  const lineTotal = item.price * days;
+  /*
+   * Mirrors `rentalLineTotal()` from lib/storefront/cart.ts — kept inline
+   * here so the drawer's per-row total is computed at the same place it's
+   * rendered, without a second import round-trip. The formula must stay in
+   * lockstep with `rentalLineTotal` because the subtotal footer (which
+   * uses `rentalCartSubtotal`) reads from the shared module.
+   *
+   *   Day 1           → price
+   *   Each extra day  → + addOnPrice
+   *   total = price + addOnPrice × (days − 1)
+   *
+   * `Math.max(0, days - 1)` clamps a malformed `days: 0` to a single-day
+   * charge rather than letting the multiplier go negative.
+   */
+  const lineTotal = item.price + item.addOnPrice * Math.max(0, days - 1);
 
   return (
     <div className="flex gap-4 sm:gap-5">
@@ -153,11 +167,29 @@ function CartRow({
         <h3 className="font-serif text-[14.5px] sm:text-[16px] text-store-fg leading-snug mb-1.5">
           {item.sku}-{item.name}
         </h3>
-        {days > 1 && (
-          <p className="text-[11.5px] text-store-fg-muted mb-0.5">
-            {formatRupiah(item.price)} × {days} days
+        {/*
+         * Two-line price breakdown:
+         *   • "Day 1" row is always shown — it anchors the base rental fee.
+         *   • "Each additional day" row appears only when days > 1. A 0
+         *     add-on reads as "Free" so the customer isn't confused by a
+         *     literal "Rp 0" multiplier.
+         */}
+        <div className="text-[11.5px] text-store-fg-muted mb-2 space-y-0.5">
+          <p>
+            Day 1:{" "}
+            <span className="text-store-fg">{formatRupiah(item.price)}</span>
           </p>
-        )}
+          {days > 1 && (
+            <p>
+              Each additional day:{" "}
+              <span className="text-store-fg">
+                {item.addOnPrice > 0 ? formatRupiah(item.addOnPrice) : "Free"}
+              </span>
+              {" × "}
+              {days - 1}
+            </p>
+          )}
+        </div>
         <p className="text-[13.5px] sm:text-[14px] text-store-fg font-semibold mb-3">
           {formatRupiah(lineTotal)}
         </p>
