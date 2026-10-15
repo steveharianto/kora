@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
@@ -118,13 +119,17 @@ function buildCells(year: number, month: number): Cell[] {
   const prevTotal = daysInMonth(prev.y, prev.m);
   const next = nextMonth(year, month);
   const cells: Cell[] = [];
+  /* Leading padding days from the previous month. Interactive so a
+     range can start on — or be dragged onto — the days before the 1st,
+     enabling multi-month selections from the left edge of the grid.
+     isSelectable() still blocks past, too-early, and booked days. */
   for (let i = offset - 1; i >= 0; i--) {
     const d = prevTotal - i;
     cells.push({
       date: isoOf(prev.y, prev.m, d),
       dayNum: d,
       owner: "prev",
-      interactive: false,
+      interactive: true,
     });
   }
   for (let d = 1; d <= total; d++) {
@@ -161,6 +166,7 @@ export default function AvailabilityModal({
   const todayISO = useMemo(() => toISO(new Date()), []);
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+  const [availPrev, setAvailPrev] = useState<Record<string, boolean>>({});
   const [availCurrent, setAvailCurrent] = useState<Record<string, boolean>>({});
   const [availNext, setAvailNext] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -196,17 +202,24 @@ export default function AvailabilityModal({
     };
   }, [isOpen]);
 
+  /* Availability for prev + current + next month in parallel. The prev
+     month is required now that leading padding days are selectable —
+     without it those days would validate against an empty map and be
+     assumed free. */
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     setLoading(true);
+    const prev = prevMonth(year, month);
     const next = nextMonth(year, month);
     (async () => {
-      const [a1, a2] = await Promise.all([
+      const [a0, a1, a2] = await Promise.all([
+        getSkuAvailabilityMap(sku, prev.y, prev.m),
         getSkuAvailabilityMap(sku, year, month),
         getSkuAvailabilityMap(sku, next.y, next.m),
       ]);
       if (!cancelled) {
+        setAvailPrev(a0);
         setAvailCurrent(a1);
         setAvailNext(a2);
         setLoading(false);
@@ -218,8 +231,8 @@ export default function AvailabilityModal({
   }, [isOpen, sku, year, month]);
 
   const availability = useMemo(
-    () => ({ ...availCurrent, ...availNext }),
-    [availCurrent, availNext],
+    () => ({ ...availPrev, ...availCurrent, ...availNext }),
+    [availPrev, availCurrent, availNext],
   );
 
   const resolvedLead = useMemo(
