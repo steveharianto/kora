@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 
 export interface DashboardMetrics {
   greeting: string;
@@ -130,20 +131,29 @@ export async function getDashboardMetrics(
   const prevEndDateStr = fmt(prevEndObj);
 
   const [currentOrdersRes, previousOrdersRes] = await Promise.all([
-    supabase
-      .from("orders")
-      .select(
-        `id, order_date, total_price, order_method, status, customer_id, order_products(item_sku, quantity, price, items(name))`,
-      )
-      .gte("order_date", startDateStr)
-      .lte("order_date", endDateStr)
-      .not("status", "in", '("Cancelled", "Draft")'),
-    supabase
-      .from("orders")
-      .select("id, total_price, order_method, customer_id")
-      .gte("order_date", prevStartDateStr)
-      .lte("order_date", prevEndDateStr)
-      .not("status", "in", '("Cancelled", "Draft")'),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from("orders")
+        .select(
+          `id, order_date, total_price, order_method, status, customer_id, order_products(item_sku, quantity, price, items(name))`,
+        )
+        .gte("order_date", startDateStr)
+        .lte("order_date", endDateStr)
+        .not("status", "in", '("Cancelled", "Draft")')
+        .order("order_date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+    ),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from("orders")
+        .select("id, total_price, order_method, customer_id")
+        .gte("order_date", prevStartDateStr)
+        .lte("order_date", prevEndDateStr)
+        .not("status", "in", '("Cancelled", "Draft")')
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   const currentOrders = currentOrdersRes.data || [];
@@ -267,7 +277,14 @@ export async function getDashboardMetrics(
     },
   ];
 
-  const custOrdersRes = await supabase.from("orders").select("customer_id");
+  const custOrdersRes = await fetchAllRows<any>((from, to) =>
+    supabase
+      .from("orders")
+      .select("id, customer_id")
+      .not("status", "in", '("Cancelled", "Draft")')
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
   const histMap: Record<string, number> = {};
   (custOrdersRes.data || []).forEach((o) => {
     if (o.customer_id)

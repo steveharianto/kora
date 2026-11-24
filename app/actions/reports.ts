@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { fetchAllRows, toWibEnd, toWibStart } from '@/lib/supabase/paginate';
 import { getCurrentAdmin } from './auth';
 
 /* ─────────────────────────────────────────────────────────────────
@@ -12,40 +13,60 @@ export async function getRevenueReportData(startDate?: string, endDate?: string)
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
-  let query = supabase
-    .from('orders')
-    .select(`
-      id, order_date, total_price, total_deposit, shipping_fee,
-      store_credit_applied, total, order_method, payment_method, status,
-      customers(first_name, last_name),
-      order_products(item_sku)
-    `)
-    .not('status', 'in', '("Cancelled", "Draft")')
-    .order('order_date', { ascending: false });
+  const [ordersRes, fittingsRes, returnsRes] = await Promise.all([
+    fetchAllRows<any>((from, to) => {
+      let query = supabase
+        .from('orders')
+        .select(`
+          id, order_date, total_price, total_deposit, shipping_fee,
+          store_credit_applied, total, order_method, payment_method, status,
+          customers(first_name, last_name),
+          order_products(item_sku)
+        `)
+        .not('status', 'in', '("Cancelled", "Draft")')
+        .order('order_date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to);
 
-  if (startDate) query = query.gte('order_date', startDate);
-  if (endDate) query = query.lte('order_date', endDate);
+      if (startDate) query = query.gte('order_date', startDate);
+      if (endDate) query = query.lte('order_date', endDate);
+      return query;
+    }),
+    // Fittings income — same window
+    fetchAllRows<any>((from, to) => {
+      let fittingsQuery = supabase
+        .from('fittings')
+        .select('id, date, after_hours_fee, fee_payment_method')
+        .eq('fee_payment_status', 'Paid')
+        .order('date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to);
+      if (startDate) fittingsQuery = fittingsQuery.gte('date', startDate);
+      if (endDate) fittingsQuery = fittingsQuery.lte('date', endDate);
+      return fittingsQuery;
+    }),
+    // Deposits refunded — same window (uses refunded_at, not order_date)
+    fetchAllRows<any>((from, to) => {
+      let returnsQuery = supabase
+        .from('returns')
+        .select('id, refund_amount')
+        .eq('refund_status', 'Refunded')
+        .order('refunded_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to);
+      if (startDate) returnsQuery = returnsQuery.gte('refunded_at', toWibStart(startDate));
+      if (endDate) returnsQuery = returnsQuery.lte('refunded_at', toWibEnd(endDate));
+      return returnsQuery;
+    }),
+  ]);
 
-  const { data: orders, error } = await query;
-  if (error) return { error: error.message };
+  if (ordersRes.error) return { error: ordersRes.error.message };
+  if (fittingsRes.error) return { error: fittingsRes.error.message };
+  if (returnsRes.error) return { error: returnsRes.error.message };
 
-  // Fittings income — same window
-  let fittingsQuery = supabase
-    .from('fittings')
-    .select('id, date, after_hours_fee, fee_payment_method')
-    .eq('fee_payment_status', 'Paid');
-  if (startDate) fittingsQuery = fittingsQuery.gte('date', startDate);
-  if (endDate) fittingsQuery = fittingsQuery.lte('date', endDate);
-  const { data: fittings } = await fittingsQuery;
-
-  // Deposits refunded — same window (uses refunded_at, not order_date)
-  let returnsQuery = supabase
-    .from('returns')
-    .select('refund_amount')
-    .eq('refund_status', 'Refunded');
-  if (startDate) returnsQuery = returnsQuery.gte('refunded_at', startDate);
-  if (endDate) returnsQuery = returnsQuery.lte('refunded_at', endDate);
-  const { data: completedReturns } = await returnsQuery;
+  const orders = ordersRes.data;
+  const fittings = fittingsRes.data;
+  const completedReturns = returnsRes.data;
 
   const totalRefundedDeposits = (completedReturns || []).reduce(
     (s, r) => s + (Number(r.refund_amount) || 0),
@@ -129,38 +150,65 @@ export async function getInventoryReportData() {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
-  const { data: items, error } = await supabase
-    .from('items')
-    .select(`
-      sku, name, rental_price, status, is_archived,
-      brands(name),
-      types(name),
-      order_products(price, quantity, orders(status, pickup_date, return_date))
-    `)
-    .order('sku');
+  const [itemsRes, orderProductsRes] = await Promise.all([
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('items')
+        .select(`
+          sku, name, rental_price, status, is_archived,
+          brands(name),
+          types(name)
+        `)
+        .order('sku', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('order_products')
+        .select(`
+          id, item_sku, price, quantity,
+          orders(status, pickup_date, return_date)
+        `)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+  ]);
 
-  if (error) return { error: error.message };
+  if (itemsRes.error) return { error: itemsRes.error.message };
+  if (orderProductsRes.error) return { error: orderProductsRes.error.message };
+
+  const statsBySku = new Map<
+    string,
+    { timesRented: number; daysOnLoan: number; skuRevenue: number }
+  >();
+  for (const op of orderProductsRes.data) {
+    const order = op.orders as any;
+    if (!order || ['Cancelled', 'Draft'].includes(order.status)) continue;
+    const prev = statsBySku.get(op.item_sku) || {
+      timesRented: 0,
+      daysOnLoan: 0,
+      skuRevenue: 0,
+    };
+    prev.timesRented += 1;
+    prev.skuRevenue += (Number(op.price) || 0) * (op.quantity || 1);
+    if (order.pickup_date && order.return_date) {
+      const s = new Date(order.pickup_date).getTime();
+      const e = new Date(order.return_date).getTime();
+      prev.daysOnLoan += Math.max(1, Math.round((e - s) / 86400000));
+    }
+    statsBySku.set(op.item_sku, prev);
+  }
 
   let fleetTotalRevenue = 0;
   let activeFleetCount = 0;
 
-  const rows = (items || []).map((item) => {
-    const valid = (item.order_products || []).filter(
-      (op: any) =>
-        op.orders && !['Cancelled', 'Draft'].includes(op.orders.status),
-    );
-    const timesRented = valid.length;
-    let daysOnLoan = 0;
-    let skuRevenue = 0;
-    valid.forEach((op: any) => {
-      skuRevenue += (Number(op.price) || 0) * (op.quantity || 1);
-      if (op.orders.pickup_date && op.orders.return_date) {
-        const s = new Date(op.orders.pickup_date).getTime();
-        const e = new Date(op.orders.return_date).getTime();
-        daysOnLoan += Math.max(1, Math.round((e - s) / 86400000));
-      }
-    });
-    fleetTotalRevenue += skuRevenue;
+  const rows = itemsRes.data.map((item) => {
+    const stats = statsBySku.get(item.sku) || {
+      timesRented: 0,
+      daysOnLoan: 0,
+      skuRevenue: 0,
+    };
+    fleetTotalRevenue += stats.skuRevenue;
     if (!item.is_archived && item.status !== 'Under Repair') activeFleetCount++;
     return {
       sku: item.sku,
@@ -168,9 +216,9 @@ export async function getInventoryReportData() {
       brand: (item.brands as any)?.name || '—',
       type: (item.types as any)?.name || 'Dress',
       rentalPrice: Number(item.rental_price) || 0,
-      timesRented,
-      daysOnLoan,
-      revenueYield: skuRevenue,
+      timesRented: stats.timesRented,
+      daysOnLoan: stats.daysOnLoan,
+      revenueYield: stats.skuRevenue,
       status: item.is_archived ? 'Archived' : item.status,
     };
   });
@@ -190,25 +238,27 @@ export async function getReturnsReportData(startDate?: string, endDate?: string)
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
-  let query = supabase
-    .from('returns')
-    .select(`
-      id, order_id, status, requested_at,
-      has_stains, has_damage, is_incomplete, has_odor,
-      deposit_held, late_days, qc_deduction, return_shipping_cost,
-      refund_amount, refund_destination, refunded_at, refund_status,
-      orders(return_date),
-      customers(first_name, last_name)
-    `)
-    .order('requested_at', { ascending: false });
+  const { data: allRows, error } = await fetchAllRows<any>((from, to) => {
+    let query = supabase
+      .from('returns')
+      .select(`
+        id, order_id, status, requested_at,
+        has_stains, has_damage, is_incomplete, has_odor,
+        deposit_held, late_days, qc_deduction, return_shipping_cost,
+        refund_amount, refund_destination, refunded_at, refund_status,
+        orders(return_date),
+        customers(first_name, last_name)
+      `)
+      .order('requested_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to);
 
-  if (startDate) query = query.gte('requested_at', startDate);
-  if (endDate) query = query.lte('requested_at', endDate);
+    if (startDate) query = query.gte('requested_at', toWibStart(startDate));
+    if (endDate) query = query.lte('requested_at', toWibEnd(endDate));
+    return query;
+  });
 
-  const { data: returns, error } = await query;
   if (error) return { error: error.message };
-
-  const allRows = returns || [];
 
   let totalDepositsUnderCustody = 0;
   let totalQcDeductions = 0;
@@ -281,35 +331,51 @@ export async function getCustomersReportData() {
   const admin = await getCurrentAdmin();
   if (!admin) return { error: 'Unauthorized' };
 
-  const { data: customers, error } = await supabase
-    .from('customers')
-    .select(`
-      id, first_name, last_name, phone, status, date_joined, current_credit,
-      addresses(city),
-      orders(total, total_deposit, status)
-    `)
-    .order('date_joined', { ascending: false });
+  const [customersRes, ordersRes] = await Promise.all([
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('customers')
+        .select(`
+          id, first_name, last_name, phone, status, date_joined, current_credit,
+          addresses(city)
+        `)
+        .order('date_joined', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('orders')
+        .select('id, customer_id, total, total_deposit, status')
+        .not('status', 'in', '("Cancelled", "Draft")')
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+  ]);
 
-  if (error) return { error: error.message };
+  if (customersRes.error) return { error: customersRes.error.message };
+  if (ordersRes.error) return { error: ordersRes.error.message };
+
+  const statsByCustomer = new Map<string, { count: number; ltv: number }>();
+  for (const o of ordersRes.data) {
+    if (!o.customer_id) continue;
+    const prev = statsByCustomer.get(o.customer_id) || { count: 0, ltv: 0 };
+    prev.count += 1;
+    // LTV excludes refundable deposits — that money isn't revenue, it's
+    // a liability that returns to the customer on the return completing.
+    prev.ltv += (Number(o.total) || 0) - (Number(o.total_deposit) || 0);
+    statsByCustomer.set(o.customer_id, prev);
+  }
 
   let totalLtvSum = 0;
   let totalCreditLiability = 0;
 
-  const rows = (customers || []).map((c) => {
+  const rows = customersRes.data.map((c) => {
     const name =
       `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Customer';
-    const validOrders = (c.orders || []).filter(
-      (o: any) => !['Cancelled', 'Draft'].includes(o.status),
-    );
-    const totalOrdersCount = validOrders.length;
-
-    // LTV excludes refundable deposits — that money isn't revenue, it's
-    // a liability that returns to the customer on the return completing.
-    const ltv = validOrders.reduce(
-      (a: number, o: any) =>
-        a + (Number(o.total) || 0) - (Number(o.total_deposit) || 0),
-      0,
-    );
+    const stats = statsByCustomer.get(c.id) || { count: 0, ltv: 0 };
+    const totalOrdersCount = stats.count;
+    const ltv = stats.ltv;
     const aov = totalOrdersCount > 0 ? Math.round(ltv / totalOrdersCount) : 0;
     const credit = Number(c.current_credit) || 0;
 
@@ -358,8 +424,8 @@ export async function getAuditReportData(startDate?: string, endDate?: string) {
     .order('created_at', { ascending: false })
     .limit(AUDIT_PAGE_SIZE);
 
-  if (startDate) query = query.gte('created_at', startDate);
-  if (endDate) query = query.lte('created_at', endDate);
+  if (startDate) query = query.gte('created_at', toWibStart(startDate));
+  if (endDate) query = query.lte('created_at', toWibEnd(endDate));
 
   const { data: logs, error, count } = await query;
   if (error) return { error: error.message };

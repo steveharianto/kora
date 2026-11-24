@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 import { getCurrentAdmin } from '@/app/actions/auth';
 
 function escapeCSV(val: any): string {
@@ -27,52 +28,55 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status') || 'all';
   const view = searchParams.get('view') || 'all';
 
-  let query = supabase
-    .from('orders')
-    .select(`
-      id,
-      order_date,
-      event_start_date,
-      event_days,
-      pickup_date,
-      return_date,
-      city,
-      postal_code,
-      street_address,
-      total_price,
-      total_deposit,
-      shipping_fee,
-      store_credit_applied,
-      total,
-      order_method,
-      status,
-      pick_up_method,
-      packing_slip_id,
-      payment_method,
-      created_at,
-      customers (
-        first_name,
-        last_name,
-        phone,
-        status
-      ),
-      order_products (
-        item_sku,
-        quantity,
-        price,
-        deposit,
-        items (
-          name
+  const { data: orders, error } = await fetchAllRows<any>((fromRow, toRow) => {
+    let query = supabase
+      .from('orders')
+      .select(`
+        id,
+        order_date,
+        event_start_date,
+        event_days,
+        pickup_date,
+        return_date,
+        city,
+        postal_code,
+        street_address,
+        total_price,
+        total_deposit,
+        shipping_fee,
+        store_credit_applied,
+        total,
+        order_method,
+        status,
+        pick_up_method,
+        packing_slip_id,
+        payment_method,
+        created_at,
+        customers (
+          first_name,
+          last_name,
+          phone,
+          status
+        ),
+        order_products (
+          item_sku,
+          quantity,
+          price,
+          deposit,
+          items (
+            name
+          )
         )
-      )
-    `)
-    .order('order_date', { ascending: false });
+      `)
+      .order('order_date', { ascending: false })
+      .order('id', { ascending: false })
+      .range(fromRow, toRow);
 
-  if (from) query = query.gte('order_date', from);
-  if (to) query = query.lte('order_date', to);
-  if (status !== 'all') query = query.ilike('status', status);
-
-  const { data: orders, error } = await query;
+    if (from) query = query.gte('order_date', from);
+    if (to) query = query.lte('order_date', to);
+    if (status !== 'all') query = query.ilike('status', status);
+    return query;
+  });
 
   if (error) {
     return new NextResponse(`Database error: ${error.message}`, { status: 500 });
