@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Image from "next/image";
-import { X, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, MapPin, Minus, Plus } from "lucide-react";
 import { getSkuAvailabilityMap } from "@/app/actions/storefront";
 import { formatRupiah } from "@/lib/utils";
 
@@ -50,6 +50,7 @@ interface Props {
 }
 
 const BASE_PREP_DAYS = 3;
+const MAX_EXTRA_DAYS = 14;
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -183,6 +184,7 @@ export default function AvailabilityModal({
   const [loading, setLoading] = useState(false);
   const [eventStart, setEventStart] = useState<string | null>(null);
   const [eventEnd, setEventEnd] = useState<string | null>(null);
+  const [desiredExtraDays, setDesiredExtraDays] = useState(0);
   const [dragAnchor, setDragAnchor] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -194,6 +196,7 @@ export default function AvailabilityModal({
     if (!isOpen) return;
     setEventStart(null);
     setEventEnd(null);
+    setDesiredExtraDays(0);
     setDragAnchor(null);
     setDragHover(null);
     setIsDragging(false);
@@ -317,20 +320,47 @@ export default function AvailabilityModal({
       return;
     }
     const lo = cmpISO(dragAnchor, dragHover) <= 0 ? dragAnchor : dragHover;
-    const hi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
-    const v = validateRange(lo, hi);
-    if (!v.ok) {
-      setRangeError(v.reason || "That range is unavailable.");
-      setTimeout(() => setRangeError(null), 5000);
+    const rawHi = cmpISO(dragAnchor, dragHover) <= 0 ? dragHover : dragAnchor;
+
+    if (lo === rawHi && desiredExtraDays > 0) {
+      const extendedHi = addDays(lo, desiredExtraDays);
+      const extValid = validateRange(lo, extendedHi);
+      if (extValid.ok) {
+        setEventStart(lo);
+        setEventEnd(extendedHi);
+        setRangeError(null);
+      } else {
+        const baseValid = validateRange(lo, lo);
+        if (baseValid.ok) {
+          setEventStart(lo);
+          setEventEnd(lo);
+          setDesiredExtraDays(0);
+          setRangeError(
+            extValid.reason ||
+              "Extension unavailable for that date — selected standard 3-day rental instead.",
+          );
+          setTimeout(() => setRangeError(null), 5000);
+        } else {
+          setRangeError(baseValid.reason || "That range is unavailable.");
+          setTimeout(() => setRangeError(null), 5000);
+        }
+      }
     } else {
-      setEventStart(lo);
-      setEventEnd(hi);
-      setRangeError(null);
+      const v = validateRange(lo, rawHi);
+      if (!v.ok) {
+        setRangeError(v.reason || "That range is unavailable.");
+        setTimeout(() => setRangeError(null), 5000);
+      } else {
+        setEventStart(lo);
+        setEventEnd(rawHi);
+        setDesiredExtraDays(Math.max(0, diffDays(lo, rawHi)));
+        setRangeError(null);
+      }
     }
     setIsDragging(false);
     setDragAnchor(null);
     setDragHover(null);
-  }, [dragAnchor, dragHover, validateRange]);
+  }, [dragAnchor, dragHover, desiredExtraDays, validateRange]);
 
   const handlePointerDown = (dateStr: string) => {
     if (!isSelectable(dateStr)) return;
@@ -418,17 +448,62 @@ export default function AvailabilityModal({
 
   /*
    * Multi-day pricing:
-   *   Day 1           → rentalPrice
-   *   Each extra day  → addOnPrice (0 = free)
-   *   lineTotal       = rentalPrice + addOnPrice × extraDays
+   *   Standard 3-day rental (1 event day) → rentalPrice
+   *   Each extra day                      → addOnPrice (0 = free)
+   *   previewLineTotal                    = rentalPrice + addOnPrice × extraDays
    *
-   * `extraDays` is clamped at 0 so a 1-day selection never trips the
-   * multiplier row, and `lineTotal` stays 0 until the customer picks
-   * a valid event range.
+   * When a date range is selected on the calendar, `extraDays` tracks the
+   * committed selection (and stays two-way synced with the stepper). Before
+   * any date is picked, `desiredExtraDays` lets the customer preview
+   * extension pricing and pre-select extra days.
    */
-  const extraDays = Math.max(0, infoEventCount - 1);
+  const extraDays = committed
+    ? Math.max(0, infoEventCount - 1)
+    : desiredExtraDays;
   const addOnTotal = addOnPrice * extraDays;
-  const lineTotal = infoEventCount > 0 ? rentalPrice + addOnTotal : 0;
+  const previewLineTotal = rentalPrice + addOnTotal;
+  const lineTotal = infoEventCount > 0 ? previewLineTotal : 0;
+
+  const nextExtensionCheck = useMemo(() => {
+    if (extraDays >= MAX_EXTRA_DAYS) {
+      return {
+        ok: false,
+        reason: `Maximum extension is ${MAX_EXTRA_DAYS} extra days.`,
+      };
+    }
+    if (!committed) return { ok: true };
+    return validateRange(committed.lo, addDays(committed.hi, 1));
+  }, [committed, extraDays, validateRange]);
+
+  const canExtendMore = nextExtensionCheck.ok;
+
+  const handleDecrementExtraDays = () => {
+    if (extraDays <= 0) return;
+    if (committed) {
+      setEventEnd(addDays(committed.hi, -1));
+      setDesiredExtraDays(Math.max(0, extraDays - 1));
+      setRangeError(null);
+    } else {
+      setDesiredExtraDays((d) => Math.max(0, d - 1));
+    }
+  };
+
+  const handleIncrementExtraDays = () => {
+    if (!canExtendMore) {
+      if (nextExtensionCheck.reason) {
+        setRangeError(nextExtensionCheck.reason);
+        setTimeout(() => setRangeError(null), 5000);
+      }
+      return;
+    }
+    if (committed) {
+      setEventEnd(addDays(committed.hi, 1));
+      setDesiredExtraDays(extraDays + 1);
+      setRangeError(null);
+    } else {
+      setDesiredExtraDays((d) => Math.min(MAX_EXTRA_DAYS, d + 1));
+    }
+  };
 
   const selectionStillValid = useMemo(() => {
     if (!committed) return false;
@@ -669,61 +744,85 @@ export default function AvailabilityModal({
                     : "Select event days to see your rental range"}
                 </div>
               </div>
-              <div className="p-4 bg-[#F1EFE1] border border-store-border space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
-                    Rental Price
-                  </span>
-                  <span className="text-[11px] text-store-fg-muted font-mono">
-                    {infoEventCount > 0
-                      ? `${infoEventCount} event day${infoEventCount === 1 ? "" : "s"}`
-                      : "—"}
-                  </span>
-                </div>
-                {infoEventCount > 0 ? (
-                  <>
-                    <div className="space-y-1.5 border-t border-[#DBD7C6] pt-2">
-                      <div className="flex justify-between gap-3 text-[12.5px]">
-                        <span className="text-store-fg-muted">Day 1</span>
-                        <span className="text-store-fg">
-                          {formatRupiah(rentalPrice)}
-                        </span>
-                      </div>
-                      {extraDays > 0 && (
-                        <div className="flex justify-between gap-3 text-[12.5px]">
-                          <span className="text-store-fg-muted">
-                            Each additional day
-                          </span>
-                          <span className="text-store-fg">
-                            {addOnPrice > 0 ? formatRupiah(addOnPrice) : "Free"}
-                            {" × "}
-                            {extraDays}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-baseline justify-between gap-3 border-t border-[#DBD7C6] pt-2">
-                      <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-store-fg">
-                        Rental Total
-                      </span>
-                      <span className="text-[17px] font-semibold text-store-fg">
-                        {formatRupiah(lineTotal)}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-store-fg-muted leading-relaxed border-t border-[#DBD7C6] pt-2">
-                      Your rental is priced per event day. Every additional day
-                      you keep the piece is charged at the add-on rate above.
-                    </p>
-                  </>
-                ) : (
+              <div className="p-5 bg-[#F1EFE1] border border-store-border space-y-4">
+                <div className="space-y-1.5">
+                  <h3 className="font-serif text-[18px] text-store-fg leading-snug">
+                    Extend Your Rental
+                  </h3>
                   <p className="text-[12px] text-store-fg-muted leading-relaxed">
-                    Select your event day(s) on the calendar to see the rental
-                    total. Day 1 is {formatRupiah(rentalPrice)}
-                    {addOnPrice > 0
-                      ? `; each additional day is ${formatRupiah(addOnPrice)}.`
-                      : "; extra days are free."}
+                    Every KORA rental includes three days of wear. Need a little
+                    longer? Add extra days to your booking and keep the dress
+                    for the whole celebration.
                   </p>
-                )}
+                </div>
+
+                <p className="text-[12px] text-store-fg-muted">
+                  Extra day rate for this piece:{" "}
+                  <span className="font-medium text-store-fg">
+                    {addOnPrice > 0
+                      ? `${formatRupiah(addOnPrice)} / day`
+                      : "Free"}
+                  </span>
+                </p>
+
+                <div className="space-y-1.5">
+                  <div className="inline-flex items-center border border-store-border-strong bg-store-bg">
+                    <button
+                      type="button"
+                      onClick={handleDecrementExtraDays}
+                      disabled={extraDays <= 0}
+                      aria-label="Decrease extra days"
+                      className="w-10 h-10 flex items-center justify-center text-store-fg hover:bg-store-hover disabled:text-store-fg-subtle/40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <Minus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                    </button>
+                    <span className="min-w-[124px] px-4 text-center text-[13px] font-medium text-store-fg select-none border-x border-store-border-strong leading-10">
+                      {extraDays} extra {extraDays === 1 ? "day" : "days"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleIncrementExtraDays}
+                      disabled={!canExtendMore}
+                      aria-label="Increase extra days"
+                      className="w-10 h-10 flex items-center justify-center text-store-fg hover:bg-store-hover disabled:text-store-fg-subtle/40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                    </button>
+                  </div>
+                  {committed && !canExtendMore && nextExtensionCheck.reason && (
+                    <p className="text-[11px] text-amber-800 leading-snug">
+                      {nextExtensionCheck.reason}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-[#DBD7C6] pt-3.5">
+                  <div className="flex justify-between gap-3 text-[13px]">
+                    <span className="text-store-fg-muted">Rental (3 days)</span>
+                    <span className="text-store-fg font-medium">
+                      {formatRupiah(rentalPrice)}
+                    </span>
+                  </div>
+                  {extraDays > 0 && (
+                    <div className="flex justify-between gap-3 text-[13px]">
+                      <span className="text-store-fg-muted">
+                        Extension ({extraDays}{" "}
+                        {extraDays === 1 ? "day" : "days"})
+                      </span>
+                      <span className="text-store-fg font-medium">
+                        {addOnPrice > 0 ? formatRupiah(addOnTotal) : "Free"}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-baseline justify-between gap-3 border-t border-[#DBD7C6] pt-2.5">
+                    <span className="text-[13px] font-semibold text-store-fg">
+                      Total
+                    </span>
+                    <span className="text-[17px] font-semibold text-store-fg">
+                      {formatRupiah(previewLineTotal)}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-[13px] text-store-fg mb-2">
@@ -904,11 +1003,11 @@ export default function AvailabilityModal({
               <p className="text-[22px] font-semibold text-store-fg leading-none">
                 {infoEventCount > 0 ? formatRupiah(lineTotal) : "—"}
               </p>
-              {extraDays > 0 && (
+              {infoEventCount > 0 && extraDays > 0 && (
                 <p className="text-[11px] text-store-fg-muted mt-1">
-                  {formatRupiah(rentalPrice)} +{" "}
-                  {addOnPrice > 0 ? formatRupiah(addOnPrice) : "Free"} ×{" "}
-                  {extraDays}
+                  Rental (3 days) {formatRupiah(rentalPrice)} + Extension (
+                  {extraDays} {extraDays === 1 ? "day" : "days"}){" "}
+                  {addOnPrice > 0 ? formatRupiah(addOnTotal) : "Free"}
                 </p>
               )}
             </div>
