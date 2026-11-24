@@ -16,6 +16,7 @@ import {
 import { emitWa } from "@/lib/notifications";
 import { formatRupiah } from "@/lib/utils";
 import { getPromoDiscountPercent, normalizePromoCode } from "@/lib/promo";
+import { resolveAddOnPrice } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
 
 const COURIER_QUERY =
@@ -306,7 +307,7 @@ export async function createWebsiteOrder(input: {
   const priceMap = new Map<string, PriceInfo>();
   for (const i of itemRows || []) {
     const base = Number(i.rental_price) || 0;
-    const addOn = i.add_on_price != null ? Number(i.add_on_price) : base;
+    const addOn = resolveAddOnPrice(i.add_on_price, base);
     priceMap.set(i.sku, { base, addOn });
   }
 

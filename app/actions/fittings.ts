@@ -6,6 +6,7 @@ import { getNextManualOrderId } from "./orders";
 import { markFittingBookingPaid } from "./customerFittingBooking";
 import { getXenditInvoiceByExternalId } from "@/lib/xendit";
 import { isUniqueViolation } from "@/lib/orderLifecycle";
+import { resolveAddOnPrice } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
 
 export async function getNextFittingId(): Promise<string> {
@@ -540,7 +541,7 @@ export async function convertFittingToOrder(
   const priceMap = new Map<string, { base: number; addOn: number }>();
   for (const row of itemRows || []) {
     const base = Number(row.rental_price) || 0;
-    const addOn = row.add_on_price != null ? Number(row.add_on_price) : base;
+    const addOn = resolveAddOnPrice(row.add_on_price, base);
     priceMap.set(row.sku, { base, addOn });
   }
 

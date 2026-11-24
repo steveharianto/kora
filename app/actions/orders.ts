@@ -15,6 +15,7 @@ import {
 } from "@/lib/orderLifecycle";
 import { emitWa } from "@/lib/notifications";
 import { formatRupiah } from "@/lib/utils";
+import { resolveAddOnPrice } from "@/lib/pricing";
 
 export async function getNextManualOrderId(): Promise<string> {
   const supabase = await createClient();
@@ -225,7 +226,7 @@ export async function saveOrder(orderData: {
     const priceMap = new Map<string, { base: number; addOn: number }>();
     for (const row of itemRows || []) {
       const base = Number(row.rental_price) || 0;
-      const addOn = row.add_on_price != null ? Number(row.add_on_price) : base;
+      const addOn = resolveAddOnPrice(row.add_on_price, base);
       priceMap.set(row.sku, { base, addOn });
     }
 

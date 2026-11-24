@@ -11,6 +11,7 @@ import {
   verifyFittingPaymentAdmin,
 } from "@/app/actions/fittings";
 import { formatRupiah } from "@/lib/utils";
+import { resolveAddOnPrice } from "@/lib/pricing";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -628,10 +629,10 @@ export default function FittingDetailForm({
                       (i: any) => i.sku === fi.item_sku,
                     );
                     const base = Number(itemInfo?.rental_price) || 0;
-                    const addOn =
-                      itemInfo?.add_on_price != null
-                        ? Number(itemInfo.add_on_price)
-                        : base;
+                    const addOn = resolveAddOnPrice(
+                      itemInfo?.add_on_price,
+                      base,
+                    );
                     const days = dayCounts[fi.item_sku] ?? 1;
                     const unit = base + addOn * Math.max(0, days - 1);
 

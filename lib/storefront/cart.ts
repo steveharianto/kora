@@ -1,5 +1,7 @@
 /* Storefront cart — pure localStorage module, no React. */
 
+import { resolveAddOnPrice } from "@/lib/pricing";
+
 export interface RentalCartItem {
   sku: string;
   name: string;
@@ -76,26 +78,12 @@ export function readRentalCart(): RentalCartItem[] {
     .map((x) => {
       /*
        * addOnPrice coercion:
-       *
-       *   • Valid (number, >= 0)          → use as-is.
-       *   • Missing (legacy cart entry),   → default to `price` so the
-       *     null, NaN, negative, string,      historical total is preserved:
-       *     or otherwise malformed             base + base × (days−1)
-       *                                          == base × days
-       *
-       * Q1 semantics: a null add-on price at the DB level means "same as
-       * base rental price". This mirrors that rule at the cart layer so a
-       * returning customer's saved cart behaves identically to a freshly
-       * constructed one.
-       *
-       * We do NOT default to 0 (free) — that would silently discount extra
-       * days on every legacy cart and change what the customer owes.
+       *   • Valid (number, >= 0) → use as-is (including 0 for free extra days).
+       *   • Missing / legacy / invalid → fall back to the tiered default for
+       *     `price` via `resolveAddOnPrice`, matching the server-side rule.
        */
       const price = typeof x.price === "number" ? x.price : 0;
-      const addOnPrice =
-        typeof x.addOnPrice === "number" && x.addOnPrice >= 0
-          ? x.addOnPrice
-          : price;
+      const addOnPrice = resolveAddOnPrice(x.addOnPrice, price);
 
       return {
         sku: x.sku,

@@ -31,7 +31,7 @@ interface Item {
   rentalPrice: number;
   /**
    * Per-extra-day rate. Sourced from the cache fetcher's `addOnPrice`,
-   * which already applied the Q1 fallback (null → rentalPrice).
+   * which falls back to the tiered default when `add_on_price` is null.
    */
   addOnPrice: number;
   measurements: {
@@ -53,6 +53,7 @@ interface Accessory {
   sku: string;
   name: string;
   rentalPrice: number;
+  addOnPrice: number;
   image: string | null;
 }
 

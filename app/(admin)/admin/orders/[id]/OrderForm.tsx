@@ -25,6 +25,7 @@ import {
 import { createCustomer } from "@/app/actions/customers";
 import { dispatchOrderViaBiteship } from "@/app/actions/biteship";
 import { formatRupiah } from "@/lib/utils";
+import { resolveAddOnPrice } from "@/lib/pricing";
 import RupiahInput from "@/components/RupiahInput";
 import AddressMapPicker from "@/components/AddressMapPicker";
 import NotificationPicker from "@/components/admin/NotificationPicker";
@@ -285,8 +286,10 @@ export default function OrderForm({
       (initialOrder.order_products || []).map((op: any) => {
         const basePrice =
           op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
-        const addOnPrice =
-          op.add_on_price != null ? Number(op.add_on_price) : basePrice;
+        const addOnPrice = resolveAddOnPrice(
+          op.add_on_price ?? op.items?.add_on_price,
+          basePrice,
+        );
         return {
           item_sku: op.item_sku,
           label: op.items?.name || "",
@@ -376,8 +379,10 @@ export default function OrderForm({
     (initialOrder.order_products || []).map((op: any) => {
       const basePrice =
         op.base_price != null ? Number(op.base_price) : Number(op.price) || 0;
-      const addOnPrice =
-        op.add_on_price != null ? Number(op.add_on_price) : basePrice;
+      const addOnPrice = resolveAddOnPrice(
+        op.add_on_price ?? op.items?.add_on_price,
+        basePrice,
+      );
       return {
         item_sku: op.item_sku,
         label: op.items?.name || "",
@@ -550,8 +555,7 @@ export default function OrderForm({
     const next = [...products];
     if (item) {
       const base = Number(item.rental_price) || 0;
-      const addOn =
-        item.add_on_price != null ? Number(item.add_on_price) : base;
+      const addOn = resolveAddOnPrice(item.add_on_price, base);
       next[index] = {
         item_sku: item.sku,
         label: item.name,

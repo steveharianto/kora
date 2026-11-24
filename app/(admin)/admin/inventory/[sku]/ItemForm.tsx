@@ -12,17 +12,7 @@ import {
 import { formatRupiah } from "@/lib/utils";
 import RupiahInput from "@/components/RupiahInput";
 import { STYLE_TAGS, normalizeStyleTags, type StyleTag } from "@/lib/styleTags";
-
-function defaultAddOnForBase(
-  base: number | string | null | undefined,
-): number | "" {
-  const n = Number(base);
-  if (!n || !isFinite(n) || n <= 0) return "";
-  if (n < 500_000) return 50_000;
-  if (n < 1_000_000) return 70_000;
-  if (n < 2_000_000) return 100_000;
-  return 200_000;
-}
+import { defaultAddOnForBase } from "@/lib/pricing";
 
 export default function ItemForm({
   isNew,

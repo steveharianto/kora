@@ -10,6 +10,7 @@ interface Accessory {
   sku: string;
   name: string;
   rentalPrice: number;
+  addOnPrice: number;
   image: string | null;
 }
 
@@ -850,7 +851,7 @@ export default function AvailabilityModal({
                       const added = addedAccessories.includes(a.sku);
                       const accTotal =
                         infoEventCount > 0
-                          ? a.rentalPrice * infoEventCount
+                          ? a.rentalPrice + a.addOnPrice * extraDays
                           : a.rentalPrice;
                       return (
                         <div key={a.sku} className="flex items-center gap-3">
@@ -872,7 +873,7 @@ export default function AvailabilityModal({
                             </p>
                             <p className="text-[11.5px] text-store-fg-muted">
                               {infoEventCount > 1
-                                ? `${formatRupiah(a.rentalPrice)} × ${infoEventCount} = ${formatRupiah(accTotal)}`
+                                ? `${formatRupiah(a.rentalPrice)} + ${a.addOnPrice > 0 ? formatRupiah(a.addOnPrice) : "Free"} × ${extraDays} = ${formatRupiah(accTotal)}`
                                 : formatRupiah(accTotal)}
                             </p>
                           </div>

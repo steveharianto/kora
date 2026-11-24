@@ -9,6 +9,7 @@
 
 import { unstable_cache } from "next/cache";
 import { createStaticClient } from "@/lib/supabase/static";
+import { resolveAddOnPrice } from "@/lib/pricing";
 
 /* ── Items ────────────────────────────────────────────────────────── */
 
@@ -157,10 +158,8 @@ export interface ProductDetailItem {
   rentalPrice: number;
   /**
    * Per-extra-day rate charged for every rental day beyond Day 1.
-   * Sourced from `items.add_on_price`. Falls back to `rentalPrice` when
-   * the DB column is null — Q1 semantics ("null add-on = same as base").
-   * Post-backfill this fallback should never trigger; it exists purely
-   * as defence against a stale cache or a manually-inserted row.
+   * Sourced from `items.add_on_price`. Falls back to the tiered default
+   * for `rentalPrice` when the DB column is null.
    */
   addOnPrice: number;
   measurements: Record<string, any>;
@@ -178,6 +177,7 @@ export interface ProductDetailAccessory {
   sku: string;
   name: string;
   rentalPrice: number;
+  addOnPrice: number;
   image: string | null;
 }
 
@@ -231,7 +231,7 @@ export const getCachedProductDetail = unstable_cache(
       supabase
         .from("items")
         .select(
-          "sku, name, rental_price, item_images(image_url, display_order)",
+          "sku, name, rental_price, add_on_price, item_images(image_url, display_order)",
         )
         .eq("website_status", "Published")
         .eq("is_archived", false)
@@ -297,10 +297,12 @@ export const getCachedProductDetail = unstable_cache(
       const imgs = (i.item_images || []).sort(
         (a: any, b: any) => a.display_order - b.display_order,
       );
+      const accRentalPrice = Number(i.rental_price) || 0;
       return {
         sku: i.sku,
         name: i.name,
-        rentalPrice: Number(i.rental_price) || 0,
+        rentalPrice: accRentalPrice,
+        addOnPrice: resolveAddOnPrice(i.add_on_price, accRentalPrice),
         image: imgs[0]?.image_url || null,
       };
     });
@@ -313,13 +315,8 @@ export const getCachedProductDetail = unstable_cache(
       .sort((a: any, b: any) => a.display_order - b.display_order)
       .map((im: any) => im.image_url);
 
-    // Q1 fallback: null add_on_price means "same as base rental price".
-    // After Step 1's backfill this should never actually fire, but we
-    // keep it defensive so a stale cache or a manually-inserted row
-    // can never produce NaN / undefined downstream.
     const rentalPrice = Number(item.rental_price) || 0;
-    const addOnPrice =
-      item.add_on_price != null ? Number(item.add_on_price) : rentalPrice;
+    const addOnPrice = resolveAddOnPrice(item.add_on_price, rentalPrice);
 
     return {
       item: {
