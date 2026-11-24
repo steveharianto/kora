@@ -163,20 +163,21 @@ export default async function HowToRentPage() {
 
           <div className="bg-[#F1EFE1] px-6 sm:px-10 py-8 space-y-5">
             <p className="text-center text-[12.5px] text-store-fg-muted leading-relaxed max-w-[820px] mx-auto">
-              Late return fees are charged daily and double with each additional
-              day. Fees will be deducted from your deposit. The starting daily
-              rate is based on the dress&apos;s rental price:
+              Late return fees are charged at a flat daily rate for each day
+              overdue and will be deducted from your deposit. The daily rate is
+              based on the dress&apos;s rental price:
             </p>
 
             <Table
-              headers={["Rental Price", "First Day Late"]}
+              headers={["Rental Price", "Daily Late Fee"]}
               rows={lateFees.map((r) => [r.label, formatRupiah(r.fee)])}
             />
 
             <p className="text-center text-[12px] text-store-fg-muted leading-relaxed max-w-[760px] mx-auto">
-              How it adds up: The fee doubles every day you&apos;re late. For a
-              dress under Rp500.000: Day 1 is Rp100.000, Day 2 is Rp200.000, Day
-              3 is Rp400.000, and so on. Please return on time.
+              How it adds up: The fee is a fixed daily rate for each day
+              you&apos;re late. For a dress under Rp500.000: 1 day late is
+              Rp100.000, 2 days late is Rp200.000, 3 days late is Rp300.000, and
+              so on. Please return on time.
             </p>
           </div>
         </div>

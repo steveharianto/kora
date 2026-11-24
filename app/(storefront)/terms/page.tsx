@@ -90,6 +90,38 @@ export default async function TermsPage() {
             </p>
           </Section>
 
+          <Section title="Rental Extension">
+            <p>
+              Customers may extend their rental period, subject to the
+              dress&apos;s availability. An additional rent fee is charged for
+              each extra day.
+            </p>
+            <p>
+              The additional rent fee per day is determined by the dress&apos;s
+              rental price:
+            </p>
+            <DataTable
+              headers={["Rental Price", "Additional Rent Fee per Day"]}
+              rows={[
+                ["Below Rp500.000", formatRupiah(50_000)],
+                ["Rp500.000 – 1.000.000", formatRupiah(70_000)],
+                ["Rp1.000.001 – 2.000.000", formatRupiah(100_000)],
+                ["Above Rp2.000.000", formatRupiah(200_000)],
+              ]}
+            />
+            <p>
+              The fee is a fixed amount per extra day. For example, extending a
+              dress priced below Rp500.000 by 3 days costs Rp150.000 (3 ×
+              Rp50.000).
+            </p>
+            <p>
+              An extension request must be made and confirmed by us before the
+              original return date. A dress kept past its return date without a
+              confirmed extension is considered a late return, and the late
+              return fees apply instead.
+            </p>
+          </Section>
+
           <Section title="Deposit &amp; Refunds">
             <p>
               Every rental includes a refundable deposit, based on the
@@ -128,21 +160,22 @@ export default async function TermsPage() {
 
           <Section title="Late Returns">
             <p>
-              If your dress comes back after your window ends, a daily late fee
-              applies and is taken from your deposit. The fee doubles for each
-              additional day the dress is outstanding. Your starting daily rate
-              depends on the dress&apos;s rental price:
+              If your dress comes back after your window ends, a flat daily late
+              fee applies for each day the dress is overdue and is taken from
+              your deposit. The daily rate depends on the dress&apos;s rental
+              price:
             </p>
             <DataTable
-              headers={["Rental Price", "First Day Late"]}
+              headers={["Rental Price", "Daily Late Fee"]}
               rows={lateFees.map((r) => [r.label, formatRupiah(r.fee)])}
             />
             <p>
-              For example, a dress renting under Rp500.000 is charged Rp100.000
-              on the first day late, Rp200.000 on the second, and Rp400.000 on
-              the third, so please return on time. If a dress isn&apos;t
-              returned within seven days of its deadline, we may treat it as
-              lost and charge it as described below.
+              The fee is a fixed amount per day late. For example, a dress
+              renting under Rp500.000 is charged Rp100.000 per day late —
+              Rp100.000 for 1 day, Rp200.000 for 2 days, and Rp300.000 for 3
+              days — so please return on time. If a dress isn&apos;t returned
+              within seven days of its deadline, we may treat it as lost and
+              charge it as described below.
             </p>
           </Section>
 

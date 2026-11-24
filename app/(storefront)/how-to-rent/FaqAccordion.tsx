@@ -27,7 +27,7 @@ const FAQS = [
   },
   {
     q: "What if I return late?",
-    a: "A daily late fee applies and doubles each additional day. See the Late Returns table above for the starting rate based on your rental price. If the dress isn't returned within seven days of the deadline, we may treat it as lost.",
+    a: "A flat daily late fee applies for each day overdue and is deducted from your deposit. See the Late Returns table above for the daily rate based on your rental price. If the dress isn't returned within seven days of the deadline, we may treat it as lost.",
   },
   {
     q: "What counts as damage?",

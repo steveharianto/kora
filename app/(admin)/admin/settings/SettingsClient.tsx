@@ -194,7 +194,7 @@ export default function SettingsClient({
         rental_days: 3,
         return_deadline: "Day 4 - return only",
         late_fee_day_1: 100000,
-        escalation: "Doubles each additional day",
+        escalation: "Flat daily rate (linear)",
         qc_refund_window: "2 x 24 hours after receipt",
         max_return_reminders: 2,
       },
@@ -613,7 +613,7 @@ export default function SettingsClient({
               <div className="grid grid-cols-2 gap-3.5 mb-3">
                 <div>
                   <label className="block text-[10.5px] tracking-wider uppercase text-muted mb-1">
-                    Late Fee, Day 1 (Rp)
+                    Late Fee per Day (Rp)
                   </label>
                   <RupiahInput
                     value={rentalRules.period.late_fee_day_1}
